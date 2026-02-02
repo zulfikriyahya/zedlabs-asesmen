@@ -1,0 +1,83 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
+
+const stats = {
+  totalExams: 1500, // Total exams across all schools
+  activeExams: 45,
+  completedExams: 1455,
+  averageScore: 0
+};
+---
+
+<DashboardLayout title="Superadmin Dashboard" role="superadmin">
+  <div class="space-y-8">
+    
+    <!-- System Health -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Total Sekolah</div>
+        <div class="stat-value text-primary">12</div>
+        <div class="stat-desc">2 Non-aktif</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Total User</div>
+        <div class="stat-value text-secondary">4.5k</div>
+        <div class="stat-desc">Siswa & Guru</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Storage</div>
+        <div class="stat-value">45%</div>
+        <div class="stat-desc">200GB / 500GB</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">CPU Load</div>
+        <div class="stat-value text-success">12%</div>
+        <div class="stat-desc">Normal</div>
+      </div>
+    </div>
+
+    <!-- Schools List -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <div class="flex justify-between items-center">
+          <h2 class="card-title">Daftar Sekolah</h2>
+          <a href="/superadmin/schools/create" class="btn btn-primary btn-sm">+ Tambah Sekolah</a>
+        </div>
+        
+        <div class="overflow-x-auto mt-4">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nama Sekolah</th>
+                <th>Subdomain</th>
+                <th>Paket</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>SMA Negeri 1 Jakarta</td>
+                <td>sman1jkt</td>
+                <td>Premium</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td><button class="btn btn-xs">Manage</button></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>MAN 2 Bandung</td>
+                <td>man2bdg</td>
+                <td>Basic</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td><button class="btn btn-xs">Manage</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

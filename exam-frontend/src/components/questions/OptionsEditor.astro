@@ -1,0 +1,60 @@
+---
+interface Props {
+  initialOptions?: any[];
+}
+const { initialOptions = [] } = Astro.props;
+---
+
+<div id="options-list" class="space-y-3">
+  <!-- Options injected here -->
+</div>
+
+<button type="button" id="add-option-btn" class="btn btn-outline btn-sm btn-block border-dashed mt-4">
+  + Tambah Opsi Jawaban
+</button>
+
+<template id="option-item-tpl">
+  <div class="option-item flex gap-3 items-start">
+    <div class="pt-3">
+      <input type="radio" name="correct_answer" class="radio radio-success" title="Tandai sebagai kunci jawaban" />
+    </div>
+    <div class="flex-1">
+      <input type="text" class="option-text input input-bordered w-full" placeholder="Teks jawaban..." required />
+      <!-- Optional: Add image button here -->
+    </div>
+    <button type="button" class="btn btn-square btn-ghost text-error remove-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+    </button>
+  </div>
+</template>
+
+<script define:vars={{ initialOptions }}>
+  const container = document.getElementById('options-list');
+  const addBtn = document.getElementById('add-option-btn');
+  const tpl = document.getElementById('option-item-tpl');
+
+  function addOption(data = null) {
+    const clone = tpl.content.cloneNode(true);
+    const item = clone.querySelector('.option-item');
+    const input = clone.querySelector('.option-text');
+    const radio = clone.querySelector('input[type="radio"]');
+    
+    if (data) {
+      input.value = data.option_text || data.text;
+      radio.checked = data.is_correct;
+    }
+
+    clone.querySelector('.remove-btn').addEventListener('click', () => item.remove());
+    container.appendChild(clone);
+  }
+
+  addBtn.addEventListener('click', () => addOption());
+
+  // Init
+  if (initialOptions && initialOptions.length > 0) {
+    initialOptions.forEach(opt => addOption(opt));
+  } else {
+    // Default 4 options
+    for(let i=0; i<4; i++) addOption();
+  }
+</script>

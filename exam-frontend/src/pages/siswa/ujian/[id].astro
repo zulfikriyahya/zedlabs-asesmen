@@ -1,0 +1,388 @@
+---
+// src/pages/siswa/ujian/[id].astro
+import ExamLayout from '@/layouts/Exam.astro';
+import QuestionNavigation from '@/components/exam/QuestionNavigation.astro';
+import ExamTimer from '@/components/exam/ExamTimer.astro';
+import AutoSaveIndicator from '@/components/exam/AutoSaveIndicator.astro';
+import Button from '@/components/ui/Button.astro';
+
+// Question Components
+import MultipleChoice from '@/components/exam/QuestionTypes/MultipleChoice.astro';
+import MultipleChoiceComplex from '@/components/exam/QuestionTypes/MultipleChoiceComplex.astro';
+import TrueFalse from '@/components/exam/QuestionTypes/TrueFalse.astro';
+import Matching from '@/components/exam/QuestionTypes/Matching.astro';
+import ShortAnswer from '@/components/exam/QuestionTypes/ShortAnswer.astro';
+import Essay from '@/components/exam/QuestionTypes/Essay.astro';
+
+const { id } = Astro.params;
+---
+
+<ExamLayout title="Ujian Berlangsung">
+  <!-- Loading State (Initial) -->
+  <div id="exam-loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-base-100">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="mt-4 text-lg font-semibold animate-pulse">Memuat Paket Soal...</p>
+    <p class="text-sm text-base-content/70">Mendekripsi data lokal</p>
+  </div>
+
+  <!-- Main Exam UI -->
+  <div id="exam-container" class="flex h-screen flex-col overflow-hidden opacity-0 transition-opacity duration-500">
+    
+    <!-- Header -->
+    <header class="flex items-center justify-between bg-base-200 p-2 shadow-md md:p-4">
+      <div class="flex items-center gap-4">
+        <div class="hidden md:block">
+          <h1 id="exam-title" class="text-lg font-bold">Memuat...</h1>
+          <p id="student-info" class="text-xs text-base-content/70">Siswa</p>
+        </div>
+        <ExamTimer />
+      </div>
+
+      <div class="flex items-center gap-3">
+        <AutoSaveIndicator />
+        <Button variant="primary" size="sm" id="finish-btn">Selesai Ujian</Button>
+      </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Sidebar Navigation -->
+      <aside class="hidden w-72 flex-col border-r border-base-300 bg-base-100 md:flex">
+        <QuestionNavigation 
+          questions={[]} 
+          currentIndex={0} 
+          answeredQuestions={new Set()} 
+          flaggedQuestions={new Set()} 
+        />
+      </aside>
+
+      <!-- Mobile Drawer Toggle (Optional implementation) -->
+
+      <!-- Question Area -->
+      <main class="relative flex-1 overflow-y-auto bg-base-100 p-4 md:p-8" id="main-scroll">
+        <div class="mx-auto max-w-4xl">
+          <!-- Question Header -->
+          <div class="mb-6 flex items-center justify-between border-b border-base-300 pb-4">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-primary badge-lg">Soal No. <span id="q-number">1</span></span>
+              <span id="q-type-badge" class="badge badge-ghost">Tipe Soal</span>
+            </div>
+            <label class="label cursor-pointer gap-2">
+              <span class="label-text text-sm">Ragu-ragu</span>
+              <input type="checkbox" id="flag-checkbox" class="checkbox checkbox-warning checkbox-sm" />
+            </label>
+          </div>
+
+          <!-- Dynamic Question Content -->
+          <div id="question-renderer" class="min-h-[300px]">
+            <!-- Content injected by JS -->
+          </div>
+
+          <!-- Navigation Buttons -->
+          <div class="mt-10 flex justify-between pt-6 border-t border-base-300">
+            <Button variant="ghost" id="prev-btn">
+              <svg class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+              Sebelumnya
+            </Button>
+            
+            <Button variant="primary" id="next-btn">
+              Selanjutnya
+              <svg class="h-5 w-5 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            </Button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Templates for Question Types (Hidden) -->
+  <!-- We use these templates to clone into the renderer -->
+  <div class="hidden">
+    <template id="tpl-multiple-choice">
+      <MultipleChoice question={{id:0, question_text:'', options:[]}} />
+    </template>
+    <!-- Add other templates if not using pure JS rendering -->
+  </div>
+
+  <!-- Modals -->
+  <dialog id="confirm-finish-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Konfirmasi Selesai</h3>
+      <p class="py-4">
+        Anda telah menjawab <span id="modal-answered" class="font-bold">0</span> dari <span id="modal-total" class="font-bold">0</span> soal.
+        <br>
+        <span class="text-warning text-sm mt-2 block">Pastikan semua jawaban sudah tersimpan sebelum mengakhiri ujian.</span>
+      </p>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn">Batal</button>
+          <button id="confirm-finish-btn" class="btn btn-primary">Ya, Selesai</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+</ExamLayout>
+
+<script define:vars={{ examId: id }}>
+  import { db } from '@/lib/db/schema';
+  import { decrypt } from '@/lib/db/encryption';
+  import { ExamController } from '@/lib/exam/controller';
+  import { AutoSaveManager } from '@/lib/exam/autoSave';
+  import { TimerController } from '@/lib/exam/timer';
+  import { ActivityLogger } from '@/lib/exam/activityLogger';
+  import { $timerStore, setTimeRemaining } from '@/stores/timer';
+  import { $answersStore, setAnswer, markSaved } from '@/stores/answers';
+
+  // State
+  let controller;
+  let autoSave;
+  let timer;
+  let logger;
+  let currentQuestionId = null;
+
+  // DOM Elements
+  const container = document.getElementById('exam-container');
+  const loading = document.getElementById('exam-loading');
+  const renderer = document.getElementById('question-renderer');
+  const titleEl = document.getElementById('exam-title');
+  const qNumberEl = document.getElementById('q-number');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const flagCheckbox = document.getElementById('flag-checkbox');
+  const navContainer = document.querySelector('.question-navigation .grid'); // Adjust selector based on component structure
+
+  async function init() {
+    try {
+      // 1. Load Data
+      const download = await db.downloaded_exams.get(parseInt(examId));
+      if (!download) {
+        alert('Data ujian tidak ditemukan!');
+        window.location.href = '/siswa/ujian';
+        return;
+      }
+
+      // 2. Decrypt
+      const exam = JSON.parse(decrypt(download.exam_data));
+      const questions = JSON.parse(decrypt(download.questions));
+
+      // 3. Initialize Controllers
+      controller = new ExamController(exam, questions, download.attempt_id);
+      await controller.loadState(); // Load previous answers/progress
+
+      logger = new ActivityLogger(download.attempt_id);
+      autoSave = new AutoSaveManager(download.attempt_id);
+      
+      // Timer Setup
+      const savedState = await db.exam_states.get(download.attempt_id);
+      const initialTime = savedState?.time_remaining_seconds ?? (exam.duration_minutes * 60);
+      
+      timer = new TimerController(initialTime);
+      timer.start((time) => {
+        setTimeRemaining(time); // Update Nanostore for UI component
+        if (time <= 0) finishExam(true);
+      });
+
+      // Auto Save Setup
+      autoSave.start(30000, async () => {
+        await controller.saveState();
+        // Sync to DB handled inside controller, trigger UI update
+        window.dispatchEvent(new CustomEvent('exam:save-success'));
+      });
+
+      // 4. UI Setup
+      titleEl.textContent = exam.title;
+      renderQuestion();
+      updateNavigation();
+      
+      // Show UI
+      loading.classList.add('hidden');
+      container.classList.remove('opacity-0');
+      
+      // Log Start
+      logger.log('exam_resumed', { timestamp: new Date() });
+
+    } catch (e) {
+      console.error(e);
+      alert('Gagal memuat ujian: ' + e.message);
+    }
+  }
+
+  function renderQuestion() {
+    const question = controller.getCurrentQuestion();
+    const index = controller.getCurrentQuestionIndex();
+    const total = controller.getTotalQuestions();
+    const answer = controller.getAnswer(question.id);
+
+    currentQuestionId = question.id;
+    qNumberEl.textContent = index + 1;
+    
+    // Update Buttons
+    prevBtn.disabled = index === 0;
+    nextBtn.textContent = index === total - 1 ? 'Selesai' : 'Selanjutnya';
+    
+    // Update Flag
+    flagCheckbox.checked = controller.isFlagged(question.id);
+
+    // Render Content (Using innerHTML for simplicity in this hybrid mode, 
+    // ideally use framework components if fully hydrated)
+    // NOTE: In a real implementation, you'd likely use a switch case to 
+    // render specific HTML structures based on question.type
+    
+    let html = `<div class="prose max-w-none mb-6">${question.question_html || question.question_text}</div>`;
+    
+    // Media
+    if (question.media_url) {
+      // Add media player logic here
+    }
+
+    // Inputs based on type
+    if (question.type === 'multiple_choice') {
+      html += `<div class="flex flex-col gap-3">`;
+      question.options.forEach((opt, i) => {
+        const checked = answer?.answer_json === opt.id ? 'checked' : '';
+        const char = String.fromCharCode(65 + i);
+        html += `
+          <label class="flex items-center gap-4 p-4 border rounded-lg cursor-pointer hover:bg-base-200 ${checked ? 'bg-primary/10 border-primary' : ''}">
+            <input type="radio" name="ans_${question.id}" value="${opt.id}" class="radio radio-primary" ${checked} onchange="window.handleAnswerChange(${question.id}, ${opt.id})">
+            <span class="badge badge-neutral">${char}</span>
+            <div class="flex-1">${opt.option_html || opt.option_text}</div>
+          </label>
+        `;
+      });
+      html += `</div>`;
+    } else if (question.type === 'essay') {
+      html += `
+        <textarea 
+          class="textarea textarea-bordered w-full h-48" 
+          placeholder="Tulis jawaban Anda..."
+          oninput="window.handleAnswerChange(${question.id}, this.value)"
+        >${answer?.answer_text || ''}</textarea>
+      `;
+    }
+    // ... Add other types
+
+    renderer.innerHTML = html;
+    updateNavigation();
+  }
+
+  function updateNavigation() {
+    // Update sidebar UI based on controller state
+    // This assumes QuestionNavigation.astro has logic to listen to updates 
+    // or we manually update classes here
+    const navItems = document.querySelectorAll('[data-question-index]');
+    navItems.forEach((el, idx) => {
+      const qId = controller.getQuestions()[idx].id;
+      const isCurrent = idx === controller.getCurrentQuestionIndex();
+      const isAnswered = controller.isAnswered(qId);
+      const isFlagged = controller.isFlagged(qId);
+
+      el.className = `aspect-square rounded-lg border-2 font-semibold transition-all flex items-center justify-center
+        ${isCurrent ? 'border-primary bg-primary text-white' : 
+          isAnswered ? 'border-success bg-success/20' : 
+          isFlagged ? 'border-warning bg-warning/20' : 'border-base-300 hover:border-base-400'}
+      `;
+    });
+  }
+
+  // Global handlers for inline HTML events
+  window.handleAnswerChange = (qId, value) => {
+    // Determine answer structure based on type
+    const q = controller.getQuestions().find(q => q.id === qId);
+    let ansData = {
+      question_id: qId,
+      attempt_id: controller.getAttemptId(),
+      answered_at: new Date(),
+      synced: false
+    };
+
+    if (q.type === 'multiple_choice') {
+      ansData.answer_json = parseInt(value);
+    } else {
+      ansData.answer_text = value;
+    }
+
+    controller.saveAnswer(qId, ansData);
+    updateNavigation();
+    
+    // Trigger auto-save indicator
+    window.dispatchEvent(new CustomEvent('exam:save-start'));
+  };
+
+  // Event Listeners
+  prevBtn.addEventListener('click', () => {
+    controller.previousQuestion();
+    renderQuestion();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (controller.getCurrentQuestionIndex() === controller.getTotalQuestions() - 1) {
+      document.getElementById('confirm-finish-modal').showModal();
+      // Update stats in modal
+      document.getElementById('modal-answered').textContent = controller.getAnsweredCount();
+      document.getElementById('modal-total').textContent = controller.getTotalQuestions();
+    } else {
+      controller.nextQuestion();
+      renderQuestion();
+    }
+  });
+
+  flagCheckbox.addEventListener('change', (e) => {
+    controller.toggleFlag(currentQuestionId);
+    updateNavigation();
+  });
+
+  document.getElementById('confirm-finish-btn').addEventListener('click', () => {
+    finishExam();
+  });
+
+  // Sidebar navigation click
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-question-index]');
+    if (target) {
+      const idx = parseInt(target.dataset.questionIndex);
+      controller.goToQuestion(idx);
+      renderQuestion();
+    }
+  });
+
+  async function finishExam(isAuto = false) {
+    loading.classList.remove('hidden');
+    loading.querySelector('p').textContent = 'Menyimpan & Mengumpulkan...';
+    
+    try {
+      await controller.saveState();
+      timer.stop();
+      autoSave.stop();
+      
+      const attemptId = controller.getAttemptId();
+      
+      // Add to sync queue
+      await db.sync_queue.add({
+        attempt_id: attemptId,
+        type: 'submission',
+        data: {
+          submitted_at: new Date(),
+          answers: controller.getAnswers(),
+          is_auto_submit: isAuto
+        },
+        priority: 5,
+        retry_count: 0,
+        max_retries: 10,
+        status: 'pending',
+        created_at: new Date()
+      });
+
+      window.location.href = `/siswa/ujian/result?attemptId=${attemptId}`;
+    } catch (e) {
+      alert('Gagal submit: ' + e.message);
+      loading.classList.add('hidden');
+    }
+  }
+
+  // Prevent accidental exit
+  window.onbeforeunload = () => {
+    return "Apakah Anda yakin ingin keluar? Jawaban mungkin belum tersimpan.";
+  };
+
+  init();
+</script>

@@ -1,0 +1,28 @@
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import DownloadProgress from '@/components/sync/DownloadProgress.astro';
+
+const examId = Astro.url.searchParams.get('id');
+
+if (!examId) {
+  return Astro.redirect('/siswa/ujian');
+}
+---
+
+<MainLayout title="Download Ujian" hideNav={true}>
+  <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
+    <div class="w-full max-w-lg">
+      <div class="text-center mb-8">
+        <h1 class="text-2xl font-bold mb-2">Persiapan Ujian Offline</h1>
+        <p class="text-base-content/70">Mohon tunggu, sedang mengunduh paket soal dan media...</p>
+      </div>
+
+      <DownloadProgress examId={parseInt(examId)} />
+      
+      <div class="mt-8 text-center text-sm text-base-content/50">
+        <p>Pastikan koneksi internet stabil selama proses download.</p>
+        <p>Jangan tutup halaman ini.</p>
+      </div>
+    </div>
+  </div>
+</MainLayout>

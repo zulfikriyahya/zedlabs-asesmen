@@ -1,67 +1,45 @@
-// src/lib/api/client.ts
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosError } from 'axios';
 import { $authStore } from '@/stores/auth';
 
-// Base URL from environment variable
 const BASE_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:8000/api';
 
-// Create axios instance
-export const apiClient: AxiosInstance = axios.create({
+export const apiClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor - add auth token
-apiClient.interceptors.request.use(
-  (config) => {
-    const authState = $authStore.get();
-    
-    if (authState.accessToken) {
-      config.headers.Authorization = `Bearer ${authState.accessToken}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+// Request Interceptor
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
 
-// Response interceptor - handle errors
+// Response Interceptor
 apiClient.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Unauthorized - try to refresh token
-      // If refresh fails, redirect to login
-      const authState = $authStore.get();
-      
-      if (authState.isAuthenticated) {
-        try {
-          // Attempt token refresh
-          const { refreshAccessToken } = await import('./auth');
-          const newToken = await refreshAccessToken();
-          
-          // Retry the original request
-          if (error.config) {
-            error.config.headers.Authorization = `Bearer ${newToken}`;
-            return axios.request(error.config);
-          }
-        } catch (refreshError) {
-          // Refresh failed - logout
-          const { logout } = await import('./auth');
-          await logout();
-        }
-      }
+    // 1. Handle Network Error (Offline)
+    if (!error.response) {
+      // Ini terjadi jika tidak ada koneksi internet atau server down
+      const customError = new Error('OFFLINE_MODE');
+      (customError as any).isNetworkError = true;
+      (customError as any).originalRequest = error.config;
+      return Promise.reject(customError);
     }
-    
+
+    // 2. Handle Unauthorized (401) - Auto Refresh Logic
+    if (error.response.status === 401) {
+      // Logic refresh token (simplified)
+      // Di real app, gunakan queue untuk menampung request selama refreshing
+      window.location.href = '/login'; 
+    }
+
     return Promise.reject(error);
   }
 );
-
-export default apiClient;

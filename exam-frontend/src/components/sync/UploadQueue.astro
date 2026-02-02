@@ -47,19 +47,24 @@
     emptyState?.classList.add('hidden');
     
     queueList.innerHTML = items.map(item => {
-      const statusBadge = {
-        pending: '<span class="badge badge-warning badge-sm">Pending</span>',
-        processing: '<span class="badge badge-info badge-sm">Processing</span>',
-        failed: '<span class="badge badge-error badge-sm">Failed</span>'
-      }[item.status];
+      // Helper untuk status badge
+      let statusBadge = '';
+      if (item.status === 'pending') {
+        statusBadge = '<span class="badge badge-warning badge-sm">Pending</span>';
+      } else if (item.status === 'processing') {
+        statusBadge = '<span class="badge badge-info badge-sm">Processing</span>';
+      } else if (item.status === 'failed') {
+        statusBadge = '<span class="badge badge-error badge-sm">Failed</span>';
+      }
       
-      const typeLabel = {
-        answer: 'Jawaban',
-        media: 'Media',
-        activity: 'Aktivitas',
-        submission: 'Submission'
-      }[item.type];
+      // Helper untuk tipe label
+      let typeLabel = item.type;
+      if (item.type === 'answer') typeLabel = 'Jawaban';
+      else if (item.type === 'media') typeLabel = 'Media';
+      else if (item.type === 'activity') typeLabel = 'Aktivitas';
+      else if (item.type === 'submission') typeLabel = 'Submission';
       
+      // PERBAIKAN DI SINI: Menggunakan ${ condition ? ... : '' }
       return `
         <div class="card bg-base-200 card-compact">
           <div class="card-body">
@@ -69,9 +74,7 @@
                 <p class="text-xs text-base-content/70">
                   Attempt ID: ${item.attempt_id}
                 </p>
-                {item.error_message && `
-                  <p class="text-xs text-error mt-1">${item.error_message}</p>
-                `}
+                ${item.error_message ? `<p class="text-xs text-error mt-1">${item.error_message}</p>` : ''}
               </div>
               <div class="flex flex-col items-end gap-1">
                 ${statusBadge}
@@ -96,8 +99,10 @@
     window.dispatchEvent(new CustomEvent('sync:retry-all'));
   });
   
+  // Initial Load
   loadQueue();
   
+  // Listen for sync progress
   window.addEventListener('sync:progress', () => {
     loadQueue();
   });

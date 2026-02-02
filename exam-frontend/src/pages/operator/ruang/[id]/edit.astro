@@ -1,0 +1,33 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Ruang" role="operator">
+  <div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Edit Ruang #{id}</h2>
+        <form class="space-y-4">
+          <Input name="name" label="Nama Ruang" value="Lab Komputer 1" required />
+          <Input type="number" name="capacity" label="Kapasitas Peserta" value="36" required />
+          
+          <div class="form-control">
+            <label class="label"><span class="label-text">Pengawas Default</span></label>
+            <select class="select select-bordered">
+              <option value="1" selected>Budi Santoso</option>
+              <option value="2">Siti Aminah</option>
+            </select>
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/operator/ruang" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

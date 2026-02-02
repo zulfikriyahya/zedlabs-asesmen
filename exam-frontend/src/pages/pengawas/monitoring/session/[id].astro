@@ -1,0 +1,38 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import StudentProgressCard from '@/components/monitoring/StudentProgressCard.astro';
+
+const { id } = Astro.params;
+
+// Mock Data
+const students = [
+  {
+    student: { id: 1, name: 'Adi Pratama', student_id: '1001' },
+    progress: { attempt_id: 101, status: 'in_progress', answered: 15, total_questions: 40, time_remaining: 1800, warnings: 0, last_activity: new Date().toISOString() }
+  },
+  {
+    student: { id: 2, name: 'Budi Santoso', student_id: '1002' },
+    progress: { attempt_id: 102, status: 'paused', answered: 10, total_questions: 40, time_remaining: 2000, warnings: 2, last_activity: new Date().toISOString() }
+  }
+];
+---
+
+<DashboardLayout title={`Monitoring Sesi #${id}`} role="pengawas">
+  <div class="mb-6 flex justify-between items-center">
+    <div class="flex gap-2">
+      <div class="badge badge-lg badge-primary">Total: 36</div>
+      <div class="badge badge-lg badge-success">Online: 34</div>
+      <div class="badge badge-lg badge-error">Offline: 2</div>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-sm btn-warning">Force Finish All</button>
+      <a href="/pengawas/monitoring/live" class="btn btn-sm btn-ghost">Kembali</a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {students.map(item => (
+      <StudentProgressCard student={item.student} progress={item.progress as any} />
+    ))}
+  </div>
+</DashboardLayout>

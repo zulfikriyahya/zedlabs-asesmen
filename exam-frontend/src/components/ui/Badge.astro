@@ -1,0 +1,44 @@
+---
+interface Props {
+  variant?: 'primary' | 'secondary' | 'accent' | 'ghost' | 'info' | 'success' | 'warning' | 'error' | 'neutral';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  outline?: boolean;
+  class?: string;
+}
+
+const {
+  variant = 'neutral',
+  size = 'md',
+  outline = false,
+  class: className = '',
+} = Astro.props;
+
+const variantClass = {
+  primary: 'badge-primary',
+  secondary: 'badge-secondary',
+  accent: 'badge-accent',
+  ghost: 'badge-ghost',
+  info: 'badge-info',
+  success: 'badge-success',
+  warning: 'badge-warning',
+  error: 'badge-error',
+  neutral: 'badge-neutral',
+}[variant];
+
+const sizeClass = {
+  xs: 'badge-xs',
+  sm: 'badge-sm',
+  md: 'badge-md',
+  lg: 'badge-lg',
+}[size];
+---
+
+<div class:list={[
+  'badge',
+  variantClass,
+  sizeClass,
+  { 'badge-outline': outline },
+  className
+]}>
+  <slot />
+</div>

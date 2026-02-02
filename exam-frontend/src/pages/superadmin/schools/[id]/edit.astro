@@ -1,0 +1,48 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Sekolah" role="superadmin">
+  <div class="max-w-3xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Edit Sekolah #{id}</h2>
+        <form class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="name" label="Nama Sekolah" value="SMA Negeri 1 Jakarta" required />
+            <Input name="subdomain" label="Subdomain" value="sman1jkt" disabled />
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-4">
+              <span class="label-text">Status Sekolah</span>
+              <input type="checkbox" class="toggle toggle-success" checked />
+              <span class="label-text font-bold text-success">Aktif</span>
+            </label>
+          </div>
+
+          <div class="divider">Paket Langganan</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Paket</span></label>
+              <select class="select select-bordered">
+                <option value="basic">Basic</option>
+                <option value="premium" selected>Premium</option>
+              </select>
+            </div>
+            <Input name="max_students" type="number" label="Limit Siswa" value="1000" />
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/superadmin/schools" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

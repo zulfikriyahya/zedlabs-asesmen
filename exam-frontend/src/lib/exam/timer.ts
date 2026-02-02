@@ -1,60 +1,76 @@
 // src/lib/exam/timer.ts
 export class TimerController {
-  private timeRemaining: number;
+  private durationSeconds: number;
+  private endTime: number;
   private intervalId: number | null = null;
-  private onTickCallback: ((timeRemaining: number) => void) | null = null;
+  private onTick: (remaining: number) => void;
+  private onComplete: () => void;
   private isPaused: boolean = false;
+  private pausedTimeRemaining: number = 0;
 
-  constructor(durationSeconds: number) {
-    this.timeRemaining = durationSeconds;
+  constructor(
+    durationSeconds: number, 
+    onTick: (remaining: number) => void,
+    onComplete: () => void
+  ) {
+    this.durationSeconds = durationSeconds;
+    this.onTick = onTick;
+    this.onComplete = onComplete;
+    // Set initial end time
+    this.endTime = Date.now() + (durationSeconds * 1000);
   }
 
-  start(onTick: (timeRemaining: number) => void): void {
-    this.onTickCallback = onTick;
-    this.isPaused = false;
+  start() {
+    if (this.intervalId) return;
 
-    this.intervalId = window.setInterval(() => {
-      if (!this.isPaused && this.timeRemaining > 0) {
-        this.timeRemaining--;
-        this.onTickCallback?.(this.timeRemaining);
-      }
+    // Jika resume dari pause, hitung ulang endTime
+    if (this.isPaused) {
+      this.endTime = Date.now() + (this.pausedTimeRemaining * 1000);
+      this.isPaused = false;
+    }
 
-      if (this.timeRemaining <= 0) {
+    const tick = () => {
+      const now = Date.now();
+      const remainingMs = this.endTime - now;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+
+      if (remainingSec <= 0) {
         this.stop();
+        this.onTick(0);
+        this.onComplete();
+      } else {
+        this.onTick(remainingSec);
       }
-    }, 1000);
+    };
 
-    this.onTickCallback(this.timeRemaining);
+    // Run immediately
+    tick();
+    
+    // Check every second
+    this.intervalId = window.setInterval(tick, 1000);
   }
 
-  pause(): void {
+  pause() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    
+    const now = Date.now();
+    const remainingMs = Math.max(0, this.endTime - now);
+    this.pausedTimeRemaining = remainingMs / 1000;
     this.isPaused = true;
   }
 
-  resume(): void {
-    this.isPaused = false;
-  }
-
-  stop(): void {
+  stop() {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
   }
 
-  getTimeRemaining(): number {
-    return this.timeRemaining;
-  }
-
-  setTimeRemaining(seconds: number): void {
-    this.timeRemaining = seconds;
-  }
-
-  addTime(seconds: number): void {
-    this.timeRemaining += seconds;
-  }
-
-  subtractTime(seconds: number): void {
-    this.timeRemaining = Math.max(0, this.timeRemaining - seconds);
+  // Sinkronisasi waktu jika server mendeteksi drift
+  sync(serverRemainingSeconds: number) {
+    this.endTime = Date.now() + (serverRemainingSeconds * 1000);
   }
 }

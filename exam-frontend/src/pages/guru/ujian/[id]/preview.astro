@@ -1,0 +1,37 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import MultipleChoice from '@/components/exam/QuestionTypes/MultipleChoice.astro';
+import Essay from '@/components/exam/QuestionTypes/Essay.astro';
+
+const { id } = Astro.params;
+
+// Mock Data Fetching
+const exam = { title: 'Preview: Matematika Dasar' };
+const questions = [
+  { id: 1, type: 'multiple_choice', question_text: '1 + 1 = ?', options: [{id:1, option_text:'2'}, {id:2, option_text:'3'}] },
+  { id: 2, type: 'essay', question_text: 'Jelaskan teori relativitas!' }
+];
+---
+
+<DashboardLayout title={exam.title} role="guru">
+  <div class="max-w-4xl mx-auto space-y-8">
+    <div class="alert alert-warning">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+      <span>Mode Preview: Jawaban tidak akan disimpan.</span>
+    </div>
+
+    {questions.map((q, index) => (
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="badge badge-neutral mb-2">Soal No. {index + 1}</div>
+          {q.type === 'multiple_choice' && <MultipleChoice question={q as any} readonly={true} />}
+          {q.type === 'essay' && <Essay question={q as any} readonly={true} />}
+        </div>
+      </div>
+    ))}
+
+    <div class="flex justify-center">
+      <button onclick="history.back()" class="btn btn-primary">Kembali</button>
+    </div>
+  </div>
+</DashboardLayout>

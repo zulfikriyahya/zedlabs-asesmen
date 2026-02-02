@@ -1,133 +1,53 @@
 // src/stores/exam.ts
-import { atom, computed } from 'nanostores';
-import type { Exam, ExamAttempt, ExamState } from '@/types/exam';
+import { atom, map } from 'nanostores';
 import type { Question } from '@/types/question';
 
-interface CurrentExamState {
-  exam: Exam | null;
-  attempt: ExamAttempt | null;
-  questions: Question[];
-  currentQuestionIndex: number;
-  flags: number[];
-  isLoading: boolean;
-  error: string | null;
-}
-
-const initialState: CurrentExamState = {
-  exam: null,
-  attempt: null,
-  questions: [],
+// State untuk status UI Ujian
+export const $examUI = map({
+  isLoading: true,
+  isSubmitting: false,
   currentQuestionIndex: 0,
-  flags: [],
-  isLoading: false,
-  error: null,
-};
-
-export const $examStore = atom<CurrentExamState>(initialState);
-
-// Computed values
-export const $currentQuestion = computed($examStore, (state) => {
-  if (state.questions.length === 0) return null;
-  return state.questions[state.currentQuestionIndex] || null;
+  totalQuestions: 0,
+  timeRemaining: 0, // dalam detik
+  isSidebarOpen: false,
 });
 
-export const $totalQuestions = computed($examStore, (state) => {
-  return state.questions.length;
-});
-
-export const $hasNext = computed($examStore, (state) => {
-  return state.currentQuestionIndex < state.questions.length - 1;
-});
-
-export const $hasPrevious = computed($examStore, (state) => {
-  return state.currentQuestionIndex > 0;
-});
+// State untuk status jawaban (untuk navigasi visual)
+// Key: questionId, Value: { answered: boolean, flagged: boolean }
+export const $questionStatus = map<Record<number, { answered: boolean; flagged: boolean }>>({});
 
 // Actions
-export function setExam(exam: Exam): void {
-  $examStore.set({
-    ...$examStore.get(),
-    exam,
-  });
+export function setExamLoading(loading: boolean) {
+  $examUI.setKey('isLoading', loading);
 }
 
-export function setAttempt(attempt: ExamAttempt): void {
-  $examStore.set({
-    ...$examStore.get(),
-    attempt,
-  });
+export function setCurrentIndex(index: number) {
+  $examUI.setKey('currentQuestionIndex', index);
 }
 
-export function setQuestions(questions: Question[]): void {
-  $examStore.set({
-    ...$examStore.get(),
-    questions,
-  });
+export function updateTime(seconds: number) {
+  $examUI.setKey('timeRemaining', seconds);
 }
 
-export function setCurrentQuestionIndex(index: number): void {
-  const state = $examStore.get();
-  if (index >= 0 && index < state.questions.length) {
-    $examStore.set({
-      ...state,
-      currentQuestionIndex: index,
-    });
-  }
+export function toggleSidebar() {
+  const current = $examUI.get().isSidebarOpen;
+  $examUI.setKey('isSidebarOpen', !current);
 }
 
-export function nextQuestion(): void {
-  const state = $examStore.get();
-  if (state.currentQuestionIndex < state.questions.length - 1) {
-    setCurrentQuestionIndex(state.currentQuestionIndex + 1);
-  }
-}
-
-export function previousQuestion(): void {
-  const state = $examStore.get();
-  if (state.currentQuestionIndex > 0) {
-    setCurrentQuestionIndex(state.currentQuestionIndex - 1);
-  }
-}
-
-export function goToQuestion(index: number): void {
-  setCurrentQuestionIndex(index);
-}
-
-export function toggleFlag(questionId: number): void {
-  const state = $examStore.get();
-  const flags = [...state.flags];
-  const index = flags.indexOf(questionId);
+export function updateQuestionStatus(id: number, status: Partial<{ answered: boolean; flagged: boolean }>) {
+  const current = $questionStatus.get();
+  const existing = current[id] || { answered: false, flagged: false };
   
-  if (index > -1) {
-    flags.splice(index, 1);
-  } else {
-    flags.push(questionId);
-  }
-  
-  $examStore.set({
-    ...state,
-    flags,
+  $questionStatus.set({
+    ...current,
+    [id]: { ...existing, ...status }
   });
 }
 
-export function isFlagged(questionId: number): boolean {
-  return $examStore.get().flags.includes(questionId);
-}
-
-export function setLoading(isLoading: boolean): void {
-  $examStore.set({
-    ...$examStore.get(),
-    isLoading,
+export function initQuestionStatuses(questions: Question[]) {
+  const statusMap: Record<number, { answered: boolean; flagged: boolean }> = {};
+  questions.forEach(q => {
+    statusMap[q.id] = { answered: false, flagged: false };
   });
-}
-
-export function setError(error: string | null): void {
-  $examStore.set({
-    ...$examStore.get(),
-    error,
-  });
-}
-
-export function resetExam(): void {
-  $examStore.set(initialState);
+  $questionStatus.set(statusMap);
 }

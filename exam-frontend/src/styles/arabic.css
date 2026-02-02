@@ -1,0 +1,46 @@
+/* src/styles/arabic.css */
+
+/* Define Arabic Fonts */
+@font-face {
+  font-family: 'Amiri';
+  src: url('/fonts/Amiri-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Scheherazade';
+  src: url('/fonts/Scheherazade-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Utility Classes */
+.font-arabic {
+  font-family: 'Amiri', serif;
+  line-height: 1.8;
+}
+
+.font-quran {
+  font-family: 'Scheherazade', serif;
+  line-height: 2.2;
+}
+
+/* RTL Support */
+.rtl {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Quranic Text Specifics */
+.ayat-number {
+  font-family: sans-serif;
+  font-size: 0.8em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  padding: 2px 6px;
+  margin: 0 5px;
+  display: inline-block;
+}

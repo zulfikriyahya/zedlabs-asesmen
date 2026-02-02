@@ -4969,7 +4969,67 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 #### 📄 File: `./src/components/questions/MatchingEditor.astro`
 
 ```astro
+---
+// Editor untuk Soal Menjodohkan
+---
 
+<div id="pairs-container" class="space-y-4">
+  <!-- Pairs will be injected here -->
+</div>
+
+<button type="button" id="add-pair-btn" class="btn btn-outline btn-sm mt-4 w-full border-dashed">
+  + Tambah Pasangan
+</button>
+
+<template id="pair-template">
+  <div class="pair-item grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto] gap-2 items-start bg-base-200 p-3 rounded-lg">
+    
+    <!-- Left Side -->
+    <div class="form-control">
+      <label class="label text-xs"><span class="label-text">Sisi Kiri (Pertanyaan)</span></label>
+      <input type="text" class="input input-bordered input-sm w-full left-text" placeholder="Teks..." required />
+      <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-1 left-media" accept="image/*" />
+    </div>
+
+    <div class="self-center pt-6 text-base-content/50">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+      </svg>
+    </div>
+
+    <!-- Right Side -->
+    <div class="form-control">
+      <label class="label text-xs"><span class="label-text">Sisi Kanan (Jawaban)</span></label>
+      <input type="text" class="input input-bordered input-sm w-full right-text" placeholder="Teks..." required />
+      <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-1 right-media" accept="image/*" />
+    </div>
+
+    <button type="button" class="btn btn-ghost btn-xs text-error self-center mt-6 remove-pair">✕</button>
+  </div>
+</template>
+
+<script>
+  const container = document.getElementById('pairs-container');
+  const addBtn = document.getElementById('add-pair-btn');
+  const template = document.getElementById('pair-template') as HTMLTemplateElement;
+  
+  function addPair() {
+    const clone = template.content.cloneNode(true) as DocumentFragment;
+    const item = clone.querySelector('.pair-item');
+    const removeBtn = clone.querySelector('.remove-pair');
+    
+    removeBtn?.addEventListener('click', () => {
+      item?.remove();
+    });
+    
+    container?.appendChild(clone);
+  }
+  
+  addBtn?.addEventListener('click', addPair);
+  
+  // Add initial pairs
+  for(let i=0; i<2; i++) addPair();
+</script>
 ```
 
 ---
@@ -4977,7 +5037,82 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 #### 📄 File: `./src/components/questions/MediaUpload.astro`
 
 ```astro
+---
+interface Props {
+  id: string;
+  label?: string;
+  accept?: string;
+  maxSizeMB?: number;
+}
 
+const { id, label = 'Upload Media', accept = 'image/*,audio/*,video/*', maxSizeMB = 5 } = Astro.props;
+---
+
+<div class="form-control w-full">
+  <label class="label">
+    <span class="label-text">{label}</span>
+    <span class="label-text-alt">Max {maxSizeMB}MB</span>
+  </label>
+  <input 
+    type="file" 
+    id={id} 
+    class="file-input file-input-bordered w-full" 
+    accept={accept}
+    data-max-size={maxSizeMB * 1024 * 1024}
+  />
+  <div id={`${id}-preview`} class="mt-4 hidden">
+    <!-- Preview container -->
+  </div>
+</div>
+
+<script define:vars={{ id }}>
+  const input = document.getElementById(id);
+  const preview = document.getElementById(`${id}-preview`);
+  
+  input?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Validate size
+    const maxSize = parseInt(input.dataset.maxSize);
+    if (file.size > maxSize) {
+      alert(`File terlalu besar. Maksimal ${maxSize / (1024*1024)}MB`);
+      input.value = '';
+      return;
+    }
+    
+    // Show preview
+    if (preview) {
+      preview.classList.remove('hidden');
+      preview.innerHTML = '';
+      
+      if (file.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.className = 'max-h-48 rounded-lg border';
+        preview.appendChild(img);
+      } else if (file.type.startsWith('audio/')) {
+        const audio = document.createElement('audio');
+        audio.src = URL.createObjectURL(file);
+        audio.controls = true;
+        audio.className = 'w-full';
+        preview.appendChild(audio);
+      } else if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.controls = true;
+        video.className = 'max-h-48 rounded-lg border';
+        preview.appendChild(video);
+      }
+    }
+    
+    // Dispatch event for parent form
+    input.dispatchEvent(new CustomEvent('media-selected', { 
+      bubbles: true, 
+      detail: { file } 
+    }));
+  });
+</script>
 ```
 
 ---
@@ -4985,7 +5120,68 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 #### 📄 File: `./src/components/questions/OptionsEditor.astro`
 
 ```astro
+---
+// Editor untuk Pilihan Ganda
+---
 
+<div id="options-container" class="space-y-4">
+  <!-- Option items will be injected here -->
+</div>
+
+<button type="button" id="add-option-btn" class="btn btn-outline btn-sm mt-4 w-full border-dashed">
+  + Tambah Opsi
+</button>
+
+<template id="option-template">
+  <div class="option-item flex gap-2 items-start bg-base-200 p-3 rounded-lg">
+    <div class="pt-3">
+      <input type="radio" name="correct_answer" class="radio radio-primary" title="Tandai sebagai jawaban benar" />
+    </div>
+    <div class="flex-1 space-y-2">
+      <input type="text" class="input input-bordered input-sm w-full option-text" placeholder="Teks Opsi Jawaban" required />
+      <div class="collapse collapse-arrow border border-base-300 bg-base-100 rounded-box">
+        <input type="checkbox" /> 
+        <div class="collapse-title text-xs font-medium min-h-0 py-2">
+          Media & HTML (Opsional)
+        </div>
+        <div class="collapse-content text-sm">
+          <textarea class="textarea textarea-bordered textarea-xs w-full mt-2 option-html" placeholder="HTML Content (MathJax/Latex)"></textarea>
+          <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-2 option-media" accept="image/*" />
+        </div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-ghost btn-xs text-error remove-option">✕</button>
+  </div>
+</template>
+
+<script>
+  const container = document.getElementById('options-container');
+  const addBtn = document.getElementById('add-option-btn');
+  const template = document.getElementById('option-template') as HTMLTemplateElement;
+  
+  let optionCount = 0;
+  
+  function addOption() {
+    const clone = template.content.cloneNode(true) as DocumentFragment;
+    const item = clone.querySelector('.option-item');
+    const radio = clone.querySelector('input[type="radio"]') as HTMLInputElement;
+    const removeBtn = clone.querySelector('.remove-option');
+    
+    radio.value = optionCount.toString();
+    optionCount++;
+    
+    removeBtn?.addEventListener('click', () => {
+      item?.remove();
+    });
+    
+    container?.appendChild(clone);
+  }
+  
+  addBtn?.addEventListener('click', addOption);
+  
+  // Add initial options (A, B, C, D)
+  for(let i=0; i<4; i++) addOption();
+</script>
 ```
 
 ---
@@ -4993,7 +5189,90 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 #### 📄 File: `./src/components/questions/QuestionEditor.astro`
 
 ```astro
+---
+import MediaUpload from './MediaUpload.astro';
+import OptionsEditor from './OptionsEditor.astro';
+import Select from '@/components/ui/Select.astro';
 
+interface Props {
+  examId: string;
+}
+
+const { examId } = Astro.props;
+---
+
+<form id="question-form" class="space-y-8">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title">Konten Soal</h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Select
+          name="type"
+          label="Tipe Soal"
+          options={[
+            { value: 'multiple_choice', label: 'Pilihan Ganda' },
+            { value: 'multiple_choice_complex', label: 'Pilihan Ganda Kompleks' },
+            { value: 'true_false', label: 'Benar/Salah' },
+            { value: 'matching', label: 'Menjodohkan' },
+            { value: 'short_answer', label: 'Isian Singkat' },
+            { value: 'essay', label: 'Uraian / Esai' },
+          ]}
+          required
+        />
+        
+        <div class="form-control">
+          <label class="label"><span class="label-text">Bobot Poin</span></label>
+          <input type="number" name="points" value="1" min="0" class="input input-bordered" required />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <label class="label"><span class="label-text">Pertanyaan (Teks)</span></label>
+        <textarea name="question_text" class="textarea textarea-bordered h-24" required></textarea>
+      </div>
+
+      <div class="collapse collapse-arrow bg-base-200 rounded-box">
+        <input type="checkbox" /> 
+        <div class="collapse-title font-medium">
+          Media & Rich Text Editor
+        </div>
+        <div class="collapse-content">
+          <div class="form-control mb-4">
+            <label class="label"><span class="label-text">Pertanyaan (HTML / Rich Text)</span></label>
+            <textarea name="question_html" class="textarea textarea-bordered font-mono text-sm h-32" placeholder="<p>Gunakan tag HTML atau MathJax...</p>"></textarea>
+          </div>
+          <MediaUpload id="question-media" label="Media Pendukung Soal" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title">Jawaban</h2>
+      
+      <!-- Dynamic Answer Section based on Type -->
+      <div id="answer-editor-container">
+        <div id="editor-multiple_choice">
+          <OptionsEditor />
+        </div>
+        <!-- Other editors would be conditionally shown here -->
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-4">
+    <button type="button" class="btn btn-ghost" onclick="history.back()">Batal</button>
+    <button type="submit" class="btn btn-primary">Simpan Soal</button>
+  </div>
+</form>
+
+<script>
+  // Logic to handle form submission and type switching
+  const typeSelect = document.getElementById('type');
+  // Implementation for switching editors would go here
+</script>
 ```
 
 ---
@@ -5001,7 +5280,83 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 #### 📄 File: `./src/components/questions/TagSelector.astro`
 
 ```astro
+---
+interface Props {
+  initialTags?: string[];
+  name?: string;
+}
 
+const { initialTags = [], name = 'tags' } = Astro.props;
+---
+
+<div class="form-control w-full">
+  <label class="label">
+    <span class="label-text">Tags / Kategori</span>
+  </label>
+  
+  <div class="flex flex-wrap gap-2 mb-2" id="tags-container">
+    {initialTags.map(tag => (
+      <div class="badge badge-primary gap-2">
+        {tag}
+        <input type="hidden" name={`${name}[]`} value={tag} />
+        <button type="button" class="btn btn-ghost btn-xs btn-circle text-white remove-tag">✕</button>
+      </div>
+    ))}
+  </div>
+
+  <div class="flex gap-2">
+    <input 
+      type="text" 
+      id="tag-input" 
+      class="input input-bordered input-sm flex-1" 
+      placeholder="Ketik tag lalu tekan Enter..." 
+    />
+    <button type="button" id="add-tag-btn" class="btn btn-sm btn-ghost">Tambah</button>
+  </div>
+</div>
+
+<script>
+  const container = document.getElementById('tags-container');
+  const input = document.getElementById('tag-input') as HTMLInputElement;
+  const addBtn = document.getElementById('add-tag-btn');
+
+  function createTag(text: string) {
+    const div = document.createElement('div');
+    div.className = 'badge badge-primary gap-2 animate-fade-in';
+    div.innerHTML = `
+      ${text}
+      <input type="hidden" name="tags[]" value="${text}" />
+      <button type="button" class="btn btn-ghost btn-xs btn-circle text-white remove-tag">✕</button>
+    `;
+    
+    div.querySelector('.remove-tag')?.addEventListener('click', () => div.remove());
+    return div;
+  }
+
+  function addTag() {
+    const text = input.value.trim();
+    if (text) {
+      container?.appendChild(createTag(text));
+      input.value = '';
+    }
+  }
+
+  addBtn?.addEventListener('click', addTag);
+  
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTag();
+    }
+  });
+
+  // Setup initial remove buttons
+  document.querySelectorAll('.remove-tag').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      (e.target as HTMLElement).closest('.badge')?.remove();
+    });
+  });
+</script>
 ```
 
 ---
@@ -5468,7 +5823,50 @@ const typeClass = {
 #### 📄 File: `./src/components/ui/Badge.astro`
 
 ```astro
+---
+interface Props {
+  variant?: 'primary' | 'secondary' | 'accent' | 'ghost' | 'info' | 'success' | 'warning' | 'error' | 'neutral';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  outline?: boolean;
+  class?: string;
+}
 
+const {
+  variant = 'neutral',
+  size = 'md',
+  outline = false,
+  class: className = '',
+} = Astro.props;
+
+const variantClass = {
+  primary: 'badge-primary',
+  secondary: 'badge-secondary',
+  accent: 'badge-accent',
+  ghost: 'badge-ghost',
+  info: 'badge-info',
+  success: 'badge-success',
+  warning: 'badge-warning',
+  error: 'badge-error',
+  neutral: 'badge-neutral',
+}[variant];
+
+const sizeClass = {
+  xs: 'badge-xs',
+  sm: 'badge-sm',
+  md: 'badge-md',
+  lg: 'badge-lg',
+}[size];
+---
+
+<div class:list={[
+  'badge',
+  variantClass,
+  sizeClass,
+  { 'badge-outline': outline },
+  className
+]}>
+  <slot />
+</div>
 ```
 
 ---
@@ -5687,7 +6085,42 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Modal.astro`
 
 ```astro
+---
+interface Props {
+  id: string;
+  title?: string;
+  open?: boolean;
+  closeOnClickOutside?: boolean;
+}
 
+const { id, title, open = false, closeOnClickOutside = true } = Astro.props;
+---
+
+<dialog id={id} class="modal" open={open}>
+  <div class="modal-box">
+    {closeOnClickOutside && (
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+      </form>
+    )}
+    
+    {title && <h3 class="font-bold text-lg mb-4">{title}</h3>}
+    
+    <div class="modal-content">
+      <slot />
+    </div>
+    
+    <div class="modal-action">
+      <slot name="actions" />
+    </div>
+  </div>
+  
+  {closeOnClickOutside && (
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  )}
+</dialog>
 ```
 
 ---
@@ -5695,7 +6128,66 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Select.astro`
 
 ```astro
+---
+interface Props {
+  name: string;
+  label?: string;
+  options: Array<{ value: string | number; label: string; disabled?: boolean }>;
+  value?: string | number;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  error?: string;
+  class?: string;
+}
 
+const {
+  name,
+  label,
+  options,
+  value,
+  placeholder = 'Pilih salah satu...',
+  required = false,
+  disabled = false,
+  error,
+  class: className = '',
+} = Astro.props;
+---
+
+<div class:list={['form-control', className]}>
+  {label && (
+    <label class="label" for={name}>
+      <span class="label-text">
+        {label}
+        {required && <span class="text-error ml-1">*</span>}
+      </span>
+    </label>
+  )}
+  
+  <select
+    id={name}
+    name={name}
+    required={required}
+    disabled={disabled}
+    class:list={[
+      'select select-bordered w-full',
+      { 'select-error': error },
+    ]}
+  >
+    <option value="" disabled selected={!value}>{placeholder}</option>
+    {options.map((opt) => (
+      <option value={opt.value} selected={opt.value === value} disabled={opt.disabled}>
+        {opt.label}
+      </option>
+    ))}
+  </select>
+  
+  {error && (
+    <label class="label">
+      <span class="label-text-alt text-error">{error}</span>
+    </label>
+  )}
+</div>
 ```
 
 ---
@@ -5703,7 +6195,26 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Spinner.astro`
 
 ```astro
+---
+interface Props {
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  variant?: 'primary' | 'secondary' | 'accent' | 'info' | 'success' | 'warning' | 'error';
+  class?: string;
+}
 
+const { size = 'md', variant, class: className = '' } = Astro.props;
+
+const sizeClass = {
+  xs: 'loading-xs',
+  sm: 'loading-sm',
+  md: 'loading-md',
+  lg: 'loading-lg',
+}[size];
+
+const variantClass = variant ? `text-${variant}` : '';
+---
+
+<span class:list={['loading loading-spinner', sizeClass, variantClass, className]}></span>
 ```
 
 ---
@@ -5711,7 +6222,26 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Table.astro`
 
 ```astro
+---
+interface Props {
+  compact?: boolean;
+  zebra?: boolean;
+  class?: string;
+}
 
+const { compact = false, zebra = false, class: className = '' } = Astro.props;
+---
+
+<div class="overflow-x-auto">
+  <table class:list={[
+    'table',
+    { 'table-xs': compact },
+    { 'table-zebra': zebra },
+    className
+  ]}>
+    <slot />
+  </table>
+</div>
 ```
 
 ---
@@ -5719,7 +6249,78 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Tabs.astro`
 
 ```astro
+---
+interface Props {
+  items: Array<{ id: string; label: string; active?: boolean }>;
+  boxed?: boolean;
+  bordered?: boolean;
+  lifted?: boolean;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  class?: string;
+}
 
+const { items, boxed, bordered, lifted, size, class: className = '' } = Astro.props;
+
+const sizeClass = size ? `tabs-${size}` : '';
+---
+
+<div role="tablist" class:list={[
+  'tabs',
+  { 'tabs-boxed': boxed },
+  { 'tabs-bordered': bordered },
+  { 'tabs-lifted': lifted },
+  sizeClass,
+  className
+]}>
+  {items.map((item) => (
+    <a
+      role="tab"
+      href={`#${item.id}`}
+      class:list={['tab', { 'tab-active': item.active }]}
+      data-tab-target={item.id}
+    >
+      {item.label}
+    </a>
+  ))}
+</div>
+
+<div class="tab-content-container mt-4">
+  <slot />
+</div>
+
+<script>
+  // Simple tab switching logic
+  const tabs = document.querySelectorAll('[data-tab-target]');
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      
+      // Remove active class from all tabs in this group
+      const parent = tab.parentElement;
+      parent?.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
+      
+      // Add active class to clicked tab
+      tab.classList.add('tab-active');
+      
+      // Hide all contents
+      const targetId = tab.getAttribute('data-tab-target');
+      const container = parent?.nextElementSibling;
+      
+      if (container) {
+        // Assuming slot content has ids matching tab targets
+        const contents = container.children;
+        Array.from(contents).forEach((content) => {
+          if (content.id === targetId) {
+            content.classList.remove('hidden');
+          } else {
+            content.classList.add('hidden');
+          }
+        });
+      }
+    });
+  });
+</script>
 ```
 
 ---
@@ -5727,7 +6328,52 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Toast.astro`
 
 ```astro
+---
+// src/components/ui/Toast.astro
+---
 
+<div id="toast-container" class="toast toast-top toast-end z-50">
+  <!-- Toasts will be injected here by store -->
+</div>
+
+<script>
+  import { $toastStore, removeToast } from '@/stores/toast';
+
+  const container = document.getElementById('toast-container');
+
+  $toastStore.subscribe((state) => {
+    if (!container) return;
+
+    // Clear current toasts to prevent duplicates (simple implementation)
+    // In a real React/Preact app this would be handled by VDOM
+    container.innerHTML = '';
+
+    state.messages.forEach((msg) => {
+      const alertClass = {
+        info: 'alert-info',
+        success: 'alert-success',
+        warning: 'alert-warning',
+        error: 'alert-error',
+      }[msg.type];
+
+      const toastEl = document.createElement('div');
+      toastEl.className = `alert ${alertClass} shadow-lg min-w-[300px] animate-slide-in`;
+      toastEl.innerHTML = `
+        <div>
+          <span>${msg.message}</span>
+        </div>
+        <button class="btn btn-ghost btn-xs" data-dismiss="${msg.id}">✕</button>
+      `;
+
+      container.appendChild(toastEl);
+
+      // Setup dismiss button
+      toastEl.querySelector(`[data-dismiss="${msg.id}"]`)?.addEventListener('click', () => {
+        removeToast(msg.id);
+      });
+    });
+  });
+</script>
 ```
 
 ---
@@ -5735,7 +6381,19 @@ const sizeClass = {
 #### 📄 File: `./src/components/ui/Tooltip.astro`
 
 ```astro
+---
+interface Props {
+  text: string;
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  class?: string;
+}
 
+const { text, position = 'top', class: className = '' } = Astro.props;
+---
+
+<div class:list={['tooltip', `tooltip-${position}`, className]} data-tip={text}>
+  <slot />
+</div>
 ```
 
 ---
@@ -5745,7 +6403,24 @@ const sizeClass = {
 #### 📄 File: `./src/pages/api/health.ts`
 
 ```typescript
+import type { APIRoute } from 'astro';
 
+export const GET: APIRoute = async () => {
+  return new Response(
+    JSON.stringify({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      version: '1.0.0'
+    }),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+};
 ```
 
 ---
@@ -5753,7 +6428,72 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/dashboard.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
 
+// SSR Placeholder data
+const stats = {
+  totalExams: 12,
+  activeExams: 3,
+  completedExams: 150,
+  averageScore: 78.5
+};
+---
+
+<DashboardLayout title="Dashboard Guru" role="guru">
+  <div class="space-y-8">
+    <DashboardStats stats={stats} />
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Quick Actions -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Aksi Cepat</h2>
+          <div class="grid grid-cols-2 gap-4 mt-4">
+            <a href="/guru/soal/create" class="btn btn-outline btn-primary h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+              Buat Soal Baru
+            </a>
+            <a href="/guru/ujian/create" class="btn btn-outline btn-secondary h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              Jadwalkan Ujian
+            </a>
+            <a href="/guru/grading" class="btn btn-outline btn-accent h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Koreksi Esai
+            </a>
+            <a href="/guru/hasil" class="btn btn-outline h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Lihat Hasil
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Ujian Aktif</h2>
+          <ul class="menu bg-base-200 w-full rounded-box">
+            <li>
+              <a class="flex justify-between">
+                <span>Matematika X-A</span>
+                <span class="badge badge-success">Berjalan</span>
+              </a>
+            </li>
+            <li>
+              <a class="flex justify-between">
+                <span>Biologi XI-IPA</span>
+                <span class="badge badge-warning">Selesai</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5761,7 +6501,61 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/grading/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+// Mock Data
+const pendingGrading = [
+  { attemptId: 501, student: 'Budi Santoso', exam: 'Biologi XI-IPA', submittedAt: '2024-01-20 10:30', ungradedCount: 3 },
+  { attemptId: 502, student: 'Siti Aminah', exam: 'Biologi XI-IPA', submittedAt: '2024-01-20 10:35', ungradedCount: 3 },
+];
+---
+
+<DashboardLayout title="Koreksi Jawaban (Grading)" role="guru">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="alert alert-info shadow-sm mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span>Menampilkan daftar siswa yang memiliki jawaban Esai/Audio/Video yang belum dinilai.</span>
+      </div>
+
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Siswa</th>
+            <th>Ujian</th>
+            <th>Waktu Submit</th>
+            <th>Belum Dinilai</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pendingGrading.map((item) => (
+            <tr>
+              <td class="font-semibold">{item.student}</td>
+              <td>{item.exam}</td>
+              <td>{item.submittedAt}</td>
+              <td>
+                <span class="badge badge-warning">{item.ungradedCount} soal</span>
+              </td>
+              <td>
+                <a href={`/guru/grading/${item.attemptId}`} class="btn btn-sm btn-primary">
+                  Mulai Koreksi
+                </a>
+              </td>
+            </tr>
+          ))}
+          {pendingGrading.length === 0 && (
+            <tr>
+              <td colspan="5" class="text-center py-8 text-base-content/50">Tidak ada jawaban yang perlu dikoreksi.</td>
+            </tr>
+          )}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5769,7 +6563,117 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/grading/[attemptId].astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import ManualGradingCard from '@/components/grading/ManualGradingCard.astro';
 
+const { attemptId } = Astro.params;
+
+// Mock Data Fetching (Replace with API call)
+const attemptData = {
+  id: Number(attemptId),
+  student_name: 'Budi Santoso',
+  student_id: '12345',
+};
+
+const questionsToGrade = [
+  {
+    question: { 
+      id: 1, 
+      question_text: 'Jelaskan dampak pemanasan global!', 
+      type: 'essay', 
+      points: 10 
+    },
+    answer: { 
+      id: 101, 
+      answer_text: 'Dampaknya adalah suhu bumi meningkat dan es mencair.' 
+    }
+  },
+  {
+    question: { 
+      id: 2, 
+      question_text: 'Bacakan Surah Al-Fatihah', 
+      type: 'essay', 
+      points: 20 
+    },
+    answer: { 
+      id: 102, 
+      answer_media_url: '/sample-audio.mp3', 
+      answer_media_type: 'audio' 
+    }
+  }
+];
+---
+
+<DashboardLayout title={`Koreksi: ${attemptData.student_name}`} role="guru">
+  <div class="max-w-4xl mx-auto space-y-8">
+    <div class="flex justify-between items-center">
+      <a href="/guru/grading" class="btn btn-ghost gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+        Kembali ke Daftar
+      </a>
+      <div class="text-sm">
+        Progress: <span id="grading-progress">1</span> / {questionsToGrade.length}
+      </div>
+    </div>
+
+    <div id="grading-container">
+      <!-- Only show first question initially, JS handles navigation -->
+      {questionsToGrade.map((item, index) => (
+        <div class={`grading-item ${index !== 0 ? 'hidden' : ''}`} data-index={index}>
+          <ManualGradingCard 
+            attempt={attemptData}
+            question={item.question}
+            answer={item.answer as any}
+          />
+        </div>
+      ))}
+    </div>
+
+    <div id="completion-message" class="hidden card bg-base-100 shadow-xl text-center p-8">
+      <h3 class="text-xl font-bold text-success mb-4">Semua soal telah dinilai!</h3>
+      <button id="finish-grading-btn" class="btn btn-primary">Simpan & Selesai</button>
+    </div>
+  </div>
+
+  <script>
+    import { submitGrade, finishGradingAttempt } from '@/lib/api/grading';
+
+    let currentIndex = 0;
+    const items = document.querySelectorAll('.grading-item');
+    const total = items.length;
+    const attemptId = window.location.pathname.split('/').pop();
+
+    window.addEventListener('rubric-selected', async (e: any) => {
+      // Handle rubric selection (update local state)
+      console.log('Score selected:', e.detail);
+    });
+
+    window.addEventListener('save-grade', async () => {
+      // Logic to save grade to API
+      // await submitGrade(...)
+      
+      // Move to next
+      items[currentIndex].classList.add('hidden');
+      currentIndex++;
+      
+      if (currentIndex < total) {
+        items[currentIndex].classList.remove('hidden');
+        document.getElementById('grading-progress')!.textContent = (currentIndex + 1).toString();
+      } else {
+        document.getElementById('grading-container')!.classList.add('hidden');
+        document.getElementById('completion-message')!.classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('finish-grading-btn')?.addEventListener('click', async () => {
+      if(attemptId) {
+        await finishGradingAttempt(parseInt(attemptId));
+        window.location.href = '/guru/grading';
+      }
+    });
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -5785,7 +6689,27 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/soal/create.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import QuestionEditor from '@/components/questions/QuestionEditor.astro';
 
+// Get exam_id from query param if adding to specific exam directly
+const examId = Astro.url.searchParams.get('exam_id') || '';
+---
+
+<DashboardLayout title="Buat Soal Baru" role="guru">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-sm breadcrumbs mb-4">
+      <ul>
+        <li><a href="/guru/dashboard">Dashboard</a></li>
+        <li><a href="/guru/soal">Bank Soal</a></li>
+        <li>Buat Baru</li>
+      </ul>
+    </div>
+
+    <QuestionEditor examId={examId} />
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5793,7 +6717,84 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/soal/import.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+---
 
+<DashboardLayout title="Import Soal dari Excel" role="guru">
+  <div class="max-w-2xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Upload Bank Soal</h2>
+        
+        <div class="alert alert-info mb-6">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <div>
+            <h3 class="font-bold">Format Excel</h3>
+            <div class="text-xs">Pastikan format sesuai template. Gambar harus diupload terpisah atau via URL.</div>
+            <a href="/templates/template_soal.xlsx" class="link link-primary text-xs font-bold">Download Template Soal</a>
+          </div>
+        </div>
+
+        <form id="import-form" class="space-y-6">
+          <div class="form-control w-full">
+            <label class="label">
+              <span class="label-text">Pilih File Excel (.xlsx)</span>
+            </label>
+            <input type="file" name="file" class="file-input file-input-bordered w-full" accept=".xlsx,.xls" required />
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">Bank Soal Tujuan (Opsional)</span>
+            </label>
+            <select name="exam_id" class="select select-bordered">
+              <option value="">Buat Bank Soal Baru</option>
+              <option value="1">Matematika X-A</option>
+              <option value="2">Biologi XI-IPA</option>
+            </select>
+          </div>
+
+          <div class="card-actions justify-end">
+            <a href="/guru/soal" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">
+              <span class="loading loading-spinner loading-sm hidden" id="loading-spinner"></span>
+              Upload & Proses
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { importQuestions } from '@/lib/api/question';
+
+    const form = document.getElementById('import-form') as HTMLFormElement;
+    const spinner = document.getElementById('loading-spinner');
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const file = formData.get('file') as File;
+      const examId = formData.get('exam_id') ? parseInt(formData.get('exam_id') as string) : undefined;
+
+      if (!file) return;
+
+      try {
+        spinner?.classList.remove('hidden');
+        await importQuestions(file, examId);
+        alert('Import berhasil!');
+        window.location.href = '/guru/soal';
+      } catch (error) {
+        console.error(error);
+        alert('Gagal mengimport soal.');
+      } finally {
+        spinner?.classList.add('hidden');
+      }
+    });
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -5801,7 +6802,73 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/soal/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+// Mock Data
+const questions = [
+  { id: 101, text: 'Apa ibukota Indonesia?', type: 'multiple_choice', points: 5, tags: ['Geografi', 'Mudah'] },
+  { id: 102, text: 'Jelaskan proses fotosintesis.', type: 'essay', points: 10, tags: ['Biologi', 'Sukar'] },
+];
+---
+
+<DashboardLayout title="Bank Soal" role="guru">
+  <div slot="actions" class="flex gap-2">
+    <a href="/guru/soal/import" class="btn btn-secondary btn-sm">Import Excel</a>
+    <a href="/guru/soal/create" class="btn btn-primary btn-sm">+ Buat Soal</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex flex-col md:flex-row gap-4 mb-4">
+        <input type="text" placeholder="Cari pertanyaan..." class="input input-bordered w-full" />
+        <select class="select select-bordered w-full md:w-48">
+          <option value="">Semua Tipe</option>
+          <option value="multiple_choice">Pilihan Ganda</option>
+          <option value="essay">Esai</option>
+        </select>
+      </div>
+
+      <Table>
+        <thead>
+          <tr>
+            <th class="w-12">ID</th>
+            <th>Pertanyaan</th>
+            <th>Tipe</th>
+            <th>Tags</th>
+            <th>Poin</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {questions.map((q) => (
+            <tr>
+              <td>{q.id}</td>
+              <td>
+                <div class="line-clamp-2">{q.text}</div>
+              </td>
+              <td>
+                <div class="badge badge-outline text-xs">{q.type}</div>
+              </td>
+              <td>
+                <div class="flex gap-1 flex-wrap">
+                  {q.tags.map(tag => <span class="badge badge-ghost badge-xs">{tag}</span>)}
+                </div>
+              </td>
+              <td>{q.points}</td>
+              <td>
+                <a href={`/guru/soal/${q.id}/edit`} class="btn btn-square btn-xs btn-ghost">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5809,7 +6876,36 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/soal/[id]/edit.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import QuestionEditor from '@/components/questions/QuestionEditor.astro';
 
+const { id } = Astro.params;
+const questionId = id; 
+---
+
+<DashboardLayout title="Edit Soal" role="guru">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-sm breadcrumbs mb-4">
+      <ul>
+        <li><a href="/guru/dashboard">Dashboard</a></li>
+        <li><a href="/guru/soal">Bank Soal</a></li>
+        <li>Edit Soal #{questionId}</li>
+      </ul>
+    </div>
+
+    <!-- 
+      Di aplikasi nyata, kita akan fetch data soal berdasarkan ID di sini (SSR)
+      lalu mengirimkannya sebagai props ke QuestionEditor untuk pre-fill data.
+    -->
+    <QuestionEditor examId="" /> 
+    
+    <script>
+      // Simulasi load data untuk edit
+      console.log('Mode Edit aktif');
+    </script>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5817,7 +6913,114 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/ujian/create.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+import Button from '@/components/ui/Button.astro';
+---
 
+<DashboardLayout title="Buat Jadwal Ujian" role="guru">
+  <div class="card bg-base-100 shadow-xl max-w-3xl mx-auto">
+    <div class="card-body">
+      <form id="create-exam-form" class="space-y-6">
+        
+        <Input 
+          name="title" 
+          label="Nama Ujian" 
+          placeholder="Contoh: Penilaian Akhir Semester Ganjil" 
+          required 
+        />
+
+        <div class="form-control">
+          <label class="label"><span class="label-text">Deskripsi</span></label>
+          <textarea name="description" class="textarea textarea-bordered h-24"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="number" 
+            name="duration_minutes" 
+            label="Durasi (Menit)" 
+            value="90" 
+            required 
+          />
+          <Input 
+            type="number" 
+            name="passing_score" 
+            label="KKM / Passing Grade" 
+            value="75" 
+            required 
+          />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="datetime-local" 
+            name="window_start_at" 
+            label="Waktu Mulai" 
+            required 
+          />
+          <Input 
+            type="datetime-local" 
+            name="window_end_at" 
+            label="Waktu Selesai" 
+            required 
+          />
+        </div>
+
+        <div class="divider">Pengaturan Tambahan</div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="randomize_questions" class="toggle toggle-primary" checked />
+            <span class="label-text">Acak Soal</span>
+          </label>
+
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="show_results" class="toggle toggle-primary" />
+            <span class="label-text">Tampilkan Nilai Setelah Selesai</span>
+          </label>
+          
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="prevent_tab_switch" class="toggle toggle-error" checked />
+            <span class="label-text">Cegah Pindah Tab (Security)</span>
+          </label>
+        </div>
+
+        <div class="card-actions justify-end mt-8">
+          <Button type="button" variant="ghost" onclick="history.back()">Batal</Button>
+          <Button type="submit" variant="primary">Simpan & Lanjut ke Soal</Button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    import { apiClient } from '@/lib/api/client';
+
+    const form = document.getElementById('create-exam-form') as HTMLFormElement;
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData);
+      
+      // Convert checkboxes
+      data.randomize_questions = form.randomize_questions.checked;
+      data.show_results = form.show_results.checked;
+
+      try {
+        const response = await apiClient.post('/teacher/exams', data);
+        const newExamId = response.data.id;
+        // Redirect to add questions
+        window.location.href = `/guru/soal/create?exam_id=${newExamId}`;
+      } catch (error) {
+        alert('Gagal membuat ujian. Periksa input Anda.');
+        console.error(error);
+      }
+    });
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -5825,15 +7028,234 @@ const sizeClass = {
 #### 📄 File: `./src/pages/guru/ujian/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
+import Button from '@/components/ui/Button.astro';
 
+// Mock Data (Server Fetch in real app)
+const exams = [
+  { id: 1, title: 'Matematika Dasar', class: 'X-IPA', start: '2024-01-20 08:00', status: 'active', participants: 32 },
+  { id: 2, title: 'Bahasa Indonesia', class: 'XI-IPS', start: '2024-01-21 10:00', status: 'scheduled', participants: 0 },
+];
+---
+
+<DashboardLayout title="Manajemen Ujian" role="guru">
+  <div slot="actions">
+    <a href="/guru/ujian/create" class="btn btn-primary btn-sm">+ Jadwal Baru</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex gap-2 mb-4">
+        <input type="text" placeholder="Cari ujian..." class="input input-bordered w-full max-w-xs" />
+        <select class="select select-bordered">
+          <option>Semua Status</option>
+          <option>Aktif</option>
+          <option>Terjadwal</option>
+          <option>Selesai</option>
+        </select>
+      </div>
+
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Judul</th>
+            <th>Kelas</th>
+            <th>Waktu Mulai</th>
+            <th>Peserta</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {exams.map((exam) => (
+            <tr>
+              <td class="font-bold">{exam.title}</td>
+              <td>{exam.class}</td>
+              <td>{exam.start}</td>
+              <td>{exam.participants}</td>
+              <td>
+                <span class={`badge ${exam.status === 'active' ? 'badge-success' : 'badge-ghost'}`}>
+                  {exam.status}
+                </span>
+              </td>
+              <td class="flex gap-2">
+                <a href={`/guru/ujian/${exam.id}/edit`} class="btn btn-xs btn-ghost">Edit</a>
+                <a href={`/guru/ujian/${exam.id}/preview`} class="btn btn-xs btn-ghost">Preview</a>
+                <a href={`/guru/ujian/${exam.id}/statistics`} class="btn btn-xs btn-ghost">Stats</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
 
-#### 📄 File: `./src/pages/guru/ujian/[id]/{edit,preview,statistics}.astro`
+#### 📄 File: `./src/pages/guru/ujian/[id]/edit.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+import Button from '@/components/ui/Button.astro';
 
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Jadwal Ujian" role="guru">
+  <div class="card bg-base-100 shadow-xl max-w-3xl mx-auto">
+    <div class="card-body">
+      <h2 class="card-title mb-6">Edit Ujian #{id}</h2>
+      
+      <form id="edit-exam-form" class="space-y-6">
+        <Input 
+          name="title" 
+          label="Nama Ujian" 
+          value="Matematika Dasar" 
+          required 
+        />
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="number" 
+            name="duration_minutes" 
+            label="Durasi (Menit)" 
+            value="90" 
+            required 
+          />
+          <Input 
+            type="number" 
+            name="passing_score" 
+            label="KKM" 
+            value="75" 
+            required 
+          />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="datetime-local" 
+            name="window_start_at" 
+            label="Waktu Mulai" 
+            value="2024-01-20T08:00"
+            required 
+          />
+          <Input 
+            type="datetime-local" 
+            name="window_end_at" 
+            label="Waktu Selesai" 
+            value="2024-01-20T10:00"
+            required 
+          />
+        </div>
+
+        <div class="card-actions justify-end mt-8">
+          <Button type="button" variant="ghost" onclick="history.back()">Batal</Button>
+          <Button type="submit" variant="primary">Simpan Perubahan</Button>
+        </div>
+      </form>
+    </div>
+  </div>
+</DashboardLayout>
+```
+
+---
+
+#### 📄 File: `./src/pages/guru/ujian/[id]/preview.astro`
+
+```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import MultipleChoice from '@/components/exam/QuestionTypes/MultipleChoice.astro';
+import Essay from '@/components/exam/QuestionTypes/Essay.astro';
+
+const { id } = Astro.params;
+
+// Mock Data Fetching
+const exam = { title: 'Preview: Matematika Dasar' };
+const questions = [
+  { id: 1, type: 'multiple_choice', question_text: '1 + 1 = ?', options: [{id:1, option_text:'2'}, {id:2, option_text:'3'}] },
+  { id: 2, type: 'essay', question_text: 'Jelaskan teori relativitas!' }
+];
+---
+
+<DashboardLayout title={exam.title} role="guru">
+  <div class="max-w-4xl mx-auto space-y-8">
+    <div class="alert alert-warning">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+      <span>Mode Preview: Jawaban tidak akan disimpan.</span>
+    </div>
+
+    {questions.map((q, index) => (
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="badge badge-neutral mb-2">Soal No. {index + 1}</div>
+          {q.type === 'multiple_choice' && <MultipleChoice question={q as any} readonly={true} />}
+          {q.type === 'essay' && <Essay question={q as any} readonly={true} />}
+        </div>
+      </div>
+    ))}
+
+    <div class="flex justify-center">
+      <button onclick="history.back()" class="btn btn-primary">Kembali</button>
+    </div>
+  </div>
+</DashboardLayout>
+```
+
+---
+
+#### 📄 File: `./src/pages/guru/ujian/[id]/statistics.astro`
+
+```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import ExamStatistics from '@/components/analytics/ExamStatistics.astro';
+import ItemAnalysisChart from '@/components/analytics/ItemAnalysisChart.astro';
+
+const { id } = Astro.params;
+const examId = parseInt(id || '0');
+
+// Mock Data
+const stats = {
+  totalParticipants: 32,
+  submitted: 30,
+  averageScore: 78.5,
+  highestScore: 95,
+  lowestScore: 45,
+  passingRate: 85,
+  averageTime: 3600
+};
+
+const itemAnalysis = [
+  { id: 1, number: 1, difficulty: 0.8, discrimination: 0.4, type: 'PG' },
+  { id: 2, number: 2, difficulty: 0.2, discrimination: 0.1, type: 'PG' }, // Hard, low discrimination
+  { id: 3, number: 3, difficulty: 0.5, discrimination: 0.6, type: 'Essay' },
+];
+---
+
+<DashboardLayout title="Statistik Ujian" role="guru">
+  <div class="space-y-8">
+    <div class="flex justify-between items-center">
+      <h2 class="text-xl font-bold">Analisis Hasil</h2>
+      <button class="btn btn-outline btn-sm gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+        Export Excel
+      </button>
+    </div>
+
+    <ExamStatistics examId={examId} statistics={stats} />
+    
+    <div class="divider">Analisis Butir Soal</div>
+    
+    <ItemAnalysisChart examId={examId} questions={itemAnalysis} />
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5983,7 +7405,32 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/offline.astro`
 
 ```astro
+---
+import MainLayout from '@/layouts/Auth.astro';
+---
 
+<MainLayout title="Offline - Tidak Ada Koneksi">
+  <div class="text-center">
+    <div class="mb-6 inline-block p-4 bg-base-200 rounded-full">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+      </svg>
+    </div>
+    
+    <h1 class="text-3xl font-bold mb-2">Anda Sedang Offline</h1>
+    <p class="mb-8 text-base-content/70">Koneksi internet terputus. Beberapa fitur mungkin tidak tersedia.</p>
+    
+    <div class="space-y-3">
+      <a href="/siswa/dashboard" class="btn btn-primary w-full">
+        Ke Dashboard (Mode Offline)
+      </a>
+      <button onclick="window.location.reload()" class="btn btn-ghost w-full">
+        Coba Lagi
+      </button>
+    </div>
+  </div>
+</MainLayout>
 ```
 
 ---
@@ -5991,7 +7438,98 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/dashboard.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
 
+// Mock Stats
+const stats = {
+  totalExams: 45,
+  activeExams: 2,
+  completedExams: 43,
+  averageScore: 0 // Not relevant for operator usually
+};
+---
+
+<DashboardLayout title="Dashboard Operator" role="operator">
+  <div class="space-y-6">
+    
+    <!-- Quick Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Total Siswa</div>
+        <div class="stat-value">1,204</div>
+        <div class="stat-desc">Terdaftar aktif</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Sesi Hari Ini</div>
+        <div class="stat-value text-primary">4</div>
+        <div class="stat-desc">2 Berjalan, 2 Menunggu</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Ruang Ujian</div>
+        <div class="stat-value text-secondary">12</div>
+        <div class="stat-desc">Digunakan</div>
+      </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <a href="/operator/peserta/import" class="btn btn-outline btn-info h-auto py-4 flex flex-col">
+        <span class="text-2xl">📥</span>
+        <span>Import Peserta</span>
+      </a>
+      <a href="/operator/sesi/create" class="btn btn-outline btn-success h-auto py-4 flex flex-col">
+        <span class="text-2xl">📅</span>
+        <span>Buat Sesi</span>
+      </a>
+      <a href="/operator/ruang" class="btn btn-outline btn-warning h-auto py-4 flex flex-col">
+        <span class="text-2xl">🏫</span>
+        <span>Atur Ruang</span>
+      </a>
+      <a href="/operator/laporan" class="btn btn-outline btn-error h-auto py-4 flex flex-col">
+        <span class="text-2xl">📊</span>
+        <span>Cetak Kartu</span>
+      </a>
+    </div>
+
+    <!-- Active Sessions Table -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Sesi Berjalan</h2>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Sesi</th>
+                <th>Waktu</th>
+                <th>Ruang</th>
+                <th>Status</th>
+                <th>Peserta Login</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Sesi 1 - Pagi</td>
+                <td>07:30 - 09:30</td>
+                <td>Lab Komputer 1</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td>32/36</td>
+              </tr>
+              <tr>
+                <td>Sesi 1 - Pagi</td>
+                <td>07:30 - 09:30</td>
+                <td>Lab Komputer 2</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td>35/36</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -5999,7 +7537,62 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/laporan.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+---
 
+<DashboardLayout title="Laporan & Cetak" role="operator">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    
+    <!-- Kartu Peserta -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Kartu Peserta</h2>
+        <p>Cetak kartu login peserta ujian dengan QR Code.</p>
+        <div class="form-control mt-4">
+          <label class="label"><span class="label-text">Pilih Kelas</span></label>
+          <select class="select select-bordered select-sm">
+            <option>Semua Kelas</option>
+            <option>XII IPA 1</option>
+          </select>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button class="btn btn-primary btn-sm">Cetak PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daftar Hadir -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Daftar Hadir</h2>
+        <p>Cetak daftar hadir peserta per ruang/sesi.</p>
+        <div class="form-control mt-4">
+          <label class="label"><span class="label-text">Pilih Sesi</span></label>
+          <select class="select select-bordered select-sm">
+            <option>Sesi 1</option>
+            <option>Sesi 2</option>
+          </select>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button class="btn btn-primary btn-sm">Cetak PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Berita Acara -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Berita Acara</h2>
+        <p>Generate berita acara pelaksanaan ujian.</p>
+        <div class="card-actions justify-end mt-auto">
+          <button class="btn btn-primary btn-sm">Buat Laporan</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6007,7 +7600,49 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/peserta/import.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+---
 
+<DashboardLayout title="Import Peserta" role="operator">
+  <div class="max-w-2xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Upload Data Peserta</h2>
+        
+        <div class="alert alert-info mb-6">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <div>
+            <h3 class="font-bold">Format Excel</h3>
+            <div class="text-xs">Gunakan template yang disediakan agar data terbaca dengan benar.</div>
+            <a href="/templates/template_peserta.xlsx" class="link link-primary text-xs font-bold">Download Template</a>
+          </div>
+        </div>
+
+        <form class="space-y-6">
+          <div class="form-control w-full">
+            <label class="label">
+              <span class="label-text">Pilih File Excel (.xlsx / .csv)</span>
+            </label>
+            <input type="file" class="file-input file-input-bordered w-full" accept=".xlsx,.xls,.csv" />
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-4">
+              <input type="checkbox" class="checkbox checkbox-primary" />
+              <span class="label-text">Update data jika NIS sudah ada</span>
+            </label>
+          </div>
+
+          <div class="card-actions justify-end">
+            <a href="/operator/peserta" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Upload & Proses</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6015,7 +7650,76 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/peserta/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+// Mock Data
+const students = [
+  { id: 1, nis: '1001', name: 'Adi Pratama', class: 'XII IPA 1', status: 'active' },
+  { id: 2, nis: '1002', name: 'Budi Santoso', class: 'XII IPA 1', status: 'active' },
+  { id: 3, nis: '1003', name: 'Citra Dewi', class: 'XII IPA 2', status: 'inactive' },
+];
+---
+
+<DashboardLayout title="Data Peserta" role="operator">
+  <div slot="actions" class="flex gap-2">
+    <a href="/operator/peserta/import" class="btn btn-success btn-sm text-white">Import Excel</a>
+    <button class="btn btn-primary btn-sm">+ Tambah Manual</button>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex gap-4 mb-4">
+        <input type="text" placeholder="Cari Nama / NIS..." class="input input-bordered w-full max-w-xs" />
+        <select class="select select-bordered">
+          <option value="">Semua Kelas</option>
+          <option>XII IPA 1</option>
+          <option>XII IPA 2</option>
+        </select>
+      </div>
+
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>NIS</th>
+            <th>Nama Lengkap</th>
+            <th>Kelas</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {students.map(s => (
+            <tr>
+              <td>{s.nis}</td>
+              <td class="font-bold">{s.name}</td>
+              <td>{s.class}</td>
+              <td>
+                <span class={`badge ${s.status === 'active' ? 'badge-success' : 'badge-ghost'} badge-sm`}>
+                  {s.status}
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-xs btn-ghost">Edit</button>
+                <button class="btn btn-xs btn-ghost text-error">Reset Pass</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      
+      <div class="flex justify-center mt-4">
+        <div class="join">
+          <button class="join-item btn btn-sm">«</button>
+          <button class="join-item btn btn-sm btn-active">1</button>
+          <button class="join-item btn btn-sm">2</button>
+          <button class="join-item btn btn-sm">»</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6023,7 +7727,37 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/ruang/create.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+---
 
+<DashboardLayout title="Tambah Ruang Ujian" role="operator">
+  <div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <form class="space-y-4">
+          <Input name="name" label="Nama Ruang" placeholder="Contoh: Lab Komputer 1" required />
+          <Input type="number" name="capacity" label="Kapasitas Peserta" placeholder="36" required />
+          
+          <div class="form-control">
+            <label class="label"><span class="label-text">Pengawas Default (Opsional)</span></label>
+            <select class="select select-bordered">
+              <option value="">Pilih Pengawas...</option>
+              <option value="1">Budi Santoso</option>
+              <option value="2">Siti Aminah</option>
+            </select>
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/operator/ruang" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6031,7 +7765,49 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/ruang/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+const rooms = [
+  { id: 1, name: 'Lab Komputer 1', capacity: 36, proctor: 'Budi Santoso' },
+  { id: 2, name: 'Lab Komputer 2', capacity: 36, proctor: 'Siti Aminah' },
+];
+---
+
+<DashboardLayout title="Manajemen Ruang" role="operator">
+  <div slot="actions">
+    <a href="/operator/ruang/create" class="btn btn-primary btn-sm">+ Tambah Ruang</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Nama Ruang</th>
+            <th>Kapasitas</th>
+            <th>Pengawas Default</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rooms.map(r => (
+            <tr>
+              <td>{r.name}</td>
+              <td>{r.capacity} Siswa</td>
+              <td>{r.proctor}</td>
+              <td>
+                <button class="btn btn-xs btn-ghost">Edit</button>
+                <button class="btn btn-xs btn-error btn-outline">Hapus</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6039,7 +7815,39 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/ruang/[id]/edit.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
 
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Ruang" role="operator">
+  <div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Edit Ruang #{id}</h2>
+        <form class="space-y-4">
+          <Input name="name" label="Nama Ruang" value="Lab Komputer 1" required />
+          <Input type="number" name="capacity" label="Kapasitas Peserta" value="36" required />
+          
+          <div class="form-control">
+            <label class="label"><span class="label-text">Pengawas Default</span></label>
+            <select class="select select-bordered">
+              <option value="1" selected>Budi Santoso</option>
+              <option value="2">Siti Aminah</option>
+            </select>
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/operator/ruang" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6047,7 +7855,39 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/sesi/create.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+---
 
+<DashboardLayout title="Tambah Sesi Ujian" role="operator">
+  <div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <form class="space-y-4">
+          <Input name="name" label="Nama Sesi" placeholder="Contoh: Sesi 1 - Pagi" required />
+          
+          <div class="grid grid-cols-2 gap-4">
+            <Input type="time" name="start_time" label="Jam Mulai" required />
+            <Input type="time" name="end_time" label="Jam Selesai" required />
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-4">
+              <input type="checkbox" class="toggle toggle-success" checked />
+              <span class="label-text">Aktifkan Sesi</span>
+            </label>
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/operator/sesi" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6055,7 +7895,51 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/sesi/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+const sessions = [
+  { id: 1, name: 'Sesi 1 (Pagi)', time: '07:30 - 09:30', status: 'Aktif' },
+  { id: 2, name: 'Sesi 2 (Siang)', time: '10:00 - 12:00', status: 'Menunggu' },
+];
+---
+
+<DashboardLayout title="Manajemen Sesi" role="operator">
+  <div slot="actions">
+    <a href="/operator/sesi/create" class="btn btn-primary btn-sm">+ Tambah Sesi</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Nama Sesi</th>
+            <th>Waktu</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map(s => (
+            <tr>
+              <td>{s.name}</td>
+              <td>{s.time}</td>
+              <td>
+                <span class={`badge ${s.status === 'Aktif' ? 'badge-success' : 'badge-ghost'}`}>{s.status}</span>
+              </td>
+              <td>
+                <button class="btn btn-xs btn-ghost">Edit</button>
+                <button class="btn btn-xs btn-error btn-outline">Hapus</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6063,7 +7947,35 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/operator/sesi/[id]/edit.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
 
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Sesi" role="operator">
+  <div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Edit Sesi #{id}</h2>
+        <form class="space-y-4">
+          <Input name="name" label="Nama Sesi" value="Sesi 1 - Pagi" required />
+          
+          <div class="grid grid-cols-2 gap-4">
+            <Input type="time" name="start_time" label="Jam Mulai" value="07:30" required />
+            <Input type="time" name="end_time" label="Jam Selesai" value="09:30" required />
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/operator/sesi" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6071,7 +7983,60 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/pengawas/dashboard.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
 
+const activeSessions = [
+  { id: 1, name: 'Ujian Matematika - XII IPA 1', time: '08:00 - 10:00', room: 'Lab 1', status: 'Berjalan' },
+  { id: 2, name: 'Ujian Biologi - XII IPA 2', time: '08:00 - 10:00', room: 'Lab 2', status: 'Berjalan' },
+];
+---
+
+<DashboardLayout title="Dashboard Pengawas" role="pengawas">
+  <div class="space-y-6">
+    <div class="alert alert-info shadow-lg">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      <div>
+        <h3 class="font-bold">Jadwal Hari Ini</h3>
+        <div class="text-xs">Anda memiliki 2 sesi ujian yang harus diawasi hari ini.</div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Sesi Aktif</h2>
+        <div class="overflow-x-auto">
+          <table class="table w-full">
+            <thead>
+              <tr>
+                <th>Nama Sesi</th>
+                <th>Waktu</th>
+                <th>Ruang</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeSessions.map(session => (
+                <tr>
+                  <td class="font-bold">{session.name}</td>
+                  <td>{session.time}</td>
+                  <td>{session.room}</td>
+                  <td><span class="badge badge-success animate-pulse">{session.status}</span></td>
+                  <td>
+                    <a href={`/pengawas/monitoring/live?session_id=${session.id}`} class="btn btn-sm btn-primary">
+                      Monitor Live
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6079,7 +8044,76 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/pengawas/monitoring/live.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import LiveMonitor from '@/components/monitoring/LiveMonitor.astro';
+import Select from '@/components/ui/Select.astro';
 
+// Fetch active sessions (Server Side)
+// const sessions = await getActiveSessions(); 
+// Mock data:
+const sessions = [
+  { value: 1, label: 'Sesi 1 - Matematika X-A' },
+  { value: 2, label: 'Sesi 1 - Biologi XI-IPA' }
+];
+---
+
+<DashboardLayout title="Live Monitoring" role="pengawas">
+  <div class="flex flex-col h-[calc(100vh-8rem)]">
+    
+    <!-- Filter Bar -->
+    <div class="bg-base-100 p-4 rounded-lg shadow mb-4 flex gap-4 items-end">
+      <div class="w-64">
+        <Select 
+          name="session_id" 
+          label="Pilih Sesi Ujian" 
+          options={sessions}
+        />
+      </div>
+      <button id="load-session-btn" class="btn btn-primary">Muat Data</button>
+    </div>
+
+    <!-- Monitor Area -->
+    <div id="monitor-container" class="flex-1 overflow-hidden relative">
+      <div class="absolute inset-0 flex items-center justify-center text-base-content/30">
+        <p class="text-lg">Pilih sesi untuk mulai memantau</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const loadBtn = document.getElementById('load-session-btn');
+    const select = document.getElementById('session_id') as HTMLSelectElement;
+    const container = document.getElementById('monitor-container');
+
+    loadBtn?.addEventListener('click', () => {
+      const sessionId = select.value;
+      if (!sessionId || !container) return;
+
+      // Clear container
+      container.innerHTML = '<div class="flex justify-center p-10"><span class="loading loading-spinner loading-lg"></span></div>';
+
+      // Load LiveMonitor component dynamically (Simulated via Astro Island approach usually, but here we replace HTML)
+      // In a real Astro app with client:load, we would pass the prop.
+      // Since we are inside a script, we might redirect or fetch partial HTML.
+      
+      // For this blueprint, let's assume we redirect to a specific monitoring page or fetch data
+      // A better approach in Astro is using a query param to re-render the server component
+      window.location.href = `?session_id=${sessionId}`;
+    });
+  </script>
+
+  {Astro.url.searchParams.get('session_id') && (
+    <div slot="default">
+      <!-- This overrides the content if session_id exists -->
+       <div class="mb-4">
+         <a href="/pengawas/monitoring/live" class="btn btn-sm btn-ghost mb-2">← Kembali Pilih Sesi</a>
+         <LiveMonitor sessionId={parseInt(Astro.url.searchParams.get('session_id')!)} />
+       </div>
+    </div>
+  )}
+</DashboardLayout>
 ```
 
 ---
@@ -6087,7 +8121,44 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/pengawas/monitoring/session/[id].astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import StudentProgressCard from '@/components/monitoring/StudentProgressCard.astro';
 
+const { id } = Astro.params;
+
+// Mock Data
+const students = [
+  {
+    student: { id: 1, name: 'Adi Pratama', student_id: '1001' },
+    progress: { attempt_id: 101, status: 'in_progress', answered: 15, total_questions: 40, time_remaining: 1800, warnings: 0, last_activity: new Date().toISOString() }
+  },
+  {
+    student: { id: 2, name: 'Budi Santoso', student_id: '1002' },
+    progress: { attempt_id: 102, status: 'paused', answered: 10, total_questions: 40, time_remaining: 2000, warnings: 2, last_activity: new Date().toISOString() }
+  }
+];
+---
+
+<DashboardLayout title={`Monitoring Sesi #${id}`} role="pengawas">
+  <div class="mb-6 flex justify-between items-center">
+    <div class="flex gap-2">
+      <div class="badge badge-lg badge-primary">Total: 36</div>
+      <div class="badge badge-lg badge-success">Online: 34</div>
+      <div class="badge badge-lg badge-error">Offline: 2</div>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-sm btn-warning">Force Finish All</button>
+      <a href="/pengawas/monitoring/live" class="btn btn-sm btn-ghost">Kembali</a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {students.map(item => (
+      <StudentProgressCard student={item.student} progress={item.progress as any} />
+    ))}
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6095,7 +8166,104 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/siswa/dashboard.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
+import { db } from '@/lib/db/schema';
 
+// Mock data for SSR (in real app, fetch from API or DB if client-side)
+const stats = {
+  totalExams: 0,
+  activeExams: 0,
+  completedExams: 0,
+  averageScore: 0
+};
+---
+
+<DashboardLayout title="Dashboard Siswa" role="siswa">
+  <div class="space-y-8">
+    <!-- Stats Overview -->
+    <DashboardStats stats={stats} />
+
+    <!-- Active Exams Section -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="card-title">Ujian Tersedia</h2>
+          <a href="/siswa/ujian" class="btn btn-sm btn-ghost">Lihat Semua</a>
+        </div>
+        
+        <div id="active-exams-list" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div class="loading loading-spinner loading-lg mx-auto col-span-full"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Results -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Riwayat Terakhir</h2>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Mata Pelajaran</th>
+                <th>Tanggal</th>
+                <th>Nilai</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-list">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { db } from '@/lib/db/schema';
+    import { getAvailableExams } from '@/lib/api/exam';
+
+    async function loadDashboardData() {
+      try {
+        // Load local data first
+        const downloadedExams = await db.downloaded_exams.toArray();
+        const container = document.getElementById('active-exams-list');
+        
+        if (container) {
+          if (downloadedExams.length === 0) {
+            container.innerHTML = `
+              <div class="col-span-full text-center py-8 text-base-content/50">
+                <p>Belum ada ujian yang didownload.</p>
+                <a href="/siswa/ujian" class="btn btn-primary btn-sm mt-2">Cari Ujian</a>
+              </div>
+            `;
+          } else {
+            container.innerHTML = downloadedExams.map(exam => `
+              <div class="card bg-base-200">
+                <div class="card-body p-4">
+                  <h3 class="font-bold">Ujian #${exam.exam_id}</h3>
+                  <div class="text-xs text-base-content/70 mt-1">
+                    Downloaded: ${new Date(exam.downloaded_at).toLocaleDateString()}
+                  </div>
+                  <div class="card-actions justify-end mt-3">
+                    <a href="/siswa/ujian/${exam.exam_id}" class="btn btn-primary btn-sm">Mulai</a>
+                  </div>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    loadDashboardData();
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -6103,7 +8271,97 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/siswa/profile.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import { db } from '@/lib/db/schema';
 
+// Mock user data (would normally come from auth store/middleware)
+const user = {
+  name: 'Ahmad Siswa',
+  nis: '12345678',
+  class: 'XII IPA 1',
+  email: 'ahmad@sekolah.sch.id',
+  avatar: null
+};
+---
+
+<DashboardLayout title="Profil Saya" role="siswa">
+  <div class="max-w-2xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body items-center text-center">
+        <div class="avatar placeholder mb-4">
+          <div class="bg-neutral text-neutral-content rounded-full w-24">
+            <span class="text-3xl">{user.name.charAt(0)}</span>
+          </div>
+        </div>
+        
+        <h2 class="card-title text-2xl">{user.name}</h2>
+        <p class="text-base-content/70">{user.nis} • {user.class}</p>
+        
+        <div class="divider"></div>
+        
+        <div class="w-full text-left space-y-4">
+          <div class="form-control">
+            <label class="label"><span class="label-text">Email</span></label>
+            <input type="text" value={user.email} class="input input-bordered" disabled />
+          </div>
+          
+          <div class="form-control">
+            <label class="label"><span class="label-text">Password</span></label>
+            <button class="btn btn-outline btn-sm w-full">Ganti Password</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl mt-6">
+      <div class="card-body">
+        <h3 class="card-title text-lg">Statistik Perangkat</h3>
+        <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+          <div class="stat">
+            <div class="stat-title">Storage Terpakai</div>
+            <div class="stat-value text-sm" id="storage-usage">Calculating...</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">Ujian Offline</div>
+            <div class="stat-value text-sm" id="offline-count">0 File</div>
+          </div>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button id="clear-data-btn" class="btn btn-error btn-sm text-white">Hapus Data Offline</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { db } from '@/lib/db/schema';
+    import { formatFileSize } from '@/lib/utils/format';
+
+    async function loadStats() {
+      const exams = await db.downloaded_exams.count();
+      const media = await db.media_files.count();
+      
+      document.getElementById('offline-count')!.textContent = `${exams} Ujian (${media} Media)`;
+      
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        document.getElementById('storage-usage')!.textContent = formatFileSize(estimate.usage || 0);
+      }
+    }
+
+    document.getElementById('clear-data-btn')?.addEventListener('click', async () => {
+      if(confirm('Yakin ingin menghapus semua data ujian offline? Anda harus mendownload ulang nanti.')) {
+        await db.downloaded_exams.clear();
+        await db.media_files.clear();
+        alert('Data berhasil dihapus.');
+        loadStats();
+      }
+    });
+
+    loadStats();
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -6111,7 +8369,34 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/siswa/ujian/download.astro`
 
 ```astro
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import DownloadProgress from '@/components/sync/DownloadProgress.astro';
 
+const examId = Astro.url.searchParams.get('id');
+
+if (!examId) {
+  return Astro.redirect('/siswa/ujian');
+}
+---
+
+<MainLayout title="Download Ujian" hideNav={true}>
+  <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
+    <div class="w-full max-w-lg">
+      <div class="text-center mb-8">
+        <h1 class="text-2xl font-bold mb-2">Persiapan Ujian Offline</h1>
+        <p class="text-base-content/70">Mohon tunggu, sedang mengunduh paket soal dan media...</p>
+      </div>
+
+      <DownloadProgress examId={parseInt(examId)} />
+      
+      <div class="mt-8 text-center text-sm text-base-content/50">
+        <p>Pastikan koneksi internet stabil selama proses download.</p>
+        <p>Jangan tutup halaman ini.</p>
+      </div>
+    </div>
+  </div>
+</MainLayout>
 ```
 
 ---
@@ -6119,7 +8404,93 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/siswa/ujian/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
+---
 
+<DashboardLayout title="Daftar Ujian" role="siswa">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex gap-2 mb-4">
+        <input type="text" placeholder="Cari ujian..." class="input input-bordered w-full max-w-xs" />
+        <select class="select select-bordered">
+          <option>Semua Mata Pelajaran</option>
+          <option>Matematika</option>
+          <option>Bahasa Indonesia</option>
+        </select>
+      </div>
+
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Nama Ujian</th>
+            <th>Durasi</th>
+            <th>Jendela Waktu</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="exam-list-body">
+          <tr>
+            <td colspan="5" class="text-center">Memuat daftar ujian...</td>
+          </tr>
+        </tbody>
+      </Table>
+    </div>
+  </div>
+
+  <script>
+    import { getAvailableExams } from '@/lib/api/exam';
+    import { db } from '@/lib/db/schema';
+
+    async function loadExams() {
+      try {
+        const exams = await getAvailableExams();
+        const downloaded = await db.downloaded_exams.toArray();
+        const downloadedIds = new Set(downloaded.map(d => d.exam_id));
+        
+        const tbody = document.getElementById('exam-list-body');
+        if (!tbody) return;
+
+        if (exams.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center">Tidak ada ujian tersedia saat ini.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = exams.map((exam: any) => {
+          const isDownloaded = downloadedIds.has(exam.id);
+          const actionBtn = isDownloaded
+            ? `<a href="/siswa/ujian/${exam.id}" class="btn btn-success btn-xs">Kerjakan</a>`
+            : `<a href="/siswa/ujian/download?id=${exam.id}" class="btn btn-primary btn-xs">Download</a>`;
+
+          return `
+            <tr>
+              <td class="font-semibold">${exam.title}</td>
+              <td>${exam.duration_minutes} menit</td>
+              <td class="text-sm">
+                ${new Date(exam.window_start_at).toLocaleDateString()} - 
+                ${new Date(exam.window_end_at).toLocaleDateString()}
+              </td>
+              <td>
+                ${isDownloaded 
+                  ? '<span class="badge badge-success badge-sm">Siap Offline</span>' 
+                  : '<span class="badge badge-ghost badge-sm">Online</span>'}
+              </td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error(error);
+        const tbody = document.getElementById('exam-list-body');
+        if(tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-error">Gagal memuat data. Periksa koneksi internet.</td></tr>';
+      }
+    }
+
+    loadExams();
+  </script>
+</DashboardLayout>
 ```
 
 ---
@@ -6127,7 +8498,119 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/siswa/ujian/result.astro`
 
 ```astro
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import { formatScore } from '@/lib/utils/format';
 
+const attemptId = Astro.url.searchParams.get('attemptId');
+---
+
+<MainLayout title="Hasil Ujian">
+  <div class="min-h-screen bg-base-200 p-4 md:p-8">
+    <div class="max-w-2xl mx-auto space-y-6">
+      
+      <!-- Status Card -->
+      <div class="card bg-base-100 shadow-xl text-center">
+        <div class="card-body items-center">
+          <div class="w-20 h-20 rounded-full bg-success/20 flex items-center justify-center text-success mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          
+          <h2 class="card-title text-2xl">Ujian Selesai!</h2>
+          <p class="text-base-content/70">Jawaban Anda telah berhasil disimpan.</p>
+          
+          <div class="divider"></div>
+          
+          <div id="result-content" class="w-full">
+            <div class="loading loading-spinner loading-md"></div>
+            <span class="text-sm">Memuat hasil...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-center">
+        <a href="/siswa/dashboard" class="btn btn-primary">Kembali ke Dashboard</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { db } from '@/lib/db/schema';
+    import { apiClient } from '@/lib/api/client';
+
+    const attemptId = new URLSearchParams(window.location.search).get('attemptId');
+    const resultContainer = document.getElementById('result-content');
+
+    async function loadResult() {
+      if (!resultContainer || !attemptId) return;
+
+      try {
+        // Coba ambil dari server dulu jika online
+        if (navigator.onLine) {
+          try {
+            const response = await apiClient.get(`/student/attempts/${attemptId}/result`);
+            renderResult(response.data);
+            return;
+          } catch (e) {
+            console.log('Server result not ready, checking local...');
+          }
+        }
+
+        // Fallback ke data lokal (estimasi) atau pesan pending
+        const attempt = await db.exam_states.get(parseInt(attemptId));
+        
+        if (attempt) {
+           resultContainer.innerHTML = `
+            <div class="alert alert-info">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <div>
+                <h3 class="font-bold">Menunggu Sinkronisasi</h3>
+                <div class="text-xs">Jawaban tersimpan di perangkat. Nilai akan muncul setelah sinkronisasi selesai.</div>
+              </div>
+            </div>
+           `;
+        }
+      } catch (error) {
+        resultContainer.innerHTML = '<p class="text-error">Gagal memuat hasil.</p>';
+      }
+    }
+
+    function renderResult(data: any) {
+      if (!resultContainer) return;
+      
+      if (!data.show_score) {
+        resultContainer.innerHTML = `
+          <p class="italic text-base-content/60">Nilai untuk ujian ini disembunyikan oleh guru.</p>
+        `;
+        return;
+      }
+
+      resultContainer.innerHTML = `
+        <div class="stats shadow w-full">
+          <div class="stat place-items-center">
+            <div class="stat-title">Nilai Akhir</div>
+            <div class="stat-value text-primary">${data.score}</div>
+            <div class="stat-desc">Dari 100</div>
+          </div>
+          
+          <div class="stat place-items-center">
+            <div class="stat-title">Benar</div>
+            <div class="stat-value text-success text-2xl">${data.correct_count}</div>
+          </div>
+          
+          <div class="stat place-items-center">
+            <div class="stat-title">Salah</div>
+            <div class="stat-value text-error text-2xl">${data.incorrect_count}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    loadResult();
+  </script>
+</MainLayout>
 ```
 
 ---
@@ -6143,7 +8626,49 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/audit-logs.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+const logs = [
+  { id: 1, user: 'admin_sma1', action: 'LOGIN', ip: '192.168.1.10', time: '2024-01-20 07:00' },
+  { id: 2, user: 'guru_bio', action: 'CREATE_EXAM', ip: '192.168.1.15', time: '2024-01-20 08:30' },
+];
+---
+
+<DashboardLayout title="Audit Logs" role="superadmin">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex gap-4 mb-4">
+        <input type="text" placeholder="Filter User / Action..." class="input input-bordered w-full max-w-xs" />
+        <input type="date" class="input input-bordered" />
+      </div>
+
+      <Table zebra compact>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>IP Address</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.map(log => (
+            <tr>
+              <td class="font-mono text-xs">{log.time}</td>
+              <td class="font-bold">{log.user}</td>
+              <td><span class="badge badge-outline badge-sm">{log.action}</span></td>
+              <td class="font-mono text-xs">{log.ip}</td>
+              <td><button class="btn btn-xs btn-ghost">View</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6151,7 +8676,89 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/dashboard.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
 
+const stats = {
+  totalExams: 1500, // Total exams across all schools
+  activeExams: 45,
+  completedExams: 1455,
+  averageScore: 0
+};
+---
+
+<DashboardLayout title="Superadmin Dashboard" role="superadmin">
+  <div class="space-y-8">
+    
+    <!-- System Health -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Total Sekolah</div>
+        <div class="stat-value text-primary">12</div>
+        <div class="stat-desc">2 Non-aktif</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Total User</div>
+        <div class="stat-value text-secondary">4.5k</div>
+        <div class="stat-desc">Siswa & Guru</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">Storage</div>
+        <div class="stat-value">45%</div>
+        <div class="stat-desc">200GB / 500GB</div>
+      </div>
+      <div class="stat bg-base-100 shadow rounded-box">
+        <div class="stat-title">CPU Load</div>
+        <div class="stat-value text-success">12%</div>
+        <div class="stat-desc">Normal</div>
+      </div>
+    </div>
+
+    <!-- Schools List -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <div class="flex justify-between items-center">
+          <h2 class="card-title">Daftar Sekolah</h2>
+          <a href="/superadmin/schools/create" class="btn btn-primary btn-sm">+ Tambah Sekolah</a>
+        </div>
+        
+        <div class="overflow-x-auto mt-4">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nama Sekolah</th>
+                <th>Subdomain</th>
+                <th>Paket</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>SMA Negeri 1 Jakarta</td>
+                <td>sman1jkt</td>
+                <td>Premium</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td><button class="btn btn-xs">Manage</button></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>MAN 2 Bandung</td>
+                <td>man2bdg</td>
+                <td>Basic</td>
+                <td><span class="badge badge-success">Aktif</span></td>
+                <td><button class="btn btn-xs">Manage</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6159,7 +8766,58 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/schools/create.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+---
 
+<DashboardLayout title="Tambah Sekolah Baru" role="superadmin">
+  <div class="max-w-3xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <form class="space-y-6">
+          <h2 class="card-title">Informasi Sekolah</h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="name" label="Nama Sekolah" required />
+            <Input name="npsn" label="NPSN" />
+          </div>
+
+          <div class="form-control">
+            <label class="label"><span class="label-text">Alamat Lengkap</span></label>
+            <textarea class="textarea textarea-bordered"></textarea>
+          </div>
+
+          <div class="divider">Konfigurasi Sistem</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Subdomain</span></label>
+              <div class="join">
+                <input type="text" placeholder="sekolah" class="input input-bordered join-item w-full" />
+                <span class="btn btn-disabled join-item">.exam.app</span>
+              </div>
+            </div>
+            <Input name="max_students" type="number" label="Limit Siswa" value="500" />
+          </div>
+
+          <div class="divider">Akun Administrator</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="admin_name" label="Nama Admin" required />
+            <Input name="admin_email" type="email" label="Email Admin" required />
+            <Input name="admin_password" type="password" label="Password Default" required />
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <button type="button" class="btn btn-ghost" onclick="history.back()">Batal</button>
+            <button type="submit" class="btn btn-primary">Buat Sekolah</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6167,7 +8825,49 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/schools/index.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
+---
 
+<DashboardLayout title="Manajemen Sekolah" role="superadmin">
+  <div slot="actions">
+    <a href="/superadmin/schools/create" class="btn btn-primary btn-sm">+ Sekolah Baru</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Logo</th>
+            <th>Nama Sekolah</th>
+            <th>Subdomain</th>
+            <th>Admin Email</th>
+            <th>Siswa</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Mock Data -->
+          <tr>
+            <td><div class="avatar"><div class="w-8 rounded"><img src="https://placehold.co/100" /></div></div></td>
+            <td class="font-bold">SMA 1 Contoh</td>
+            <td>sma1</td>
+            <td>admin@sma1.sch.id</td>
+            <td>500</td>
+            <td><span class="badge badge-success">Active</span></td>
+            <td>
+              <a href="/superadmin/schools/1/edit" class="btn btn-xs btn-info">Edit</a>
+              <button class="btn btn-xs btn-error">Suspend</button>
+            </td>
+          </tr>
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6175,7 +8875,54 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/schools/[id]/edit.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
 
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Edit Sekolah" role="superadmin">
+  <div class="max-w-3xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title mb-4">Edit Sekolah #{id}</h2>
+        <form class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="name" label="Nama Sekolah" value="SMA Negeri 1 Jakarta" required />
+            <Input name="subdomain" label="Subdomain" value="sman1jkt" disabled />
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-4">
+              <span class="label-text">Status Sekolah</span>
+              <input type="checkbox" class="toggle toggle-success" checked />
+              <span class="label-text font-bold text-success">Aktif</span>
+            </label>
+          </div>
+
+          <div class="divider">Paket Langganan</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Paket</span></label>
+              <select class="select select-bordered">
+                <option value="basic">Basic</option>
+                <option value="premium" selected>Premium</option>
+              </select>
+            </div>
+            <Input name="max_students" type="number" label="Limit Siswa" value="1000" />
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <a href="/superadmin/schools" class="btn btn-ghost">Batal</a>
+            <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6183,7 +8930,44 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/settings.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+---
 
+<DashboardLayout title="Pengaturan Sistem" role="superadmin">
+  <div class="max-w-4xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Konfigurasi Global</h2>
+        
+        <div class="form-control">
+          <label class="label cursor-pointer">
+            <span class="label-text">Mode Maintenance</span>
+            <input type="checkbox" class="toggle toggle-error" />
+          </label>
+          <label class="label">
+            <span class="label-text-alt">Aktifkan untuk mencegah login user selain superadmin.</span>
+          </label>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 class="font-bold">Backup & Restore</h3>
+        <div class="flex gap-4 mt-2">
+          <button class="btn btn-primary btn-sm">Backup Database</button>
+          <button class="btn btn-outline btn-sm">Restore Database</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 class="font-bold">Cache Management</h3>
+        <div class="flex gap-4 mt-2">
+          <button class="btn btn-warning btn-sm">Clear Redis Cache</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6191,7 +8975,56 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/pages/superadmin/users.astro`
 
 ```astro
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+// Mock Data
+const users = [
+  { id: 1, username: 'admin_sma1', role: 'operator', school: 'SMA 1', status: 'active' },
+  { id: 2, username: 'guru_bio', role: 'guru', school: 'SMA 1', status: 'active' },
+];
+---
+
+<DashboardLayout title="Manajemen User Global" role="superadmin">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex gap-4 mb-4">
+        <input type="text" placeholder="Cari user..." class="input input-bordered w-full max-w-xs" />
+        <select class="select select-bordered">
+          <option value="">Semua Role</option>
+          <option value="operator">Operator</option>
+          <option value="guru">Guru</option>
+        </select>
+      </div>
+
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Sekolah</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(u => (
+            <tr>
+              <td class="font-bold">{u.username}</td>
+              <td><span class="badge badge-outline">{u.role}</span></td>
+              <td>{u.school}</td>
+              <td><span class="badge badge-success badge-xs"></span> {u.status}</td>
+              <td>
+                <button class="btn btn-xs">Reset Password</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6201,7 +9034,36 @@ import Alert from '@/components/ui/Alert.astro';
 #### 📄 File: `./src/layouts/Auth.astro`
 
 ```astro
+---
+import '@/styles/global.css';
+import Toast from '@/components/ui/Toast.astro';
 
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="bg-base-200 min-h-screen flex items-center justify-center">
+    <Toast />
+    <main class="w-full max-w-md p-4">
+      <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold text-primary mb-2">ExamApp</h1>
+        <p class="text-base-content/70">Sistem Ujian Sekolah & Madrasah</p>
+      </div>
+      <slot />
+    </main>
+  </body>
+</html>
 ```
 
 ---
@@ -6279,7 +9141,32 @@ const { title, description = 'Sistem Ujian Sekolah' } = Astro.props;
 #### 📄 File: `./src/layouts/Dashboard.astro`
 
 ```astro
+---
+import MainLayout from './MainLayout.astro';
 
+interface Props {
+  title: string;
+  role: 'siswa' | 'guru' | 'pengawas' | 'operator' | 'superadmin';
+}
+
+const { title, role } = Astro.props;
+---
+
+<MainLayout title={title} role={role}>
+  <div class="p-6 max-w-7xl mx-auto">
+    <header class="mb-8 flex justify-between items-center">
+      <div>
+        <h1 class="text-2xl font-bold">{title}</h1>
+        <p class="text-sm text-base-content/70">Selamat datang kembali</p>
+      </div>
+      <div class="flex gap-2">
+        <slot name="actions" />
+      </div>
+    </header>
+    
+    <slot />
+  </div>
+</MainLayout>
 ```
 
 ---
@@ -6287,7 +9174,50 @@ const { title, description = 'Sistem Ujian Sekolah' } = Astro.props;
 #### 📄 File: `./src/layouts/Exam.astro`
 
 ```astro
+---
+import '@/styles/global.css';
+import Toast from '@/components/ui/Toast.astro';
 
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="id" class="exam-mode">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} - Ujian</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#3b82f6" />
+    <style>
+      /* Exam specific styles to prevent cheating/distractions */
+      body {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .exam-content {
+        user-select: text;
+        -webkit-user-select: text;
+      }
+    </style>
+  </head>
+  <body class="bg-base-100 min-h-screen flex flex-col">
+    <Toast />
+    <slot />
+    
+    <script>
+      // Prevent basic copy/paste and context menu
+      document.addEventListener('contextmenu', event => event.preventDefault());
+      document.addEventListener('copy', event => event.preventDefault());
+      document.addEventListener('cut', event => event.preventDefault());
+      document.addEventListener('paste', event => event.preventDefault());
+    </script>
+  </body>
+</html>
 ```
 
 ---
@@ -6297,7 +9227,22 @@ const { title, description = 'Sistem Ujian Sekolah' } = Astro.props;
 #### 📄 File: `./src/lib/api/analytics.ts`
 
 ```typescript
+import { apiClient } from './client';
 
+export async function getDashboardStats() {
+  const response = await apiClient.get('/analytics/dashboard');
+  return response.data;
+}
+
+export async function getExamAnalytics(examId: number) {
+  const response = await apiClient.get(`/analytics/exam/${examId}`);
+  return response.data;
+}
+
+export async function getStudentProgress(studentId: number) {
+  const response = await apiClient.get(`/analytics/student/${studentId}`);
+  return response.data;
+}
 ```
 
 ---
@@ -6538,7 +9483,33 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/grading.ts`
 
 ```typescript
+import { apiClient } from './client';
 
+export interface GradePayload {
+  score: number;
+  feedback?: string;
+}
+
+export async function getPendingGrading(examId?: number) {
+  const params = examId ? { exam_id: examId } : {};
+  const response = await apiClient.get('/teacher/grading/pending', { params });
+  return response.data;
+}
+
+export async function getStudentAttemptForGrading(attemptId: number) {
+  const response = await apiClient.get(`/teacher/grading/attempt/${attemptId}`);
+  return response.data;
+}
+
+export async function submitGrade(answerId: number, payload: GradePayload) {
+  const response = await apiClient.post(`/teacher/grading/answer/${answerId}`, payload);
+  return response.data;
+}
+
+export async function finishGradingAttempt(attemptId: number) {
+  const response = await apiClient.post(`/teacher/grading/attempt/${attemptId}/finish`);
+  return response.data;
+}
 ```
 
 ---
@@ -6546,7 +9517,26 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/media.ts`
 
 ```typescript
+import { apiClient } from './client';
 
+export async function uploadMedia(file: File, type: 'image' | 'audio' | 'video') {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+
+  const response = await apiClient.post('/media/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  
+  return response.data; // Returns { url: string, id: string }
+}
+
+export async function getMediaUrl(mediaId: string) {
+  // Logic to handle signed URLs if using S3, or direct URL
+  return `/api/media/${mediaId}`;
+}
 ```
 
 ---
@@ -6554,7 +9544,37 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/monitoring.ts`
 
 ```typescript
+import { apiClient } from './client';
 
+export async function getActiveSessions() {
+  const response = await apiClient.get('/proctor/sessions/active');
+  return response.data;
+}
+
+export async function getSessionLiveStats(sessionId: number) {
+  const response = await apiClient.get(`/proctor/sessions/${sessionId}/live`);
+  return response.data;
+}
+
+export async function getStudentLiveStatus(attemptId: number) {
+  const response = await apiClient.get(`/proctor/monitoring/student/${attemptId}`);
+  return response.data;
+}
+
+export async function pauseStudentExam(attemptId: number, reason: string) {
+  const response = await apiClient.post(`/proctor/monitoring/student/${attemptId}/pause`, { reason });
+  return response.data;
+}
+
+export async function resumeStudentExam(attemptId: number) {
+  const response = await apiClient.post(`/proctor/monitoring/student/${attemptId}/resume`);
+  return response.data;
+}
+
+export async function forceFinishExam(attemptId: number) {
+  const response = await apiClient.post(`/proctor/monitoring/student/${attemptId}/finish`);
+  return response.data;
+}
 ```
 
 ---
@@ -6562,7 +9582,49 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/question.ts`
 
 ```typescript
+import { apiClient } from './client';
+import type { Question } from '@/types/question';
 
+export async function getQuestions(params?: { 
+  page?: number; 
+  limit?: number; 
+  search?: string; 
+  tags?: string[] 
+}) {
+  const response = await apiClient.get('/teacher/questions', { params });
+  return response.data;
+}
+
+export async function getQuestionById(id: number) {
+  const response = await apiClient.get<Question>(`/teacher/questions/${id}`);
+  return response.data;
+}
+
+export async function createQuestion(data: Partial<Question>) {
+  const response = await apiClient.post('/teacher/questions', data);
+  return response.data;
+}
+
+export async function updateQuestion(id: number, data: Partial<Question>) {
+  const response = await apiClient.put(`/teacher/questions/${id}`, data);
+  return response.data;
+}
+
+export async function deleteQuestion(id: number) {
+  const response = await apiClient.delete(`/teacher/questions/${id}`);
+  return response.data;
+}
+
+export async function importQuestions(file: File, examId?: number) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (examId) formData.append('exam_id', examId.toString());
+
+  const response = await apiClient.post('/teacher/questions/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return response.data;
+}
 ```
 
 ---
@@ -6570,7 +9632,31 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/student.ts`
 
 ```typescript
+import { apiClient } from './client';
+import type { Student } from '@/types/user';
 
+export async function getStudentProfile() {
+  const response = await apiClient.get<Student>('/student/profile');
+  return response.data;
+}
+
+export async function updateStudentProfile(data: Partial<Student>) {
+  const response = await apiClient.put('/student/profile', data);
+  return response.data;
+}
+
+export async function changePassword(password: string, newPassword: string) {
+  const response = await apiClient.post('/student/change-password', {
+    current_password: password,
+    new_password: newPassword
+  });
+  return response.data;
+}
+
+export async function getStudentResults() {
+  const response = await apiClient.get('/student/results');
+  return response.data;
+}
 ```
 
 ---
@@ -6578,7 +9664,26 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/api/sync.ts`
 
 ```typescript
+import { apiClient } from './client';
 
+export async function checkServerStatus() {
+  try {
+    const response = await apiClient.get('/health');
+    return response.status === 200;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function syncBatch(items: any[]) {
+  const response = await apiClient.post('/sync/batch', { items });
+  return response.data;
+}
+
+export async function getSyncConfig() {
+  const response = await apiClient.get('/sync/config');
+  return response.data;
+}
 ```
 
 ---
@@ -6586,7 +9691,28 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/config/app.ts`
 
 ```typescript
-
+export const appConfig = {
+  name: 'ExamApp',
+  version: '1.0.0',
+  description: 'Sistem Ujian Sekolah & Madrasah Offline-First',
+  api: {
+    baseUrl: import.meta.env.PUBLIC_API_URL || 'http://localhost:8000/api',
+    timeout: 30000,
+  },
+  exam: {
+    autoSaveInterval: 30000, // 30 detik
+    maxMediaSize: 100 * 1024 * 1024, // 100MB
+    warningThresholds: {
+      storage: 2 * 1024 * 1024 * 1024, // 2GB
+      battery: 0.2, // 20%
+    }
+  },
+  features: {
+    enablePWA: true,
+    enableOffline: true,
+    enableDeviceLock: true,
+  }
+};
 ```
 
 ---
@@ -6594,7 +9720,28 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/config/theme.ts`
 
 ```typescript
+export const themes = {
+  light: {
+    primary: '#3b82f6',
+    secondary: '#8b5cf6',
+    accent: '#10b981',
+    neutral: '#3d4451',
+    'base-100': '#ffffff',
+  },
+  dark: {
+    primary: '#3b82f6',
+    secondary: '#8b5cf6',
+    accent: '#10b981',
+    neutral: '#2a2e37',
+    'base-100': '#1d232a',
+  },
+};
 
+export const fontSizes = {
+  small: '0.875rem',
+  medium: '1rem',
+  large: '1.125rem',
+};
 ```
 
 ---
@@ -6602,7 +9749,24 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/constants/api.ts`
 
 ```typescript
-
+export const API_ENDPOINTS = {
+  AUTH: {
+    LOGIN: '/auth/login',
+    LOGOUT: '/auth/logout',
+    REFRESH: '/auth/refresh',
+    ME: '/auth/me',
+  },
+  EXAM: {
+    LIST: '/student/exams',
+    DETAIL: (id: number) => `/student/exams/${id}`,
+    DOWNLOAD: (id: number) => `/student/exams/${id}/download`,
+    SUBMIT: (id: number) => `/student/attempts/${id}/submit`,
+  },
+  MEDIA: {
+    UPLOAD: '/media/upload',
+    CHUNK: '/media/chunk',
+  },
+} as const;
 ```
 
 ---
@@ -6610,7 +9774,24 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/constants/exam.ts`
 
 ```typescript
+export const EXAM_STATUS = {
+  SCHEDULED: 'scheduled',
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  ARCHIVED: 'archived',
+} as const;
 
+export const QUESTION_TYPES = {
+  MULTIPLE_CHOICE: 'multiple_choice',
+  MULTIPLE_CHOICE_COMPLEX: 'multiple_choice_complex',
+  TRUE_FALSE: 'true_false',
+  MATCHING: 'matching',
+  SHORT_ANSWER: 'short_answer',
+  ESSAY: 'essay',
+} as const;
+
+export const MAX_EXAM_DURATION_MINUTES = 300; // 5 hours
+export const MIN_EXAM_DURATION_MINUTES = 10;
 ```
 
 ---
@@ -6618,7 +9799,35 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/constants/media.ts`
 
 ```typescript
+export const ALLOWED_MEDIA_TYPES = {
+  IMAGE: ['image/jpeg', 'image/png', 'image/webp'],
+  AUDIO: ['audio/webm', 'audio/mp3', 'audio/wav'],
+  VIDEO: ['video/webm', 'video/mp4'],
+};
 
+export const MAX_FILE_SIZE = {
+  IMAGE: 5 * 1024 * 1024, // 5MB
+  AUDIO: 50 * 1024 * 1024, // 50MB
+  VIDEO: 500 * 1024 * 1024, // 500MB
+};
+
+export const RECORDING_CONSTRAINTS = {
+  AUDIO: {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  },
+  VIDEO: {
+    audio: true,
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'user',
+    },
+  },
+};
 ```
 
 ---
@@ -6626,7 +9835,17 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/constants/storage.ts`
 
 ```typescript
+export const STORAGE_KEYS = {
+  ACCESS_TOKEN: 'access_token',
+  REFRESH_TOKEN: 'refresh_token',
+  THEME: 'theme',
+  FONT_SIZE: 'font_size',
+  DEVICE_ID: 'device_id',
+  EXAM_STATE_PREFIX: 'exam_state_',
+} as const;
 
+export const DB_NAME = 'ExamDB';
+export const DB_VERSION = 1;
 ```
 
 ---
@@ -6634,7 +9853,17 @@ export async function saveActivityLogs(attemptId: number, events: any[]) {
 #### 📄 File: `./src/lib/constants/validation.ts`
 
 ```typescript
+export const VALIDATION_RULES = {
+  USERNAME_MIN_LENGTH: 3,
+  PASSWORD_MIN_LENGTH: 6,
+  MAX_LOGIN_ATTEMPTS: 5,
+};
 
+export const ERROR_MESSAGES = {
+  REQUIRED: 'Field ini wajib diisi',
+  INVALID_EMAIL: 'Format email tidak valid',
+  NETWORK_ERROR: 'Gagal terhubung ke server',
+};
 ```
 
 ---
@@ -6700,7 +9929,24 @@ export function generateIV(): string {
 #### 📄 File: `./src/lib/db/indexedDB.ts`
 
 ```typescript
+import { db } from './schema';
 
+// Helper functions to interact with Dexie DB safely
+export async function saveExamState(attemptId: number, state: any) {
+  try {
+    await db.exam_states.put({ ...state, attempt_id: attemptId });
+  } catch (error) {
+    console.error('Failed to save exam state to IndexedDB', error);
+  }
+}
+
+export async function getExamState(attemptId: number) {
+  return await db.exam_states.get(attemptId);
+}
+
+export async function clearExamState(attemptId: number) {
+  return await db.exam_states.delete(attemptId);
+}
 ```
 
 ---
@@ -6708,7 +9954,24 @@ export function generateIV(): string {
 #### 📄 File: `./src/lib/db/migrations.ts`
 
 ```typescript
+import { db } from './schema';
 
+export async function runMigrations() {
+  // Cek versi DB saat ini
+  const currentVersion = db.verno;
+  
+  console.log(`Current DB Version: ${currentVersion}`);
+  
+  // Dexie menangani migrasi skema secara otomatis melalui deklarasi version() di schema.ts
+  // File ini digunakan jika ada manipulasi data yang kompleks saat upgrade versi
+  
+  // Contoh:
+  // if (currentVersion < 2) { 
+  //   await db.transaction('rw', db.exam_answers, async () => {
+  //     // Transform data logic here
+  //   });
+  // }
+}
 ```
 
 ---
@@ -7120,7 +10383,17 @@ export class ExamController {
 #### 📄 File: `./src/lib/exam/navigation.ts`
 
 ```typescript
+// Helper logic for navigation state
+export function calculateProgress(total: number, answered: number): number {
+  if (total === 0) return 0;
+  return Math.round((answered / total) * 100);
+}
 
+export function getUnansweredQuestions(questions: any[], answers: Record<number, any>): number[] {
+  return questions
+    .filter(q => !answers[q.id])
+    .map(q => q.id);
+}
 ```
 
 ---
@@ -7128,7 +10401,45 @@ export class ExamController {
 #### 📄 File: `./src/lib/exam/randomizer.ts`
 
 ```typescript
+import type { Question, QuestionOption } from '@/types/question';
 
+/**
+ * Fisher-Yates Shuffle Algorithm
+ */
+export function shuffleArray<T>(array: T[]): T[] {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+}
+
+export function randomizeQuestions(questions: Question[]): Question[] {
+  return shuffleArray(questions);
+}
+
+export function randomizeOptions(options: QuestionOption[]): QuestionOption[] {
+  return shuffleArray(options);
+}
+
+export function prepareExamForStudent(questions: Question[], randomizeQ: boolean, randomizeO: boolean): Question[] {
+  let processedQuestions = randomizeQ ? randomizeQuestions(questions) : [...questions];
+
+  if (randomizeO) {
+    processedQuestions = processedQuestions.map(q => {
+      if (q.type === 'multiple_choice' || q.type === 'multiple_choice_complex') {
+        return {
+          ...q,
+          options: randomizeOptions(q.options)
+        };
+      }
+      return q;
+    });
+  }
+
+  return processedQuestions;
+}
 ```
 
 ---
@@ -7136,7 +10447,42 @@ export class ExamController {
 #### 📄 File: `./src/lib/exam/stateManager.ts`
 
 ```typescript
+import { db } from '@/lib/db/schema';
+import type { ExamState } from '@/types/exam';
 
+export class ExamStateManager {
+  private attemptId: number;
+
+  constructor(attemptId: number) {
+    this.attemptId = attemptId;
+  }
+
+  async saveState(
+    currentQuestionIndex: number, 
+    timeRemaining: number, 
+    answers: Record<number, any>, 
+    flags: number[]
+  ) {
+    const state: ExamState = {
+      attempt_id: this.attemptId,
+      current_question_index: currentQuestionIndex,
+      time_remaining_seconds: timeRemaining,
+      started_at: new Date(), // Should be original start time ideally
+      answers,
+      flags
+    };
+
+    await db.exam_states.put(state);
+  }
+
+  async loadState(): Promise<ExamState | undefined> {
+    return await db.exam_states.get(this.attemptId);
+  }
+
+  async clearState() {
+    return await db.exam_states.delete(this.attemptId);
+  }
+}
 ```
 
 ---
@@ -7211,7 +10557,47 @@ export class TimerController {
 #### 📄 File: `./src/lib/exam/validator.ts`
 
 ```typescript
+import type { Question } from '@/types/question';
+import type { ExamAnswer } from '@/types/answer';
 
+export function validateAnswer(question: Question, answer: any): boolean {
+  if (!answer) return false;
+
+  switch (question.type) {
+    case 'multiple_choice':
+      return typeof answer === 'number'; // Expect option ID
+    
+    case 'multiple_choice_complex':
+      return Array.isArray(answer) && answer.length > 0;
+    
+    case 'true_false':
+      return typeof answer === 'boolean';
+    
+    case 'short_answer':
+      return typeof answer === 'string' && answer.trim().length > 0;
+    
+    case 'essay':
+      // Basic check, essay usually needs manual grading or just check if not empty
+      return typeof answer === 'string' && answer.trim().length > 0;
+      
+    case 'matching':
+      // Check if all pairs are matched (optional strictness)
+      return typeof answer === 'object' && Object.keys(answer).length > 0;
+      
+    default:
+      return false;
+  }
+}
+
+export function isExamComplete(questions: Question[], answers: Record<number, ExamAnswer>): boolean {
+  return questions.every(q => {
+    const ans = answers[q.id];
+    // Check if answer exists and has content
+    // Note: This is a simple check. Depending on requirements, 
+    // we might allow submitting with empty answers.
+    return !!ans; 
+  });
+}
 ```
 
 ---
@@ -7227,7 +10613,45 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useAutoSave.ts`
 
 ```typescript
+import { useEffect, useRef, useState } from 'react';
+import { AutoSaveManager } from '@/lib/exam/autoSave';
 
+// Hook untuk React Components (jika menggunakan React Islands)
+export function useAutoSave(attemptId: number, onSave: () => Promise<void>, interval: number = 30000) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const managerRef = useRef<AutoSaveManager | null>(null);
+
+  useEffect(() => {
+    managerRef.current = new AutoSaveManager(attemptId);
+    
+    managerRef.current.start(interval, async () => {
+      setIsSaving(true);
+      try {
+        await onSave();
+        setLastSaved(new Date());
+      } finally {
+        setIsSaving(false);
+      }
+    });
+
+    return () => {
+      managerRef.current?.stop();
+    };
+  }, [attemptId, interval, onSave]);
+
+  const saveNow = async () => {
+    setIsSaving(true);
+    try {
+      await managerRef.current?.saveNow();
+      setLastSaved(new Date());
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return { isSaving, lastSaved, saveNow };
+}
 ```
 
 ---
@@ -7235,7 +10659,40 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useDeviceWarnings.ts`
 
 ```typescript
+import { useState, useEffect } from 'react';
+import { checkStorageSpace } from '@/lib/utils/storage';
+import { getBatteryStatus } from '@/lib/utils/device';
+import { appConfig } from '@/lib/config/app';
 
+export function useDeviceWarnings() {
+  const [warnings, setWarnings] = useState<string[]>([]);
+
+  const checkStatus = async () => {
+    const newWarnings: string[] = [];
+
+    // Cek Storage
+    const storage = await checkStorageSpace();
+    if (storage.available < appConfig.exam.warningThresholds.storage) {
+      newWarnings.push('Ruang penyimpanan hampir penuh. Mohon hapus beberapa data.');
+    }
+
+    // Cek Baterai
+    const battery = await getBatteryStatus();
+    if (battery && !battery.charging && battery.level < appConfig.exam.warningThresholds.battery) {
+      newWarnings.push('Baterai lemah. Mohon hubungkan charger.');
+    }
+
+    setWarnings(newWarnings);
+  };
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 60000); // Cek setiap menit
+    return () => clearInterval(interval);
+  }, []);
+
+  return { warnings };
+}
 ```
 
 ---
@@ -7243,7 +10700,31 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useExam.ts`
 
 ```typescript
+import { useStore } from '@nanostores/react';
+import { $examStore, nextQuestion, previousQuestion, goToQuestion, setAnswer } from '@/stores/exam';
+import { $answersStore } from '@/stores/answers';
 
+export function useExam() {
+  const examState = useStore($examStore);
+  const answersState = useStore($answersStore);
+
+  return {
+    exam: examState.exam,
+    currentQuestion: examState.questions[examState.currentQuestionIndex],
+    currentIndex: examState.currentQuestionIndex,
+    totalQuestions: examState.questions.length,
+    answers: answersState.answers,
+    
+    // Actions
+    nextQuestion,
+    previousQuestion,
+    goToQuestion,
+    setAnswer: (questionId: number, value: any) => {
+      // Logic wrapper to update store
+      // Implementation depends on answer structure
+    }
+  };
+}
 ```
 
 ---
@@ -7251,7 +10732,44 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useLocalStorage.ts`
 
 ```typescript
+import { useState } from 'react';
 
+export function useLocalStorage<T>(key: string, initialValue: T) {
+  // State to store our value
+  // Pass initial state function to useState so logic is only executed once
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    if (typeof window === 'undefined') {
+      return initialValue;
+    }
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+
+  // Return a wrapped version of useState's setter function that ...
+  // ... persists the new value to localStorage.
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      // Allow value to be a function so we have same API as useState
+      const valueToStore =
+        value instanceof Function ? value(storedValue) : value;
+      
+      setStoredValue(valueToStore);
+      
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  return [storedValue, setValue] as const;
+}
 ```
 
 ---
@@ -7259,7 +10777,72 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useMediaRecorder.ts`
 
 ```typescript
+import { useState, useCallback, useRef } from 'react'; // Jika menggunakan React/Preact
+// Atau versi Vanilla JS class untuk penggunaan langsung di Astro script
 
+export class MediaRecorderManager {
+  private mediaRecorder: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
+  private stream: MediaStream | null = null;
+  
+  public onStop: ((blob: Blob, duration: number) => void) | null = null;
+  public onDataAvailable: ((data: Blob) => void) | null = null;
+  private startTime: number = 0;
+
+  async start(type: 'audio' | 'video'): Promise<MediaStream> {
+    try {
+      const constraints = type === 'audio' 
+        ? { audio: true } 
+        : { audio: true, video: { facingMode: 'user', width: 1280, height: 720 } };
+
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      const mimeType = type === 'audio' 
+        ? 'audio/webm;codecs=opus' 
+        : 'video/webm;codecs=vp9';
+
+      // Fallback mime types checking could go here
+
+      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+      this.chunks = [];
+      
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          this.chunks.push(e.data);
+          this.onDataAvailable?.(e.data);
+        }
+      };
+
+      this.mediaRecorder.onstop = () => {
+        const blob = new Blob(this.chunks, { type: mimeType });
+        const duration = (Date.now() - this.startTime) / 1000;
+        this.onStop?.(blob, duration);
+        this.cleanup();
+      };
+
+      this.mediaRecorder.start(1000); // Collect chunks every second
+      this.startTime = Date.now();
+      
+      return this.stream;
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      throw error;
+    }
+  }
+
+  stop() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+  }
+
+  private cleanup() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+  }
+}
 ```
 
 ---
@@ -7267,7 +10850,52 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useOnlineStatus.ts`
 
 ```typescript
+import { useState, useEffect } from 'react'; // Assuming React/Preact usage in islands, or just pure JS logic below
 
+// Pure JS implementation for Astro scripts
+export class OnlineStatusTracker {
+  private listeners: ((isOnline: boolean) => void)[] = [];
+  public isOnline: boolean;
+
+  constructor() {
+    this.isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline);
+      window.addEventListener('offline', this.handleOffline);
+    }
+  }
+
+  private handleOnline = () => {
+    this.isOnline = true;
+    this.notify();
+  };
+
+  private handleOffline = () => {
+    this.isOnline = false;
+    this.notify();
+  };
+
+  public subscribe(listener: (isOnline: boolean) => void) {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  private notify() {
+    this.listeners.forEach(listener => listener(this.isOnline));
+  }
+
+  public cleanup() {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.handleOnline);
+      window.removeEventListener('offline', this.handleOffline);
+    }
+  }
+}
+
+export const onlineStatus = new OnlineStatusTracker();
 ```
 
 ---
@@ -7275,7 +10903,47 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useTimer.ts`
 
 ```typescript
+// Utility untuk timer ujian
+export class ExamTimer {
+  private remainingSeconds: number;
+  private intervalId: number | null = null;
+  private onTick: (seconds: number) => void;
+  private onTimeUp: () => void;
 
+  constructor(initialSeconds: number, onTick: (s: number) => void, onTimeUp: () => void) {
+    this.remainingSeconds = initialSeconds;
+    this.onTick = onTick;
+    this.onTimeUp = onTimeUp;
+  }
+
+  start() {
+    if (this.intervalId) return;
+    
+    this.intervalId = window.setInterval(() => {
+      this.remainingSeconds--;
+      this.onTick(this.remainingSeconds);
+
+      if (this.remainingSeconds <= 0) {
+        this.stop();
+        this.onTimeUp();
+      }
+    }, 1000);
+  }
+
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  sync(serverSeconds: number) {
+    // Logic untuk sinkronisasi waktu jika ada selisih besar
+    if (Math.abs(this.remainingSeconds - serverSeconds) > 5) {
+      this.remainingSeconds = serverSeconds;
+    }
+  }
+}
 ```
 
 ---
@@ -7283,7 +10951,18 @@ export class TimerController {
 #### 📄 File: `./src/lib/hooks/useToast.ts`
 
 ```typescript
+import { showToast, removeToast, clearToasts } from '@/stores/toast';
 
+export function useToast() {
+  return {
+    success: (message: string, duration?: number) => showToast('success', message, duration),
+    error: (message: string, duration?: number) => showToast('error', message, duration),
+    info: (message: string, duration?: number) => showToast('info', message, duration),
+    warning: (message: string, duration?: number) => showToast('warning', message, duration),
+    remove: removeToast,
+    clear: clearToasts,
+  };
+}
 ```
 
 ---
@@ -7291,7 +10970,43 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/compress.ts`
 
 ```typescript
+// Simple image compression using Canvas
+export async function compressImage(file: File, quality: number = 0.7, maxWidth: number = 1920): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
 
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Canvas to Blob failed'));
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
 ```
 
 ---
@@ -7299,7 +11014,20 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/download.ts`
 
 ```typescript
+// Utility untuk mendownload media dari URL dan menyimpannya sebagai Blob
+export async function fetchMediaAsBlob(url: string): Promise<Blob> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch media: ${url}`);
+  return await response.blob();
+}
 
+export function createObjectURL(blob: Blob): string {
+  return URL.createObjectURL(blob);
+}
+
+export function revokeObjectURL(url: string): void {
+  URL.revokeObjectURL(url);
+}
 ```
 
 ---
@@ -7307,7 +11035,30 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/player.ts`
 
 ```typescript
+// Helper class untuk mengontrol media playback
+export class MediaController {
+  private element: HTMLMediaElement;
 
+  constructor(element: HTMLMediaElement) {
+    this.element = element;
+  }
+
+  play() {
+    return this.element.play();
+  }
+
+  pause() {
+    this.element.pause();
+  }
+
+  setSpeed(rate: number) {
+    this.element.playbackRate = rate;
+  }
+
+  seek(time: number) {
+    this.element.currentTime = time;
+  }
+}
 ```
 
 ---
@@ -7315,7 +11066,38 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/recorder.ts`
 
 ```typescript
+// Wrapper for MediaRecorder API to handle browser inconsistencies
+export class AudioRecorder {
+  private mediaRecorder: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
+  
+  async start(): Promise<MediaStream> {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.mediaRecorder = new MediaRecorder(stream);
+    this.chunks = [];
+    
+    this.mediaRecorder.ondataavailable = (e) => {
+      this.chunks.push(e.data);
+    };
+    
+    this.mediaRecorder.start();
+    return stream;
+  }
 
+  stop(): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      if (!this.mediaRecorder) return reject('Recorder not initialized');
+      
+      this.mediaRecorder.onstop = () => {
+        const blob = new Blob(this.chunks, { type: 'audio/webm' });
+        this.mediaRecorder?.stream.getTracks().forEach(track => track.stop());
+        resolve(blob);
+      };
+      
+      this.mediaRecorder.stop();
+    });
+  }
+}
 ```
 
 ---
@@ -7323,7 +11105,23 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/stream.ts`
 
 ```typescript
+// Helper untuk mendapatkan media stream
+export async function getMediaStream(audio: boolean = true, video: boolean = false): Promise<MediaStream> {
+  try {
+    const constraints: MediaStreamConstraints = {
+      audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
+      video: video ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false
+    };
+    return await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (error) {
+    console.error('Error accessing media devices.', error);
+    throw error;
+  }
+}
 
+export function stopMediaStream(stream: MediaStream) {
+  stream.getTracks().forEach(track => track.stop());
+}
 ```
 
 ---
@@ -7331,7 +11129,43 @@ export class TimerController {
 #### 📄 File: `./src/lib/media/upload.ts`
 
 ```typescript
+import { apiClient } from '@/lib/api/client';
 
+const CHUNK_SIZE = 1024 * 1024; // 1MB
+
+export async function uploadMediaChunked(
+  attemptId: number,
+  answerId: number,
+  file: Blob,
+  checksum: string,
+  onProgress: (progress: number) => void
+) {
+  const totalSize = file.size;
+  const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
+  const uploadId = `${attemptId}-${answerId}-${Date.now()}`;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, totalSize);
+    const chunk = file.slice(start, end);
+
+    const formData = new FormData();
+    formData.append('chunk', chunk);
+    formData.append('chunkIndex', i.toString());
+    formData.append('totalChunks', totalChunks.toString());
+    formData.append('uploadId', uploadId);
+    formData.append('checksum', checksum); // Send checksum with final chunk or init
+
+    await apiClient.post(`/student/attempts/${attemptId}/answers/${answerId}/media-chunk`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    const progress = Math.round(((i + 1) / totalChunks) * 100);
+    onProgress(progress);
+  }
+  
+  return { success: true, uploadId };
+}
 ```
 
 ---
@@ -7339,7 +11173,25 @@ export class TimerController {
 #### 📄 File: `./src/lib/offline/cache.ts`
 
 ```typescript
+export const CACHE_NAME = 'exam-assets-v1';
 
+export async function cacheAssets(urls: string[]) {
+  if ('caches' in window) {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(urls);
+  }
+}
+
+export async function clearOldCaches(currentCache: string) {
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.map(key => {
+        if (key !== currentCache) return caches.delete(key);
+      })
+    );
+  }
+}
 ```
 
 ---
@@ -7549,7 +11401,56 @@ export async function deleteDownloadedExam(examId: number): Promise<void> {
 #### 📄 File: `./src/lib/offline/queue.ts`
 
 ```typescript
+import { db } from '@/lib/db/schema';
+import type { SyncQueueItem } from '@/types/sync';
 
+export async function addToQueue(
+  type: SyncQueueItem['type'],
+  data: any,
+  priority: number = 1
+) {
+  const item: SyncQueueItem = {
+    type,
+    data,
+    priority,
+    retry_count: 0,
+    max_retries: 5,
+    status: 'pending',
+    created_at: new Date()
+  };
+
+  // @ts-ignore - Dexie types sometimes tricky with auto-increment
+  return await db.sync_queue.add(item);
+}
+
+export async function getNextBatch(limit: number = 10) {
+  return await db.sync_queue
+    .where('status')
+    .equals('pending')
+    .sortBy('priority') 
+    .then(items => items.reverse().slice(0, limit));
+}
+
+export async function markAsProcessed(id: number) {
+  return await db.sync_queue.update(id, {
+    status: 'completed',
+    processed_at: new Date()
+  });
+}
+
+export async function markAsFailed(id: number, error: string) {
+  const item = await db.sync_queue.get(id);
+  if (!item) return;
+
+  const newRetryCount = item.retry_count + 1;
+  const status = newRetryCount >= item.max_retries ? 'failed' : 'pending';
+
+  return await db.sync_queue.update(id, {
+    status,
+    retry_count: newRetryCount,
+    error_message: error
+  });
+}
 ```
 
 ---
@@ -7738,7 +11639,30 @@ export const syncManager = new SyncManager();
 #### 📄 File: `./src/lib/utils/crypto.ts`
 
 ```typescript
+import CryptoJS from 'crypto-js';
 
+const SALT = import.meta.env.PUBLIC_CRYPTO_SALT || 'default-salt';
+
+export function hashString(str: string): string {
+  return CryptoJS.SHA256(str + SALT).toString();
+}
+
+export function generateRandomString(length: number = 16): string {
+  return CryptoJS.lib.WordArray.random(length).toString();
+}
+
+// Obfuscation sederhana untuk local storage (bukan enkripsi tingkat tinggi)
+export function obfuscate(text: string): string {
+  return btoa(text);
+}
+
+export function deobfuscate(text: string): string {
+  try {
+    return atob(text);
+  } catch {
+    return '';
+  }
+}
 ```
 
 ---
@@ -7866,7 +11790,37 @@ export async function getBatteryStatus(): Promise<{
 #### 📄 File: `./src/lib/utils/error.ts`
 
 ```typescript
+export class AppError extends Error {
+  public code: string;
+  public statusCode: number;
+  public isOperational: boolean;
 
+  constructor(message: string, code: string = 'UNKNOWN_ERROR', statusCode: number = 500, isOperational: boolean = true) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+    Object.setPrototypeOf(this, AppError.prototype);
+  }
+}
+
+export function handleError(error: unknown): string {
+  if (error instanceof AppError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Terjadi kesalahan yang tidak diketahui';
+}
+
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message.includes('Network Error') || 
+    error.message.includes('Failed to fetch') ||
+    error.name === 'NetworkError'
+  );
+}
 ```
 
 ---
@@ -7917,7 +11871,43 @@ export function formatFileSize(bytes: number): string {
 #### 📄 File: `./src/lib/utils/logger.ts`
 
 ```typescript
+type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
+class Logger {
+  private context: string;
+
+  constructor(context: string = 'App') {
+    this.context = context;
+  }
+
+  private formatMessage(level: LogLevel, message: string, data?: any) {
+    const timestamp = new Date().toISOString();
+    return {
+      timestamp,
+      level,
+      context: this.context,
+      message,
+      data
+    };
+  }
+
+  info(message: string, data?: any) {
+    if (import.meta.env.DEV) {
+      console.log(`[INFO] [${this.context}] ${message}`, data || '');
+    }
+  }
+
+  error(message: string, error?: any) {
+    console.error(`[ERROR] [${this.context}] ${message}`, error || '');
+  }
+
+  warn(message: string, data?: any) {
+    console.warn(`[WARN] [${this.context}] ${message}`, data || '');
+  }
+}
+
+export const logger = new Logger();
+export const createLogger = (context: string) => new Logger(context);
 ```
 
 ---
@@ -9391,7 +13381,49 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/styles/animations.css`
 
 ```css
+/* src/styles/animations.css */
 
+/* Fade In */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Slide Up */
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Pulse for Recording */
+@keyframes recordingPulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.recording-active {
+  animation: recordingPulse 2s infinite;
+}
+
+/* Shake for Error */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
 ```
 
 ---
@@ -9399,7 +13431,52 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/styles/arabic.css`
 
 ```css
+/* src/styles/arabic.css */
 
+/* Define Arabic Fonts */
+@font-face {
+  font-family: 'Amiri';
+  src: url('/fonts/Amiri-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Scheherazade';
+  src: url('/fonts/Scheherazade-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Utility Classes */
+.font-arabic {
+  font-family: 'Amiri', serif;
+  line-height: 1.8;
+}
+
+.font-quran {
+  font-family: 'Scheherazade', serif;
+  line-height: 2.2;
+}
+
+/* RTL Support */
+.rtl {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Quranic Text Specifics */
+.ayat-number {
+  font-family: sans-serif;
+  font-size: 0.8em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  padding: 2px 6px;
+  margin: 0 5px;
+  display: inline-block;
+}
 ```
 
 ---
@@ -9538,7 +13615,59 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/styles/print.css`
 
 ```css
+/* src/styles/print.css */
+@media print {
+  /* Sembunyikan elemen navigasi dan UI yang tidak perlu */
+  header, 
+  aside, 
+  footer, 
+  .no-print, 
+  .btn, 
+  .modal, 
+  .toast,
+  .breadcrumbs {
+    display: none !important;
+  }
 
+  /* Reset layout */
+  body, main {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+    display: block;
+  }
+
+  /* Atur tipografi untuk cetak */
+  body {
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  /* Penanganan Page Break */
+  .page-break {
+    page-break-before: always;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+
+  /* Soal Ujian */
+  .question-item {
+    page-break-inside: avoid;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+  }
+
+  /* Tampilkan URL link (opsional) */
+  a[href]:after {
+    content: " (" attr(href) ")";
+    font-size: 0.8em;
+  }
+}
 ```
 
 ---
@@ -9546,7 +13675,38 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/styles/themes.css`
 
 ```css
+/* src/styles/themes.css */
 
+/* Custom Theme Variables Override */
+:root {
+  --rounded-box: 1rem;
+  --rounded-btn: 0.5rem;
+  --rounded-badge: 1.9rem;
+  --animation-btn: 0.25s;
+  --animation-input: 0.2s;
+  --btn-focus-scale: 0.95;
+  --border-btn: 1px;
+  --tab-border: 1px;
+  --tab-radius: 0.5rem;
+}
+
+/* High Contrast Mode Overrides */
+.high-contrast {
+  --p: 220 100% 40%; /* Darker Primary */
+  --bc: 0 0% 0%; /* Blacker Content */
+  --b1: 0 0% 100%; /* Whiter Background */
+}
+
+.high-contrast .btn {
+  border-width: 2px;
+}
+
+.high-contrast .input, 
+.high-contrast .select, 
+.high-contrast .textarea {
+  border-width: 2px;
+  border-color: black;
+}
 ```
 
 ---
@@ -9556,7 +13716,72 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/middleware/auth.ts`
 
 ```typescript
+import { defineMiddleware } from "astro:middleware";
 
+export const authMiddleware = defineMiddleware(async ({ cookies, redirect, locals }, next) => {
+  const token = cookies.get("access_token");
+
+  // Logic validasi token sederhana
+  if (token) {
+    locals.isAuthenticated = true;
+    // Di real app, decode JWT untuk dapat user info
+    // locals.user = decode(token.value);
+  } else {
+    locals.isAuthenticated = false;
+  }
+
+  return next();
+});
+```
+
+---
+
+#### 📄 File: `./src/middleware/index.ts`
+
+```typescript
+import { defineMiddleware } from "astro:middleware";
+
+// Daftar rute publik yang tidak butuh login
+const PUBLIC_ROUTES = ['/login', '/offline', '/api/health', '/manifest.json'];
+
+export const onRequest = defineMiddleware(async (context, next) => {
+  const { url, cookies, redirect, locals } = context;
+  const token = cookies.get("access_token")?.value;
+  
+  // 1. Cek Public Routes
+  if (PUBLIC_ROUTES.some(route => url.pathname.startsWith(route)) || url.pathname.match(/\.(css|js|jpg|png|svg|ico)$/)) {
+    return next();
+  }
+
+  // 2. Auth Check
+  if (!token) {
+    return redirect("/login");
+  }
+
+  // Di aplikasi nyata, kita akan memvalidasi/decode token JWT di sini
+  // Untuk simulasi, kita anggap token menyimpan role secara sederhana atau kita fetch user
+  // Contoh decoding JWT sederhana (tidak aman untuk production tanpa verify signature)
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    locals.user = payload; // Simpan user di locals agar bisa diakses di page
+    
+    const userRole = payload.role;
+    const path = url.pathname;
+
+    // 3. Role Based Access Control (RBAC)
+    if (path.startsWith('/guru') && userRole !== 'guru') return redirect('/');
+    if (path.startsWith('/siswa') && userRole !== 'siswa') return redirect('/');
+    if (path.startsWith('/pengawas') && userRole !== 'pengawas') return redirect('/');
+    if (path.startsWith('/operator') && userRole !== 'operator') return redirect('/');
+    if (path.startsWith('/superadmin') && userRole !== 'superadmin') return redirect('/');
+
+  } catch (e) {
+    // Token invalid
+    return redirect("/login");
+  }
+
+  return next();
+});
 ```
 
 ---
@@ -9564,7 +13789,25 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/middleware/role.ts`
 
 ```typescript
+import { defineMiddleware } from "astro:middleware";
 
+export const roleMiddleware = defineMiddleware(async ({ url, locals, redirect }, next) => {
+  // Asumsi locals.user sudah di-set oleh authMiddleware sebelumnya
+  const user = locals.user as any;
+  const path = url.pathname;
+
+  // Jika tidak ada user (belum login), biarkan authMiddleware yang handle redirect
+  if (!user) return next();
+
+  // Role Guard Logic
+  if (path.startsWith('/guru') && user.role !== 'guru') return redirect('/403');
+  if (path.startsWith('/siswa') && user.role !== 'siswa') return redirect('/403');
+  if (path.startsWith('/pengawas') && user.role !== 'pengawas') return redirect('/403');
+  if (path.startsWith('/operator') && user.role !== 'operator') return redirect('/403');
+  if (path.startsWith('/superadmin') && user.role !== 'superadmin') return redirect('/403');
+
+  return next();
+});
 ```
 
 ---
@@ -9572,7 +13815,30 @@ export interface SuperAdmin extends User {
 #### 📄 File: `./src/middleware/tenant.ts`
 
 ```typescript
+import { defineMiddleware } from "astro:middleware";
 
+export const tenantMiddleware = defineMiddleware(async ({ request, locals }, next) => {
+  const url = new URL(request.url);
+  const hostname = url.hostname; // misal: sman1.exam.app
+
+  // Logic ekstraksi subdomain
+  const parts = hostname.split('.');
+  let subdomain = 'www';
+
+  // Asumsi domain utama adalah exam.app (2 parts) atau localhost (1 part)
+  // Jika parts > 2, berarti ada subdomain
+  if (parts.length > 2 && parts[0] !== 'www') {
+    subdomain = parts[0];
+  }
+
+  // Simpan di locals untuk diakses di page/component
+  locals.tenant = subdomain;
+
+  // Di aplikasi nyata, kita bisa cek ke DB/Cache apakah tenant valid disini
+  // if (!isValidTenant(subdomain)) return new Response('Tenant not found', { status: 404 });
+  
+  return next();
+});
 ```
 
 ---

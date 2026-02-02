@@ -1,0 +1,52 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+---
+
+<DashboardLayout title="Tambah Sekolah Baru" role="superadmin">
+  <div class="max-w-3xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <form class="space-y-6">
+          <h2 class="card-title">Informasi Sekolah</h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="name" label="Nama Sekolah" required />
+            <Input name="npsn" label="NPSN" />
+          </div>
+
+          <div class="form-control">
+            <label class="label"><span class="label-text">Alamat Lengkap</span></label>
+            <textarea class="textarea textarea-bordered"></textarea>
+          </div>
+
+          <div class="divider">Konfigurasi Sistem</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Subdomain</span></label>
+              <div class="join">
+                <input type="text" placeholder="sekolah" class="input input-bordered join-item w-full" />
+                <span class="btn btn-disabled join-item">.exam.app</span>
+              </div>
+            </div>
+            <Input name="max_students" type="number" label="Limit Siswa" value="500" />
+          </div>
+
+          <div class="divider">Akun Administrator</div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input name="admin_name" label="Nama Admin" required />
+            <Input name="admin_email" type="email" label="Email Admin" required />
+            <Input name="admin_password" type="password" label="Password Default" required />
+          </div>
+
+          <div class="card-actions justify-end mt-6">
+            <button type="button" class="btn btn-ghost" onclick="history.back()">Batal</button>
+            <button type="submit" class="btn btn-primary">Buat Sekolah</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

@@ -1,47 +1,70 @@
 // src/lib/exam/autoSave.ts
+import { db } from '@/lib/db/schema';
+import type { ExamAnswer } from '@/types/answer';
+
 export class AutoSaveManager {
   private attemptId: number;
-  private intervalId: number | null = null;
-  private isPaused: boolean = false;
-  private onSaveCallback: (() => Promise<void>) | null = null;
+  private pendingChanges: Map<number, ExamAnswer> = new Map();
+  private saveInterval: number | null = null;
+  private isSaving: boolean = false;
+  
+  // Callback untuk update UI status
+  private onStatusChange: (status: 'idle' | 'saving' | 'saved' | 'error') => void;
 
-  constructor(attemptId: number) {
+  constructor(attemptId: number, onStatusChange: (status: any) => void) {
     this.attemptId = attemptId;
+    this.onStatusChange = onStatusChange;
   }
 
-  start(intervalMs: number, onSave: () => Promise<void>): void {
-    this.onSaveCallback = onSave;
-    this.isPaused = false;
+  // Queue changes (dipanggil setiap user ngetik/pilih jawaban)
+  enqueue(questionId: number, answer: ExamAnswer) {
+    this.pendingChanges.set(questionId, answer);
+    this.onStatusChange('idle'); // Status "Belum tersimpan" (bisa diubah logicnya)
+  }
 
-    this.intervalId = window.setInterval(async () => {
-      if (!this.isPaused && this.onSaveCallback) {
-        try {
-          await this.onSaveCallback();
-        } catch (error) {
-          console.error('Auto-save failed:', error);
-        }
-      }
+  start(intervalMs: number = 30000) {
+    this.saveInterval = window.setInterval(() => {
+      this.save();
     }, intervalMs);
   }
 
-  pause(): void {
-    this.isPaused = true;
-  }
-
-  resume(): void {
-    this.isPaused = false;
-  }
-
-  stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+  stop() {
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = null;
     }
+    // Force save on stop
+    this.save();
   }
 
-  async saveNow(): Promise<void> {
-    if (this.onSaveCallback) {
-      await this.onSaveCallback();
+  async save() {
+    if (this.pendingChanges.size === 0 || this.isSaving) return;
+
+    this.isSaving = true;
+    this.onStatusChange('saving');
+
+    try {
+      // Ambil snapshot data yang akan disimpan
+      const changesToSave = Array.from(this.pendingChanges.values());
+      
+      // 1. Simpan ke IndexedDB (Critical)
+      await db.exam_answers.bulkPut(changesToSave);
+      
+      // 2. Clear pending map (hanya yang sudah diambil)
+      changesToSave.forEach(ans => {
+        // Cek apakah ada perubahan baru selama proses save
+        const currentPending = this.pendingChanges.get(ans.question_id!);
+        if (currentPending === ans) {
+          this.pendingChanges.delete(ans.question_id!);
+        }
+      });
+
+      this.onStatusChange('saved');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      this.onStatusChange('error');
+    } finally {
+      this.isSaving = false;
     }
   }
 }

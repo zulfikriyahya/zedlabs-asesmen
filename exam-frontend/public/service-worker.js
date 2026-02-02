@@ -1,130 +1,94 @@
-// public/service-worker.js
 const CACHE_NAME = 'exam-app-v1';
-const OFFLINE_CACHE = 'exam-offline-v1';
+const ASSETS_CACHE = 'assets-v1';
 
+// Aset statis yang WAJIB ada agar app bisa jalan offline
 const STATIC_ASSETS = [
   '/',
   '/login',
-  '/offline',
+  '/offline', // Halaman fallback
   '/manifest.json',
+  '/fonts/Amiri-Regular.ttf',
+  '/fonts/Scheherazade-Regular.ttf',
+  '/icons/icon-192.png',
+  '/favicon.svg'
 ];
 
-// Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('[SW] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching static assets');
       return cache.addAll(STATIC_ASSETS);
     })
   );
   self.skipWaiting();
 });
 
-// Activate event - cleanup old caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log('[SW] Activating...');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== OFFLINE_CACHE)
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name);
-            return caches.delete(name);
-          })
+        keys.map((key) => {
+          if (key !== CACHE_NAME && key !== ASSETS_CACHE) {
+            return caches.delete(key);
+          }
+        })
       );
     })
   );
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const url = new URL(event.request.url);
 
-  // Skip cross-origin requests
-  if (url.origin !== location.origin) {
+  // 1. API Requests (Network First, then fail silently or return cached error)
+  // Note: Data ujian disimpan di IndexedDB oleh aplikasi, bukan di Cache Storage API.
+  // Jadi SW hanya perlu memastikan request API tidak memblokir UI.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // Return JSON error agar frontend bisa handle (misal masuk queue)
+        return new Response(JSON.stringify({ error: 'offline' }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 503
+        });
+      })
+    );
     return;
   }
 
-  // API calls - network first, fallback to cache
-  if (url.pathname.startsWith('/api/')) {
+  // 2. Navigation (HTML Pages) - Network First, Fallback to /offline
+  if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Cache successful responses
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(OFFLINE_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return response;
-        })
+      fetch(event.request)
         .catch(() => {
-          // Fallback to cache
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            // Return offline page for failed API calls
-            return new Response(
-              JSON.stringify({ error: 'You are offline' }),
-              {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
+          return caches.match(event.request).then((cached) => {
+            // Jika halaman ada di cache (misal dashboard), return itu
+            if (cached) return cached;
+            // Jika tidak, return halaman offline generic
+            return caches.match('/offline');
           });
         })
     );
     return;
   }
 
-  // Static assets - cache first, fallback to network
+  // 3. Static Assets (Stale-While-Revalidate)
+  // Font, CSS, JS, Images
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(request)
-        .then((response) => {
-          // Cache for future use
-          if (response.ok && request.method === 'GET') {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Return offline page for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match('/offline');
-          }
-          return new Response('Offline', { status: 503 });
-        });
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        // Cache new version
+        if (networkResponse.ok) {
+          const clone = networkResponse.clone();
+          caches.open(ASSETS_CACHE).then((cache) => cache.put(event.request, clone));
+        }
+        return networkResponse;
+      });
+      
+      // Return cached immediately if available, else wait for network
+      return cachedResponse || fetchPromise;
     })
   );
-});
-
-// Message event - for manual cache updates
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    event.waitUntil(
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => caches.delete(cacheName))
-        );
-      })
-    );
-  }
 });

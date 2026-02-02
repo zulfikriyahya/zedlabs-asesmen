@@ -1,0 +1,60 @@
+---
+interface Props {
+  name: string;
+  label?: string;
+  options: Array<{ value: string | number; label: string; disabled?: boolean }>;
+  value?: string | number;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  error?: string;
+  class?: string;
+}
+
+const {
+  name,
+  label,
+  options,
+  value,
+  placeholder = 'Pilih salah satu...',
+  required = false,
+  disabled = false,
+  error,
+  class: className = '',
+} = Astro.props;
+---
+
+<div class:list={['form-control', className]}>
+  {label && (
+    <label class="label" for={name}>
+      <span class="label-text">
+        {label}
+        {required && <span class="text-error ml-1">*</span>}
+      </span>
+    </label>
+  )}
+  
+  <select
+    id={name}
+    name={name}
+    required={required}
+    disabled={disabled}
+    class:list={[
+      'select select-bordered w-full',
+      { 'select-error': error },
+    ]}
+  >
+    <option value="" disabled selected={!value}>{placeholder}</option>
+    {options.map((opt) => (
+      <option value={opt.value} selected={opt.value === value} disabled={opt.disabled}>
+        {opt.label}
+      </option>
+    ))}
+  </select>
+  
+  {error && (
+    <label class="label">
+      <span class="label-text-alt text-error">{error}</span>
+    </label>
+  )}
+</div>

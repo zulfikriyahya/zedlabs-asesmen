@@ -1,0 +1,77 @@
+---
+interface Props {
+  initialTags?: string[];
+  name?: string;
+}
+
+const { initialTags = [], name = 'tags' } = Astro.props;
+---
+
+<div class="form-control w-full">
+  <label class="label">
+    <span class="label-text">Tags / Kategori</span>
+  </label>
+  
+  <div class="flex flex-wrap gap-2 mb-2" id="tags-container">
+    {initialTags.map(tag => (
+      <div class="badge badge-primary gap-2">
+        {tag}
+        <input type="hidden" name={`${name}[]`} value={tag} />
+        <button type="button" class="btn btn-ghost btn-xs btn-circle text-white remove-tag">✕</button>
+      </div>
+    ))}
+  </div>
+
+  <div class="flex gap-2">
+    <input 
+      type="text" 
+      id="tag-input" 
+      class="input input-bordered input-sm flex-1" 
+      placeholder="Ketik tag lalu tekan Enter..." 
+    />
+    <button type="button" id="add-tag-btn" class="btn btn-sm btn-ghost">Tambah</button>
+  </div>
+</div>
+
+<script>
+  const container = document.getElementById('tags-container');
+  const input = document.getElementById('tag-input') as HTMLInputElement;
+  const addBtn = document.getElementById('add-tag-btn');
+
+  function createTag(text: string) {
+    const div = document.createElement('div');
+    div.className = 'badge badge-primary gap-2 animate-fade-in';
+    div.innerHTML = `
+      ${text}
+      <input type="hidden" name="tags[]" value="${text}" />
+      <button type="button" class="btn btn-ghost btn-xs btn-circle text-white remove-tag">✕</button>
+    `;
+    
+    div.querySelector('.remove-tag')?.addEventListener('click', () => div.remove());
+    return div;
+  }
+
+  function addTag() {
+    const text = input.value.trim();
+    if (text) {
+      container?.appendChild(createTag(text));
+      input.value = '';
+    }
+  }
+
+  addBtn?.addEventListener('click', addTag);
+  
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTag();
+    }
+  });
+
+  // Setup initial remove buttons
+  document.querySelectorAll('.remove-tag').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      (e.target as HTMLElement).closest('.badge')?.remove();
+    });
+  });
+</script>

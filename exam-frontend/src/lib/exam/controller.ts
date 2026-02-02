@@ -18,22 +18,17 @@ export class ExamController {
     this.attemptId = attemptId;
   }
 
-  async start(): Promise<void> {
-    await this.saveState();
-  }
-
+  // Initialize and load saved data
   async loadState(): Promise<void> {
+    // 1. Load transient state (navigation, flags)
     const state = await db.exam_states.get(this.attemptId);
     
     if (state) {
       this.currentQuestionIndex = state.current_question_index;
       this.flags = new Set(state.flags);
-      
-      for (const [questionId, answer] of Object.entries(state.answers)) {
-        this.answers.set(parseInt(questionId), answer as ExamAnswer);
-      }
     }
     
+    // 2. Load answers (source of truth)
     const savedAnswers = await db.exam_answers
       .where('attempt_id')
       .equals(this.attemptId)
@@ -44,7 +39,13 @@ export class ExamController {
     });
   }
 
+  async start(): Promise<void> {
+    await this.saveState();
+  }
+
+  // Persist current state to IndexedDB
   async saveState(): Promise<void> {
+    // Convert Map to Object for storage
     const answersObj: Record<number, any> = {};
     this.answers.forEach((answer, questionId) => {
       answersObj[questionId] = answer;
@@ -53,8 +54,9 @@ export class ExamController {
     const state: ExamState = {
       attempt_id: this.attemptId,
       current_question_index: this.currentQuestionIndex,
-      time_remaining_seconds: 0,
-      started_at: new Date(),
+      time_remaining_seconds: 0, // Managed by TimerController usually, but good to snapshot
+      started_at: new Date(), // Should be original start time
+      paused_at: undefined,
       answers: answersObj,
       flags: Array.from(this.flags),
     };
@@ -62,6 +64,7 @@ export class ExamController {
     await db.exam_states.put(state);
   }
 
+  // Navigation
   getCurrentQuestion(): Question {
     return this.questions[this.currentQuestionIndex];
   }
@@ -99,8 +102,24 @@ export class ExamController {
     }
   }
 
-  saveAnswer(questionId: number, answer: ExamAnswer): void {
-    this.answers.set(questionId, answer);
+  // Answering
+  saveAnswer(questionId: number, answerData: Partial<ExamAnswer>): void {
+    const existing = this.answers.get(questionId) || {};
+    
+    const fullAnswer: ExamAnswer = {
+      attempt_id: this.attemptId,
+      question_id: questionId,
+      answered_at: new Date(),
+      synced: false,
+      ...existing,
+      ...answerData
+    } as ExamAnswer;
+
+    this.answers.set(questionId, fullAnswer);
+    
+    // Also save to persistent answer table immediately for safety
+    db.exam_answers.put(fullAnswer);
+    
     this.saveState();
   }
 
@@ -112,6 +131,7 @@ export class ExamController {
     return Array.from(this.answers.values());
   }
 
+  // Flagging
   toggleFlag(questionId: number): void {
     if (this.flags.has(questionId)) {
       this.flags.delete(questionId);
@@ -125,6 +145,7 @@ export class ExamController {
     return this.flags.has(questionId);
   }
 
+  // Stats
   getAnsweredCount(): number {
     return this.answers.size;
   }
@@ -135,9 +156,5 @@ export class ExamController {
 
   getAttemptId(): number {
     return this.attemptId;
-  }
-
-  getExam(): Exam {
-    return this.exam;
   }
 }
