@@ -1,0 +1,37 @@
+---
+// src/components/ui/Card.astro
+interface Props {
+  title?: string;
+  bordered?: boolean;
+  compact?: boolean;
+  class?: string;
+}
+
+const {
+  title,
+  bordered = false,
+  compact = false,
+  class: className = '',
+} = Astro.props;
+---
+
+<div class:list={[
+  'card bg-base-100',
+  { 'card-bordered': bordered },
+  { 'card-compact': compact },
+  'shadow-xl',
+  className,
+]}>
+  {title && (
+    <div class="card-body">
+      <h2 class="card-title">{title}</h2>
+      <slot />
+    </div>
+  )}
+  
+  {!title && (
+    <div class="card-body">
+      <slot />
+    </div>
+  )}
+</div>

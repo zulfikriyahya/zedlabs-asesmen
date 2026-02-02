@@ -1,0 +1,40 @@
+---
+// src/components/ui/Alert.astro
+interface Props {
+  type?: 'info' | 'success' | 'warning' | 'error';
+  title?: string;
+  dismissible?: boolean;
+  class?: string;
+}
+
+const {
+  type = 'info',
+  title,
+  dismissible = false,
+  class: className = '',
+} = Astro.props;
+
+const typeClass = {
+  info: 'alert-info',
+  success: 'alert-success',
+  warning: 'alert-warning',
+  error: 'alert-error',
+}[type];
+---
+
+<div class:list={['alert', typeClass, className]} role="alert">
+  <div class="flex-1">
+    {title && <h3 class="font-bold">{title}</h3>}
+    <div class="text-sm">
+      <slot />
+    </div>
+  </div>
+  
+  {dismissible && (
+    <button class="btn btn-sm btn-ghost" onclick="this.parentElement.remove()">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  )}
+</div>

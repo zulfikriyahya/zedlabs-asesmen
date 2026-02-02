@@ -1,0 +1,93 @@
+---
+// src/pages/login.astro
+import Base from '@/layouts/Base.astro';
+import Button from '@/components/ui/Button.astro';
+import Input from '@/components/ui/Input.astro';
+import Alert from '@/components/ui/Alert.astro';
+---
+
+<Base title="Login - Sistem Ujian">
+  <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
+    <div class="card w-full max-w-md bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title text-2xl font-bold text-center mb-4">
+          Sistem Ujian Sekolah
+        </h2>
+        
+        <div id="error-alert" class="hidden mb-4">
+          <Alert type="error" dismissible>
+            <span id="error-message"></span>
+          </Alert>
+        </div>
+        
+        <form id="login-form">
+          <Input
+            name="username"
+            label="Username"
+            placeholder="Masukkan username"
+            required
+          />
+          
+          <Input
+            type="password"
+            name="password"
+            label="Password"
+            placeholder="Masukkan password"
+            required
+            class="mt-4"
+          />
+          
+          <div class="form-control mt-6">
+            <Button type="submit" block>
+              <span id="login-text">Login</span>
+              <span id="login-loading" class="loading loading-spinner loading-sm hidden"></span>
+            </Button>
+          </div>
+        </form>
+        
+        <div class="text-center mt-4 text-sm text-base-content/70">
+          <p>Pastikan koneksi internet stabil untuk login pertama kali</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { login } from '@/lib/api/auth';
+    
+    const form = document.getElementById('login-form') as HTMLFormElement;
+    const errorAlert = document.getElementById('error-alert') as HTMLElement;
+    const errorMessage = document.getElementById('error-message') as HTMLElement;
+    const loginText = document.getElementById('login-text') as HTMLElement;
+    const loginLoading = document.getElementById('login-loading') as HTMLElement;
+    const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      errorAlert.classList.add('hidden');
+      submitBtn.disabled = true;
+      loginText.classList.add('hidden');
+      loginLoading.classList.remove('hidden');
+      
+      const formData = new FormData(form);
+      const credentials = {
+        username: formData.get('username') as string,
+        password: formData.get('password') as string,
+      };
+      
+      try {
+        await login(credentials);
+        
+        window.location.href = '/siswa/dashboard';
+      } catch (error: any) {
+        errorMessage.textContent = error.response?.data?.error || 'Login gagal. Periksa username dan password Anda.';
+        errorAlert.classList.remove('hidden');
+        
+        submitBtn.disabled = false;
+        loginText.classList.remove('hidden');
+        loginLoading.classList.add('hidden');
+      }
+    });
+  </script>
+</Base>
