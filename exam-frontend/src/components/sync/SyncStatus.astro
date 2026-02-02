@@ -1,0 +1,75 @@
+---
+// src/components/sync/SyncStatus.astro
+---
+
+<div class="sync-status" id="sync-status">
+  <div class="flex items-center gap-2 text-sm">
+    <div id="sync-icon" class="h-4 w-4"></div>
+    <span id="sync-text">Tersinkron</span>
+  </div>
+
+  <div id="sync-details" class="mt-2 hidden">
+    <div class="space-y-1 text-xs">
+      <div class="flex justify-between">
+        <span>Selesai:</span>
+        <span id="sync-completed" class="font-bold">0</span>
+      </div>
+      <div class="flex justify-between">
+        <span>Pending:</span>
+        <span id="sync-pending">0</span>
+      </div>
+      <div class="flex justify-between">
+        <span>Gagal:</span>
+        <span id="sync-failed" class="text-error">0</span>
+      </div>
+    </div>
+    <progress id="sync-progress" class="progress-sm progress mt-2 w-full" value="0" max="100"
+    ></progress>
+  </div>
+</div>
+
+<script>
+  import { $syncStore } from '@/stores/sync';
+  import { syncManager } from '@/lib/offline/sync';
+
+  const syncIcon = document.getElementById('sync-icon');
+  const syncText = document.getElementById('sync-text');
+  const syncDetails = document.getElementById('sync-details');
+  const syncCompleted = document.getElementById('sync-completed');
+  const syncPending = document.getElementById('sync-pending');
+  const syncFailed = document.getElementById('sync-failed');
+  const syncProgress = document.getElementById('sync-progress') as HTMLProgressElement;
+
+  const icons = {
+    idle: `<svg class="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>`,
+    syncing: `<svg class="w-4 h-4 text-info animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`,
+    error: `<svg class="w-4 h-4 text-error" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>`,
+  };
+
+  $syncStore.subscribe((state) => {
+    if (!syncIcon || !syncText) return;
+
+    if (state.isSyncing) {
+      syncIcon.innerHTML = icons.syncing;
+      syncText.textContent = 'Menyinkronkan...';
+      syncDetails?.classList.remove('hidden');
+    } else if (state.error) {
+      syncIcon.innerHTML = icons.error;
+      syncText.textContent = 'Gagal sinkronisasi';
+      syncDetails?.classList.remove('hidden');
+    } else {
+      syncIcon.innerHTML = icons.idle;
+      syncText.textContent = 'Tersinkron';
+      syncDetails?.classList.add('hidden');
+    }
+
+    if (state.progress) {
+      if (syncCompleted) syncCompleted.textContent = state.progress.completed.toString();
+      if (syncPending) syncPending.textContent = state.progress.pending.toString();
+      if (syncFailed) syncFailed.textContent = state.progress.failed.toString();
+      if (syncProgress) syncProgress.value = state.progress.percentage;
+    }
+  });
+
+  syncManager.start();
+</script>

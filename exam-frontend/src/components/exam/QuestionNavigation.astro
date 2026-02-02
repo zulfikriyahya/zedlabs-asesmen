@@ -1,0 +1,78 @@
+---
+// src/components/exam/QuestionNavigation.astro
+interface Props {
+  questions: Array<{
+    id: number;
+    number: number;
+    type: string;
+  }>;
+  currentIndex: number;
+  answeredQuestions: Set<number>;
+  flaggedQuestions: Set<number>;
+}
+
+const { questions, currentIndex, answeredQuestions, flaggedQuestions } = Astro.props;
+---
+
+<div class="question-navigation flex h-full flex-col">
+  <div class="border-b border-base-300 p-4">
+    <h3 class="text-lg font-bold">Navigasi Soal</h3>
+    <div class="mt-2 text-sm text-base-content/70">
+      <span>{answeredQuestions.size}/{questions.length} terjawab</span>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto p-4">
+    <div class="grid grid-cols-5 gap-2">
+      {
+        questions.map((q, index) => {
+          const isAnswered = answeredQuestions.has(q.id);
+          const isFlagged = flaggedQuestions.has(q.id);
+          const isCurrent = index === currentIndex;
+
+          return (
+            <button
+              type="button"
+              class={`aspect-square rounded-lg border-2 font-semibold transition-all ${
+                isCurrent
+                  ? 'border-primary bg-primary text-primary-content'
+                  : isAnswered
+                    ? 'border-success bg-success/20 text-success-content'
+                    : isFlagged
+                      ? 'border-warning bg-warning/20 text-warning-content'
+                      : 'hover:border-base-400 border-base-300'
+              }`}
+              data-question-index={index}
+            >
+              <div class="flex h-full flex-col items-center justify-center">
+                <span class="text-lg">{q.number}</span>
+                {isFlagged && (
+                  <svg class="mt-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 6l3-3v12l-3-3V6zm4 0v12l10-6L7 6z" />
+                  </svg>
+                )}
+              </div>
+            </button>
+          );
+        })
+      }
+    </div>
+  </div>
+
+  <div class="border-t border-base-300 p-4">
+    <div class="flex gap-2 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="bg-primary h-4 w-4 rounded"></div>
+        <span>Aktif</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="h-4 w-4 rounded border-2 border-success bg-success/20"></div>
+        <span>Terjawab</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="h-4 w-4 rounded border-2 border-warning bg-warning/20"></div>
+        <span>Ditandai</span>
+      </div>
+    </div>
+  </div>
+</div>

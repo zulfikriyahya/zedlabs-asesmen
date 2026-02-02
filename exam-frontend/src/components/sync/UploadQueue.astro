@@ -1,0 +1,104 @@
+---
+// src/components/sync/UploadQueue.astro
+---
+
+<div class="upload-queue">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="font-bold">Antrian Upload</h3>
+    <button id="retry-all-btn" class="btn btn-sm btn-ghost">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      Retry Semua
+    </button>
+  </div>
+  
+  <div id="queue-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
+  
+  <div id="empty-state" class="text-center py-8 text-base-content/50">
+    <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p>Tidak ada item dalam antrian</p>
+  </div>
+</div>
+
+<script>
+  import { db } from '@/lib/db/schema';
+  
+  const queueList = document.getElementById('queue-list');
+  const emptyState = document.getElementById('empty-state');
+  
+  async function loadQueue() {
+    const items = await db.sync_queue
+      .where('status')
+      .anyOf(['pending', 'failed', 'processing'])
+      .sortBy('created_at');
+    
+    if (!queueList) return;
+    
+    if (items.length === 0) {
+      queueList.classList.add('hidden');
+      emptyState?.classList.remove('hidden');
+      return;
+    }
+    
+    queueList.classList.remove('hidden');
+    emptyState?.classList.add('hidden');
+    
+    queueList.innerHTML = items.map(item => {
+      const statusBadge = {
+        pending: '<span class="badge badge-warning badge-sm">Pending</span>',
+        processing: '<span class="badge badge-info badge-sm">Processing</span>',
+        failed: '<span class="badge badge-error badge-sm">Failed</span>'
+      }[item.status];
+      
+      const typeLabel = {
+        answer: 'Jawaban',
+        media: 'Media',
+        activity: 'Aktivitas',
+        submission: 'Submission'
+      }[item.type];
+      
+      return `
+        <div class="card bg-base-200 card-compact">
+          <div class="card-body">
+            <div class="flex justify-between items-start">
+              <div class="flex-1">
+                <p class="font-semibold text-sm">${typeLabel}</p>
+                <p class="text-xs text-base-content/70">
+                  Attempt ID: ${item.attempt_id}
+                </p>
+                {item.error_message && `
+                  <p class="text-xs text-error mt-1">${item.error_message}</p>
+                `}
+              </div>
+              <div class="flex flex-col items-end gap-1">
+                ${statusBadge}
+                <span class="text-xs text-base-content/50">
+                  Retry: ${item.retry_count}/${item.max_retries}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  document.getElementById('retry-all-btn')?.addEventListener('click', async () => {
+    await db.sync_queue
+      .where('status')
+      .equals('failed')
+      .modify({ status: 'pending', retry_count: 0 });
+    
+    loadQueue();
+    window.dispatchEvent(new CustomEvent('sync:retry-all'));
+  });
+  
+  loadQueue();
+  
+  window.addEventListener('sync:progress', () => {
+    loadQueue();
+  });
+</script>

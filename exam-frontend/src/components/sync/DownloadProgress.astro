@@ -1,0 +1,140 @@
+---
+// src/components/sync/DownloadProgress.astro
+interface Props {
+  examId?: number;
+}
+
+const { examId } = Astro.props;
+---
+
+<div class="modal modal-open">
+  <div class="modal-box">
+    <h3 class="mb-4 text-lg font-bold">Mengunduh Ujian</h3>
+
+    <div id="progress-container">
+      <div class="space-y-4">
+        <div id="phase-indicator" class="text-sm text-base-content/70"></div>
+
+        <progress id="progress-bar" class="progress progress-primary w-full" value="0" max="100"
+        ></progress>
+
+        <div class="text-center">
+          <p id="progress-text" class="text-lg font-bold">0%</p>
+          <p id="progress-detail" class="mt-1 text-sm text-base-content/70"></p>
+        </div>
+
+        <div id="file-list" class="max-h-40 space-y-1 overflow-y-auto text-xs"></div>
+      </div>
+    </div>
+
+    <div id="error-container" class="hidden">
+      <div class="alert alert-error">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <div>
+          <p class="font-bold">Download Gagal</p>
+          <p id="error-message" class="text-sm"></p>
+        </div>
+      </div>
+
+      <div class="modal-action">
+        <button class="btn btn-ghost" onclick="window.location.reload()"> Coba Lagi </button>
+        <button class="btn" onclick="window.history.back()"> Kembali </button>
+      </div>
+    </div>
+
+    <div id="success-container" class="hidden">
+      <div class="alert alert-success">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <span>Download selesai! Ujian siap dimulai.</span>
+      </div>
+
+      <div class="modal-action">
+        <button class="btn btn-primary" id="start-exam-btn"> Mulai Ujian </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { downloadExam } from '@/lib/offline/download';
+
+  const progressBar = document.getElementById('progress-bar') as HTMLProgressElement;
+  const progressText = document.getElementById('progress-text');
+  const progressDetail = document.getElementById('progress-detail');
+  const phaseIndicator = document.getElementById('phase-indicator');
+  const fileList = document.getElementById('file-list');
+  const errorContainer = document.getElementById('error-container');
+  const successContainer = document.getElementById('success-container');
+  const errorMessage = document.getElementById('error-message');
+
+  const examId = parseInt(window.location.pathname.split('/').pop() || '0');
+
+  async function startDownload() {
+    try {
+      await downloadExam(examId, (progress) => {
+        if (progressBar) progressBar.value = progress.percentage;
+        if (progressText) progressText.textContent = `${progress.percentage.toFixed(0)}%`;
+
+        const phases = {
+          preparing: 'Mempersiapkan...',
+          exam_data: 'Mengunduh data ujian...',
+          media_files: 'Mengunduh media...',
+          complete: 'Selesai!',
+        };
+
+        if (phaseIndicator) phaseIndicator.textContent = phases[progress.phase];
+
+        if (progress.phase === 'media_files' && progress.currentFile) {
+          if (progressDetail) {
+            progressDetail.textContent = `File ${progress.current} dari ${progress.total}`;
+          }
+
+          if (fileList) {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'text-success flex items-center gap-1';
+            fileItem.innerHTML = `
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+              </svg>
+              <span>${progress.currentFile.split('/').pop()}</span>
+            `;
+            fileList.appendChild(fileItem);
+            fileList.scrollTop = fileList.scrollHeight;
+          }
+        }
+
+        if (progress.phase === 'complete') {
+          setTimeout(() => {
+            document.getElementById('progress-container')?.classList.add('hidden');
+            successContainer?.classList.remove('hidden');
+          }, 500);
+        }
+      });
+    } catch (error: any) {
+      console.error('Download error:', error);
+      document.getElementById('progress-container')?.classList.add('hidden');
+      errorContainer?.classList.remove('hidden');
+      if (errorMessage) {
+        errorMessage.textContent = error.message || 'Terjadi kesalahan saat download';
+      }
+    }
+  }
+
+  document.getElementById('start-exam-btn')?.addEventListener('click', () => {
+    window.location.href = `/siswa/ujian/${examId}`;
+  });
+
+  startDownload();
+</script>
