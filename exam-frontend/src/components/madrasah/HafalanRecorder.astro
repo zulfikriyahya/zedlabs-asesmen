@@ -1,0 +1,277 @@
+---
+// src/components/madrasah/HafalanRecorder.astro
+interface Props {
+  surah: string;
+  ayahRange: string;
+  maxDuration?: number;
+}
+
+const { surah, ayahRange, maxDuration = 600 } = Astro.props;
+---
+
+<div class="hafalan-recorder card bg-base-200">
+  <div class="card-body">
+    <div class="mb-4 text-center">
+      <h3 class="font-arabic text-lg font-bold">{surah}</h3>
+      <p class="text-sm text-base-content/70">Ayat {ayahRange}</p>
+    </div>
+
+    <div class="alert alert-info mb-4">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <div class="text-sm">
+        <p class="font-semibold">Petunjuk Rekaman Hafalan:</p>
+        <ul class="mt-1 list-inside list-disc">
+          <li>Pastikan suara jelas dan tanpa noise</li>
+          <li>Bacakan ayat dengan tartil</li>
+          <li>Maksimal durasi: {maxDuration / 60} menit</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="recording-status" class="mb-4 hidden">
+      <div class="flex items-center justify-between rounded bg-error/10 p-4">
+        <div class="flex items-center gap-3">
+          <div class="animate-pulse">
+            <div class="h-3 w-3 rounded-full bg-error"></div>
+          </div>
+          <span class="font-semibold">Merekam...</span>
+        </div>
+        <div class="font-mono text-2xl" id="rec-timer">00:00</div>
+      </div>
+    </div>
+
+    <div id="waveform-container" class="mb-4 hidden">
+      <canvas id="waveform-canvas" class="h-32 w-full rounded bg-base-300"></canvas>
+    </div>
+
+    <div class="mb-4 flex justify-center gap-2">
+      <button type="button" id="start-hafalan-rec" class="btn btn-primary btn-lg">
+        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+          <circle cx="10" cy="10" r="6"></circle>
+        </svg>
+        Mulai Rekam Hafalan
+      </button>
+
+      <button type="button" id="stop-hafalan-rec" class="btn btn-error btn-lg hidden">
+        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
+          <rect x="6" y="6" width="8" height="8"></rect>
+        </svg>
+        Stop
+      </button>
+    </div>
+
+    <div id="playback-section" class="hidden">
+      <div class="divider">Preview Hafalan</div>
+
+      <audio id="hafalan-playback" class="mb-4 w-full" controls></audio>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" id="retry-hafalan" class="btn btn-ghost"> Rekam Ulang </button>
+        <button type="button" id="submit-hafalan" class="btn btn-success"> Submit Hafalan </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ maxDuration }}>
+  let mediaRecorder;
+  let recordedChunks = [];
+  let stream;
+  let startTime;
+  let timerInterval;
+  let audioContext;
+  let analyser;
+  let dataArray;
+  let animationId;
+
+  const startBtn = document.getElementById('start-hafalan-rec');
+  const stopBtn = document.getElementById('stop-hafalan-rec');
+  const retryBtn = document.getElementById('retry-hafalan');
+  const submitBtn = document.getElementById('submit-hafalan');
+  const recordingStatus = document.getElementById('recording-status');
+  const timerEl = document.getElementById('rec-timer');
+  const playbackSection = document.getElementById('playback-section');
+  const playback = document.getElementById('hafalan-playback') as HTMLAudioElement;
+  const waveformContainer = document.getElementById('waveform-container');
+  const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
+
+  startBtn?.addEventListener('click', startRecording);
+  stopBtn?.addEventListener('click', stopRecording);
+  retryBtn?.addEventListener('click', retryRecording);
+  submitBtn?.addEventListener('click', submitHafalan);
+
+  async function startRecording() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      setupAudioVisualizer(stream);
+
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus',
+      });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = handleRecordingStop;
+
+      recordedChunks = [];
+      mediaRecorder.start();
+      startTime = Date.now();
+
+      startBtn?.classList.add('hidden');
+      stopBtn?.classList.remove('hidden');
+      recordingStatus?.classList.remove('hidden');
+      waveformContainer?.classList.remove('hidden');
+      playbackSection?.classList.add('hidden');
+
+      updateTimer();
+      timerInterval = setInterval(updateTimer, 1000);
+
+      setTimeout(() => {
+        if (mediaRecorder?.state === 'recording') {
+          stopRecording();
+          alert(`Durasi maksimal ${maxDuration / 60} menit tercapai.`);
+        }
+      }, maxDuration * 1000);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      alert('Gagal memulai rekaman. Pastikan izin mikrofon sudah diberikan.');
+    }
+  }
+
+  function setupAudioVisualizer(audioStream) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(audioStream);
+    source.connect(analyser);
+    analyser.fftSize = 2048;
+
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+
+    drawWaveform();
+  }
+
+  function drawWaveform() {
+    if (!waveformCanvas || !analyser) return;
+
+    const ctx = waveformCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const WIDTH = (waveformCanvas.width = waveformCanvas.offsetWidth);
+    const HEIGHT = (waveformCanvas.height = waveformCanvas.offsetHeight);
+
+    animationId = requestAnimationFrame(drawWaveform);
+
+    analyser.getByteTimeDomainData(dataArray);
+
+    ctx.fillStyle = 'rgb(30, 30, 30)';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgb(59, 130, 246)';
+    ctx.beginPath();
+
+    const sliceWidth = WIDTH / dataArray.length;
+    let x = 0;
+
+    for (let i = 0; i < dataArray.length; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = (v * HEIGHT) / 2;
+
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+
+      x += sliceWidth;
+    }
+
+    ctx.lineTo(WIDTH, HEIGHT / 2);
+    ctx.stroke();
+  }
+
+  function stopRecording() {
+    if (mediaRecorder?.state === 'recording') {
+      mediaRecorder.stop();
+      stream?.getTracks().forEach((track) => track.stop());
+
+      if (timerInterval) clearInterval(timerInterval);
+      if (animationId) cancelAnimationFrame(animationId);
+      if (audioContext) audioContext.close();
+
+      startBtn?.classList.remove('hidden');
+      stopBtn?.classList.add('hidden');
+      recordingStatus?.classList.add('hidden');
+      waveformContainer?.classList.add('hidden');
+    }
+  }
+
+  function handleRecordingStop() {
+    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+    const url = URL.createObjectURL(blob);
+
+    if (playback) {
+      playback.src = url;
+      playbackSection?.classList.remove('hidden');
+    }
+
+    window.hafalanBlob = blob;
+    window.hafalanDuration = (Date.now() - startTime) / 1000;
+  }
+
+  function retryRecording() {
+    recordedChunks = [];
+    if (timerEl) timerEl.textContent = '00:00';
+    playbackSection?.classList.add('hidden');
+    startRecording();
+  }
+
+  function submitHafalan() {
+    if (!window.hafalanBlob) return;
+
+    window.dispatchEvent(
+      new CustomEvent('hafalan-submitted', {
+        detail: {
+          blob: window.hafalanBlob,
+          duration: window.hafalanDuration,
+        },
+      })
+    );
+
+    alert('Hafalan berhasil disubmit!');
+  }
+
+  function updateTimer() {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+
+    if (timerEl) {
+      timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
+</script>
+
+<style>
+  .font-arabic {
+    font-family: 'Amiri', 'Traditional Arabic', serif;
+  }
+</style>

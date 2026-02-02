@@ -1,0 +1,253 @@
+---
+// src/components/madrasah/QuranDisplay.astro
+interface Props {
+  surah: string;
+  ayahStart: number;
+  ayahEnd: number;
+  showTajwid?: boolean;
+  showTransliteration?: boolean;
+  showTranslation?: boolean;
+}
+
+const {
+  surah,
+  ayahStart,
+  ayahEnd,
+  showTajwid = true,
+  showTransliteration = false,
+  showTranslation = true,
+} = Astro.props;
+---
+
+<div class="quran-display card bg-base-100" dir="rtl">
+  <div class="card-body">
+    <div class="surah-header mb-6 text-center">
+      <h2 class="font-arabic text-3xl font-bold">{surah}</h2>
+      <p class="mt-2 text-sm text-base-content/70">
+        الآيات {ayahStart} - {ayahEnd}
+      </p>
+    </div>
+
+    <div class="controls mb-4 flex justify-center gap-2" dir="ltr">
+      <label class="label cursor-pointer gap-2">
+        <input
+          type="checkbox"
+          id="toggle-tajwid"
+          class="checkbox-primary checkbox checkbox-sm"
+          checked={showTajwid}
+        />
+        <span class="label-text text-sm">Tajwid</span>
+      </label>
+
+      <label class="label cursor-pointer gap-2">
+        <input
+          type="checkbox"
+          id="toggle-transliteration"
+          class="checkbox-primary checkbox checkbox-sm"
+          checked={showTransliteration}
+        />
+        <span class="label-text text-sm">Transliterasi</span>
+      </label>
+
+      <label class="label cursor-pointer gap-2">
+        <input
+          type="checkbox"
+          id="toggle-translation"
+          class="checkbox-primary checkbox checkbox-sm"
+          checked={showTranslation}
+        />
+        <span class="label-text text-sm">Terjemahan</span>
+      </label>
+    </div>
+
+    <div id="ayat-container" class="space-y-6">
+      <div class="loading loading-spinner loading-lg mx-auto"></div>
+    </div>
+
+    <div class="audio-player mt-6" dir="ltr">
+      <div class="mb-2 flex items-center gap-2">
+        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+          <path
+            d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"
+          ></path>
+        </svg>
+        <span class="text-sm font-semibold">Murattal</span>
+      </div>
+      <audio id="murattal-player" class="w-full" controls preload="metadata">
+        <source src={`/api/quran/audio/${surah}/${ayahStart}`} type="audio/mpeg" />
+      </audio>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ surah, ayahStart, ayahEnd, showTajwid }}>
+  let currentShowTajwid = showTajwid;
+  let currentShowTransliteration = false;
+  let currentShowTranslation = true;
+
+  const toggleTajwid = document.getElementById('toggle-tajwid') as HTMLInputElement;
+  const toggleTransliteration = document.getElementById(
+    'toggle-transliteration'
+  ) as HTMLInputElement;
+  const toggleTranslation = document.getElementById('toggle-translation') as HTMLInputElement;
+
+  toggleTajwid?.addEventListener('change', (e) => {
+    currentShowTajwid = (e.target as HTMLInputElement).checked;
+    renderAyat();
+  });
+
+  toggleTransliteration?.addEventListener('change', (e) => {
+    currentShowTransliteration = (e.target as HTMLInputElement).checked;
+    renderAyat();
+  });
+
+  toggleTranslation?.addEventListener('change', (e) => {
+    currentShowTranslation = (e.target as HTMLInputElement).checked;
+    renderAyat();
+  });
+
+  async function loadAyat() {
+    try {
+      const response = await fetch(
+        `/api/quran/${encodeURIComponent(surah)}/${ayahStart}/${ayahEnd}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to load ayat');
+      }
+
+      const ayatData = await response.json();
+      window.ayatData = ayatData;
+      renderAyat();
+    } catch (error) {
+      console.error('Failed to load ayat:', error);
+      const container = document.getElementById('ayat-container');
+      if (container) {
+        container.innerHTML = `
+          <div class="alert alert-error">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>Gagal memuat ayat. Silakan coba lagi.</span>
+          </div>
+        `;
+      }
+    }
+  }
+
+  function renderAyat() {
+    const container = document.getElementById('ayat-container');
+    if (!container || !window.ayatData) return;
+
+    container.innerHTML = window.ayatData
+      .map((ayat) => {
+        let arabicText = ayat.text;
+
+        if (currentShowTajwid) {
+          arabicText = applyTajwidColors(arabicText);
+        }
+
+        return `
+        <div class="ayat-item p-6 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
+          <div class="flex items-start gap-4 mb-3">
+            <span class="badge badge-primary badge-lg">${ayat.number}</span>
+            <p class="text-3xl md:text-4xl font-quran leading-loose flex-1 text-right">
+              ${arabicText}
+            </p>
+          </div>
+          ${
+            currentShowTransliteration
+              ? `
+            <p class="text-sm text-base-content/70 italic mb-2 text-left" dir="ltr">
+              ${ayat.transliteration || ''}
+            </p>
+          `
+              : ''
+          }
+          ${
+            currentShowTranslation
+              ? `
+            <p class="text-base mt-3 text-left border-l-4 border-primary pl-4" dir="ltr">
+              ${ayat.translation || ''}
+            </p>
+          `
+              : ''
+          }
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  function applyTajwidColors(text) {
+    const rules = [
+      { pattern: /([نم])\s*([بم])/g, class: 'tajwid-ikhfa', name: 'Ikhfa' },
+      { pattern: /([نملر])\s*([نملر])/g, class: 'tajwid-idgham', name: 'Idgham' },
+      { pattern: /[قطبجد]/g, class: 'tajwid-qalqalah', name: 'Qalqalah' },
+      { pattern: /~|ّ/g, class: 'tajwid-ghunnah', name: 'Ghunnah' },
+      { pattern: /ا[َُِ]/g, class: 'tajwid-mad', name: 'Mad' },
+    ];
+
+    let result = text;
+
+    rules.forEach((rule) => {
+      result = result.replace(rule.pattern, (match) => {
+        return `<span class="${rule.class}" title="${rule.name}">${match}</span>`;
+      });
+    });
+
+    return result;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadAyat);
+  } else {
+    loadAyat();
+  }
+</script>
+
+<style>
+  .font-arabic {
+    font-family: 'Amiri', 'Traditional Arabic', serif;
+  }
+
+  .font-quran {
+    font-family: 'Scheherazade', 'Amiri', serif;
+    line-height: 2.5;
+  }
+
+  .tajwid-ikhfa {
+    background: rgba(251, 191, 36, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  .tajwid-idgham {
+    background: rgba(34, 197, 94, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  .tajwid-qalqalah {
+    background: rgba(239, 68, 68, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  .tajwid-ghunnah {
+    background: rgba(168, 85, 247, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  .tajwid-mad {
+    background: rgba(59, 130, 246, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+</style>

@@ -1,0 +1,174 @@
+---
+// src/components/grading/GradingRubric.astro
+interface Props {
+  questionId: number;
+  maxPoints: number;
+  rubric?: {
+    excellent: { score: number; criteria: string };
+    good: { score: number; criteria: string };
+    fair: { score: number; criteria: string };
+    poor: { score: number; criteria: string };
+  };
+}
+
+const { questionId, maxPoints, rubric } = Astro.props;
+
+const defaultRubric = rubric || {
+  excellent: { score: maxPoints, criteria: 'Sangat baik, lengkap, dan akurat' },
+  good: { score: Math.floor(maxPoints * 0.75), criteria: 'Baik, cukup lengkap' },
+  fair: { score: Math.floor(maxPoints * 0.5), criteria: 'Cukup, perlu perbaikan' },
+  poor: { score: Math.floor(maxPoints * 0.25), criteria: 'Kurang, banyak kekurangan' },
+};
+---
+
+<div class="grading-rubric card bg-base-200">
+  <div class="card-body">
+    <h4 class="mb-4 font-semibold">Rubrik Penilaian</h4>
+
+    <div class="space-y-2">
+      <label class="label flex cursor-pointer items-start gap-3 rounded p-3 hover:bg-base-300">
+        <input
+          type="radio"
+          name={`rubric-${questionId}`}
+          value={defaultRubric.excellent.score}
+          class="radio-success radio"
+          data-rubric-input
+        />
+        <div class="flex-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-success">Sangat Baik</span>
+            <span class="badge badge-success">{defaultRubric.excellent.score} poin</span>
+          </div>
+          <p class="mt-1 text-sm text-base-content/70">{defaultRubric.excellent.criteria}</p>
+        </div>
+      </label>
+
+      <label class="label flex cursor-pointer items-start gap-3 rounded p-3 hover:bg-base-300">
+        <input
+          type="radio"
+          name={`rubric-${questionId}`}
+          value={defaultRubric.good.score}
+          class="radio-info radio"
+          data-rubric-input
+        />
+        <div class="flex-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-info">Baik</span>
+            <span class="badge badge-info">{defaultRubric.good.score} poin</span>
+          </div>
+          <p class="mt-1 text-sm text-base-content/70">{defaultRubric.good.criteria}</p>
+        </div>
+      </label>
+
+      <label class="label flex cursor-pointer items-start gap-3 rounded p-3 hover:bg-base-300">
+        <input
+          type="radio"
+          name={`rubric-${questionId}`}
+          value={defaultRubric.fair.score}
+          class="radio-warning radio"
+          data-rubric-input
+        />
+        <div class="flex-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-warning">Cukup</span>
+            <span class="badge badge-warning">{defaultRubric.fair.score} poin</span>
+          </div>
+          <p class="mt-1 text-sm text-base-content/70">{defaultRubric.fair.criteria}</p>
+        </div>
+      </label>
+
+      <label class="label flex cursor-pointer items-start gap-3 rounded p-3 hover:bg-base-300">
+        <input
+          type="radio"
+          name={`rubric-${questionId}`}
+          value={defaultRubric.poor.score}
+          class="radio-error radio"
+          data-rubric-input
+        />
+        <div class="flex-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-error">Kurang</span>
+            <span class="badge badge-error">{defaultRubric.poor.score} poin</span>
+          </div>
+          <p class="mt-1 text-sm text-base-content/70">{defaultRubric.poor.criteria}</p>
+        </div>
+      </label>
+    </div>
+
+    <div class="divider">ATAU</div>
+
+    <div class="form-control">
+      <label class="label">
+        <span class="label-text">Nilai Custom (0-{maxPoints})</span>
+      </label>
+      <input
+        type="number"
+        id={`custom-score-${questionId}`}
+        name={`custom-score-${questionId}`}
+        min="0"
+        max={maxPoints}
+        step="0.5"
+        placeholder="Masukkan nilai..."
+        class="input input-bordered"
+        data-custom-score
+      />
+    </div>
+
+    <div class="form-control mt-4">
+      <label class="label">
+        <span class="label-text">Catatan/Feedback (Opsional)</span>
+      </label>
+      <textarea
+        id={`feedback-${questionId}`}
+        name={`feedback-${questionId}`}
+        placeholder="Berikan feedback untuk siswa..."
+        rows="3"
+        class="textarea textarea-bordered"
+        data-feedback-input></textarea>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ questionId, maxPoints }}>
+  const rubricInputs = document.querySelectorAll(`input[name="rubric-${questionId}"]`);
+  const customScoreInput = document.getElementById(
+    `custom-score-${questionId}`
+  ) as HTMLInputElement;
+
+  rubricInputs.forEach((input) => {
+    input.addEventListener('change', () => {
+      if (customScoreInput) customScoreInput.value = '';
+
+      window.dispatchEvent(
+        new CustomEvent('rubric-selected', {
+          detail: {
+            questionId,
+            score: parseFloat((input as HTMLInputElement).value),
+            feedback: (document.getElementById(`feedback-${questionId}`) as HTMLTextAreaElement)
+              ?.value,
+          },
+        })
+      );
+    });
+  });
+
+  customScoreInput?.addEventListener('input', () => {
+    rubricInputs.forEach((input) => {
+      (input as HTMLInputElement).checked = false;
+    });
+
+    const score = parseFloat(customScoreInput.value);
+    if (score >= 0 && score <= maxPoints) {
+      window.dispatchEvent(
+        new CustomEvent('rubric-selected', {
+          detail: {
+            questionId,
+            score,
+            feedback: (document.getElementById(`feedback-${questionId}`) as HTMLTextAreaElement)
+              ?.value,
+          },
+        })
+      );
+    }
+  });
+</script>

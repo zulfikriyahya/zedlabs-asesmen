@@ -1,0 +1,190 @@
+---
+// src/components/monitoring/LiveMonitor.astro
+interface Props {
+  sessionId: number;
+}
+
+const { sessionId } = Astro.props;
+---
+
+<div class="live-monitor">
+  <div class="mb-6">
+    <div class="stats w-full shadow">
+      <div class="stat">
+        <div class="stat-title">Total Peserta</div>
+        <div class="stat-value" id="total-participants">0</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-title">Sedang Mengerjakan</div>
+        <div class="stat-value text-success" id="active-participants">0</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-title">Sudah Submit</div>
+        <div class="stat-value text-info" id="submitted-participants">0</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-title">Peringatan</div>
+        <div class="stat-value text-warning" id="warning-count">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-4 flex items-center justify-between">
+    <h3 class="text-lg font-bold">Monitor Real-time</h3>
+    <div class="flex gap-2">
+      <div class="badge badge-success gap-2">
+        <div class="h-2 w-2 animate-pulse rounded-full bg-success"></div>
+        Live
+      </div>
+      <button type="button" id="toggle-auto-refresh" class="btn btn-ghost btn-sm">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          ></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" id="participants-grid">
+    <div class="loading loading-spinner loading-lg col-span-full mx-auto"></div>
+  </div>
+</div>
+
+<script define:vars={{ sessionId }}>
+  let autoRefresh = true;
+  let refreshInterval;
+
+  async function loadParticipants() {
+    try {
+      const response = await fetch(`/api/monitoring/session/${sessionId}/live`);
+      const data = await response.json();
+
+      updateStats(data.stats);
+      renderParticipants(data.participants);
+    } catch (error) {
+      console.error('Failed to load participants:', error);
+    }
+  }
+
+  function updateStats(stats) {
+    document.getElementById('total-participants').textContent = stats.total || 0;
+    document.getElementById('active-participants').textContent = stats.active || 0;
+    document.getElementById('submitted-participants').textContent = stats.submitted || 0;
+    document.getElementById('warning-count').textContent = stats.warnings || 0;
+  }
+
+  function renderParticipants(participants) {
+    const grid = document.getElementById('participants-grid');
+    if (!grid) return;
+
+    if (participants.length === 0) {
+      grid.innerHTML = `
+        <div class="col-span-full text-center py-8 text-base-content/50">
+          <p>Belum ada peserta yang memulai ujian</p>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = participants
+      .map((participant) => {
+        const statusColor =
+          {
+            in_progress: 'badge-success',
+            paused: 'badge-warning',
+            submitted: 'badge-info',
+          }[participant.status] || 'badge-ghost';
+
+        const warningIcon =
+          participant.warnings > 0
+            ? `
+        <div class="badge badge-error badge-sm">${participant.warnings}</div>
+      `
+            : '';
+
+        return `
+        <div class="card bg-base-100 shadow-lg hover:shadow-xl transition-shadow">
+          <div class="card-body p-4">
+            <div class="flex justify-between items-start">
+              <div>
+                <h4 class="font-semibold">${participant.name}</h4>
+                <p class="text-xs text-base-content/70">${participant.student_id}</p>
+              </div>
+              ${warningIcon}
+            </div>
+            
+            <div class="mt-3 space-y-2">
+              <div class="flex justify-between text-sm">
+                <span>Status:</span>
+                <span class="badge ${statusColor} badge-sm">${participant.status_label}</span>
+              </div>
+              
+              <div class="flex justify-between text-sm">
+                <span>Progress:</span>
+                <span>${participant.answered}/${participant.total}</span>
+              </div>
+              
+              <div class="progress progress-sm">
+                <div 
+                  class="progress-bar bg-primary" 
+                  style="width: ${(participant.answered / participant.total) * 100}%"
+                ></div>
+              </div>
+              
+              <div class="flex justify-between text-xs text-base-content/70">
+                <span>Waktu:</span>
+                <span>${participant.time_remaining}</span>
+              </div>
+            </div>
+
+            <div class="card-actions justify-end mt-3">
+              <button 
+                class="btn btn-xs btn-ghost"
+                onclick="window.location.href='/pengawas/monitoring/student/${participant.attempt_id}'"
+              >
+                Detail
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  function startAutoRefresh() {
+    refreshInterval = setInterval(loadParticipants, 5000);
+  }
+
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+  }
+
+  document.getElementById('toggle-auto-refresh')?.addEventListener('click', () => {
+    autoRefresh = !autoRefresh;
+
+    if (autoRefresh) {
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+    }
+  });
+
+  loadParticipants();
+  if (autoRefresh) {
+    startAutoRefresh();
+  }
+
+  window.addEventListener('beforeunload', () => {
+    stopAutoRefresh();
+  });
+</script>

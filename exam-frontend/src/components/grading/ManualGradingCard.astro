@@ -1,0 +1,100 @@
+---
+// src/components/grading/ManualGradingCard.astro
+import AudioPlayer from './AudioPlayer.astro';
+import GradingRubric from './GradingRubric.astro';
+
+interface Props {
+  attempt: {
+    id: number;
+    student_name: string;
+    student_id: string;
+  };
+  question: {
+    id: number;
+    question_text: string;
+    question_html?: string;
+    type: string;
+    points: number;
+  };
+  answer: {
+    id: number;
+    answer_text?: string;
+    answer_media_url?: string;
+    answer_media_type?: 'audio' | 'video';
+  };
+}
+
+const { attempt, question, answer } = Astro.props;
+---
+
+<div class="grading-card card bg-base-100 shadow-xl">
+  <div class="card-body">
+    <div class="mb-4 flex items-start justify-between">
+      <div>
+        <h3 class="card-title">{attempt.student_name}</h3>
+        <p class="text-sm text-base-content/70">NIS: {attempt.student_id}</p>
+      </div>
+      <div class="badge badge-primary badge-lg">{question.points} poin</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="mb-6">
+      <h4 class="mb-2 font-semibold">Pertanyaan:</h4>
+      {
+        question.question_html ? (
+          <div class="prose max-w-none" set:html={question.question_html} />
+        ) : (
+          <p>{question.question_text}</p>
+        )
+      }
+    </div>
+
+    <div class="mb-6">
+      <h4 class="mb-2 font-semibold">Jawaban Siswa:</h4>
+
+      {
+        answer.answer_text && (
+          <div class="whitespace-pre-wrap rounded bg-base-200 p-4">{answer.answer_text}</div>
+        )
+      }
+
+      {
+        answer.answer_media_url && answer.answer_media_type === 'audio' && (
+          <AudioPlayer url={answer.answer_media_url} answerId={answer.id} />
+        )
+      }
+
+      {
+        answer.answer_media_url && answer.answer_media_type === 'video' && (
+          <div class="mt-4">
+            <video class="max-h-96 w-full rounded" controls preload="metadata">
+              <source src={answer.answer_media_url} type="video/webm" />
+              <source src={answer.answer_media_url} type="video/mp4" />
+            </video>
+          </div>
+        )
+      }
+    </div>
+
+    <GradingRubric questionId={question.id} maxPoints={question.points} />
+
+    <div class="card-actions mt-6 justify-end">
+      <button type="button" class="btn btn-ghost" data-skip-btn> Lewati </button>
+      <button type="button" class="btn btn-primary" data-save-grade-btn> Simpan Nilai </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const saveBtn = document.querySelector('[data-save-grade-btn]');
+  const skipBtn = document.querySelector('[data-skip-btn]');
+
+  saveBtn?.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('save-grade'));
+  });
+
+  skipBtn?.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('skip-grade'));
+  });
+</script>

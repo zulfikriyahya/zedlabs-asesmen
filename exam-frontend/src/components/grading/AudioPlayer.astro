@@ -1,0 +1,112 @@
+---
+// src/components/grading/AudioPlayer.astro
+interface Props {
+  url: string;
+  answerId: number;
+}
+
+const { url, answerId } = Astro.props;
+---
+
+<div class="audio-player card bg-base-200">
+  <div class="card-body">
+    <h4 class="mb-2 font-semibold">Rekaman Audio Siswa</h4>
+
+    <audio id={`audio-player-${answerId}`} class="mb-4 w-full" controls preload="metadata">
+      <source src={url} type="audio/webm" />
+      <source src={url} type="audio/mp4" />
+      Browser Anda tidak mendukung audio player.
+    </audio>
+
+    <div class="flex items-center justify-between text-sm">
+      <div class="flex items-center gap-2">
+        <button type="button" id={`play-btn-${answerId}`} class="btn btn-primary btn-sm">
+          <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"
+            ></path>
+          </svg>
+        </button>
+
+        <button type="button" id={`pause-btn-${answerId}`} class="btn btn-ghost btn-sm hidden">
+          <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z"
+            ></path>
+          </svg>
+        </button>
+
+        <input
+          type="range"
+          id={`speed-control-${answerId}`}
+          min="0.5"
+          max="2"
+          step="0.25"
+          value="1"
+          class="range range-primary range-xs w-32"
+        />
+        <span id={`speed-display-${answerId}`} class="text-xs">1x</span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span id={`current-time-${answerId}`} class="text-xs">00:00</span>
+        <span class="text-xs">/</span>
+        <span id={`duration-${answerId}`} class="text-xs">00:00</span>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <label class="label">
+        <span class="label-text text-xs">Waveform</span>
+      </label>
+      <div id={`waveform-${answerId}`} class="h-16 rounded bg-base-300"></div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ answerId }}>
+  const audio = document.getElementById(`audio-player-${answerId}`) as HTMLAudioElement;
+  const playBtn = document.getElementById(`play-btn-${answerId}`);
+  const pauseBtn = document.getElementById(`pause-btn-${answerId}`);
+  const speedControl = document.getElementById(`speed-control-${answerId}`) as HTMLInputElement;
+  const speedDisplay = document.getElementById(`speed-display-${answerId}`);
+  const currentTimeEl = document.getElementById(`current-time-${answerId}`);
+  const durationEl = document.getElementById(`duration-${answerId}`);
+
+  function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  playBtn?.addEventListener('click', () => {
+    audio.play();
+    playBtn.classList.add('hidden');
+    pauseBtn?.classList.remove('hidden');
+  });
+
+  pauseBtn?.addEventListener('click', () => {
+    audio.pause();
+    pauseBtn.classList.add('hidden');
+    playBtn?.classList.remove('hidden');
+  });
+
+  speedControl?.addEventListener('input', (e) => {
+    const speed = parseFloat((e.target as HTMLInputElement).value);
+    audio.playbackRate = speed;
+    if (speedDisplay) speedDisplay.textContent = `${speed}x`;
+  });
+
+  audio.addEventListener('loadedmetadata', () => {
+    if (durationEl) durationEl.textContent = formatTime(audio.duration);
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    if (currentTimeEl) currentTimeEl.textContent = formatTime(audio.currentTime);
+  });
+
+  audio.addEventListener('ended', () => {
+    pauseBtn?.classList.add('hidden');
+    playBtn?.classList.remove('hidden');
+  });
+</script>
