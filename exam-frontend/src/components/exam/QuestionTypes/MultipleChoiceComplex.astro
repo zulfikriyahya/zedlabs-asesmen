@@ -1,0 +1,194 @@
+---
+// src/components/exam/QuestionTypes/MultipleChoiceComplex.astro
+interface Props {
+  question: {
+    id: number;
+    question_text: string;
+    question_html?: string;
+    media_url?: string;
+    media_type?: 'image' | 'audio' | 'video';
+    min_selections?: number;
+    max_selections?: number;
+    options: Array<{
+      id: number;
+      option_text: string;
+      option_html?: string;
+      media_url?: string;
+    }>;
+  };
+  savedAnswer?: number[];
+  readonly?: boolean;
+}
+
+const { question, savedAnswer = [], readonly = false } = Astro.props;
+const minSelections = question.min_selections || 1;
+const maxSelections = question.max_selections || question.options.length;
+---
+
+<div class="question-container space-y-6">
+  <!-- Question Text -->
+  <div class="question-text prose max-w-none">
+    {
+      question.question_html ? (
+        <div set:html={question.question_html} />
+      ) : (
+        <p class="text-lg">{question.question_text}</p>
+      )
+    }
+
+    <div class="alert alert-info mt-4">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <span class="text-sm">
+        Pilih <strong
+          >{
+            minSelections === maxSelections ? minSelections : `${minSelections}-${maxSelections}`
+          }</strong
+        > jawaban yang benar
+      </span>
+    </div>
+  </div>
+
+  <!-- Question Media -->
+  {
+    question.media_url && (
+      <div class="question-media">
+        {question.media_type === 'image' && (
+          <img
+            src={question.media_url}
+            alt="Question media"
+            class="max-w-full rounded-lg shadow-lg"
+          />
+        )}
+
+        {question.media_type === 'audio' && (
+          <audio controls class="w-full">
+            <source src={question.media_url} type="audio/mpeg" />
+          </audio>
+        )}
+
+        {question.media_type === 'video' && (
+          <video controls class="w-full rounded-lg">
+            <source src={question.media_url} type="video/mp4" />
+          </video>
+        )}
+      </div>
+    )
+  }
+
+  <!-- Options -->
+  <div class="options-container space-y-3">
+    {
+      question.options.map((option, index) => {
+        const optionLetter = String.fromCharCode(65 + index);
+        const isSelected = savedAnswer.includes(option.id);
+
+        return (
+          <label
+            class={`option-item flex cursor-pointer items-start gap-4 rounded-lg border-2 p-4 transition-all hover:bg-base-200 ${
+              isSelected ? 'border-primary bg-primary/10' : 'border-base-300'
+            } ${readonly ? 'cursor-not-allowed opacity-70' : ''}`}
+          >
+            <input
+              type="checkbox"
+              name={`question-${question.id}`}
+              value={option.id}
+              checked={isSelected}
+              disabled={readonly}
+              class="checkbox-primary checkbox mt-1"
+              data-answer-input
+              data-max-selections={maxSelections}
+            />
+
+            <div class="flex-1">
+              <div class="flex items-start gap-3">
+                <span class="badge badge-primary badge-lg">{optionLetter}</span>
+
+                <div class="flex-1">
+                  {option.option_html ? (
+                    <div set:html={option.option_html} />
+                  ) : (
+                    <p>{option.option_text}</p>
+                  )}
+
+                  {option.media_url && (
+                    <div class="mt-2">
+                      <img
+                        src={option.media_url}
+                        alt={`Option ${optionLetter}`}
+                        class="max-w-xs rounded"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </label>
+        );
+      })
+    }
+  </div>
+
+  <!-- Selection Counter -->
+  <div class="flex items-center justify-between text-sm">
+    <span class="text-base-content/70">
+      <span id="selection-count">0</span> dari {maxSelections} dipilih
+    </span>
+    {
+      savedAnswer.length < minSelections && (
+        <span class="text-warning">Minimal {minSelections} jawaban</span>
+      )
+    }
+  </div>
+</div>
+
+<script>
+  // Limit checkbox selections
+  const checkboxes = document.querySelectorAll('input[type="checkbox"][data-answer-input]');
+  const selectionCount = document.getElementById('selection-count');
+
+  function updateSelectionCount() {
+    const checked = Array.from(checkboxes).filter((cb) => cb.checked).length;
+    if (selectionCount) {
+      selectionCount.textContent = checked.toString();
+    }
+  }
+
+  checkboxes.forEach((checkbox) => {
+    checkbox.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      const maxSelections = parseInt(target.dataset.maxSelections || '99');
+      const checked = Array.from(checkboxes).filter((cb) => cb.checked).length;
+
+      // Prevent selecting more than max
+      if (checked > maxSelections) {
+        target.checked = false;
+        alert(`Maksimal ${maxSelections} pilihan`);
+      }
+
+      updateSelectionCount();
+    });
+  });
+
+  // Initialize count
+  updateSelectionCount();
+</script>
+
+<style>
+  .option-item {
+    transition: all 0.2s ease;
+  }
+
+  .option-item:hover:not(.cursor-not-allowed) {
+    transform: translateX(4px);
+  }
+
+  .option-item input:checked ~ div {
+    font-weight: 600;
+  }
+</style>

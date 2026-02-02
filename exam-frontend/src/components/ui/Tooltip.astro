@@ -1,0 +1,13 @@
+---
+interface Props {
+  text: string;
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  class?: string;
+}
+
+const { text, position = 'top', class: className = '' } = Astro.props;
+---
+
+<div class:list={['tooltip', `tooltip-${position}`, className]} data-tip={text}>
+  <slot />
+</div>

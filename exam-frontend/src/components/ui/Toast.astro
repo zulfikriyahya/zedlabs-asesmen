@@ -1,0 +1,46 @@
+---
+// src/components/ui/Toast.astro
+---
+
+<div id="toast-container" class="toast toast-top toast-end z-50">
+  <!-- Toasts will be injected here by store -->
+</div>
+
+<script>
+  import { $toastStore, removeToast } from '@/stores/toast';
+
+  const container = document.getElementById('toast-container');
+
+  $toastStore.subscribe((state) => {
+    if (!container) return;
+
+    // Clear current toasts to prevent duplicates (simple implementation)
+    // In a real React/Preact app this would be handled by VDOM
+    container.innerHTML = '';
+
+    state.messages.forEach((msg) => {
+      const alertClass = {
+        info: 'alert-info',
+        success: 'alert-success',
+        warning: 'alert-warning',
+        error: 'alert-error',
+      }[msg.type];
+
+      const toastEl = document.createElement('div');
+      toastEl.className = `alert ${alertClass} shadow-lg min-w-[300px] animate-slide-in`;
+      toastEl.innerHTML = `
+        <div>
+          <span>${msg.message}</span>
+        </div>
+        <button class="btn btn-ghost btn-xs" data-dismiss="${msg.id}">✕</button>
+      `;
+
+      container.appendChild(toastEl);
+
+      // Setup dismiss button
+      toastEl.querySelector(`[data-dismiss="${msg.id}"]`)?.addEventListener('click', () => {
+        removeToast(msg.id);
+      });
+    });
+  });
+</script>

@@ -1,0 +1,108 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Input from '@/components/ui/Input.astro';
+import Button from '@/components/ui/Button.astro';
+---
+
+<DashboardLayout title="Buat Jadwal Ujian" role="guru">
+  <div class="card bg-base-100 shadow-xl max-w-3xl mx-auto">
+    <div class="card-body">
+      <form id="create-exam-form" class="space-y-6">
+        
+        <Input 
+          name="title" 
+          label="Nama Ujian" 
+          placeholder="Contoh: Penilaian Akhir Semester Ganjil" 
+          required 
+        />
+
+        <div class="form-control">
+          <label class="label"><span class="label-text">Deskripsi</span></label>
+          <textarea name="description" class="textarea textarea-bordered h-24"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="number" 
+            name="duration_minutes" 
+            label="Durasi (Menit)" 
+            value="90" 
+            required 
+          />
+          <Input 
+            type="number" 
+            name="passing_score" 
+            label="KKM / Passing Grade" 
+            value="75" 
+            required 
+          />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input 
+            type="datetime-local" 
+            name="window_start_at" 
+            label="Waktu Mulai" 
+            required 
+          />
+          <Input 
+            type="datetime-local" 
+            name="window_end_at" 
+            label="Waktu Selesai" 
+            required 
+          />
+        </div>
+
+        <div class="divider">Pengaturan Tambahan</div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="randomize_questions" class="toggle toggle-primary" checked />
+            <span class="label-text">Acak Soal</span>
+          </label>
+
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="show_results" class="toggle toggle-primary" />
+            <span class="label-text">Tampilkan Nilai Setelah Selesai</span>
+          </label>
+          
+          <label class="label cursor-pointer justify-start gap-4">
+            <input type="checkbox" name="prevent_tab_switch" class="toggle toggle-error" checked />
+            <span class="label-text">Cegah Pindah Tab (Security)</span>
+          </label>
+        </div>
+
+        <div class="card-actions justify-end mt-8">
+          <Button type="button" variant="ghost" onclick="history.back()">Batal</Button>
+          <Button type="submit" variant="primary">Simpan & Lanjut ke Soal</Button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    import { apiClient } from '@/lib/api/client';
+
+    const form = document.getElementById('create-exam-form') as HTMLFormElement;
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData);
+      
+      // Convert checkboxes
+      data.randomize_questions = form.randomize_questions.checked;
+      data.show_results = form.show_results.checked;
+
+      try {
+        const response = await apiClient.post('/teacher/exams', data);
+        const newExamId = response.data.id;
+        // Redirect to add questions
+        window.location.href = `/guru/soal/create?exam_id=${newExamId}`;
+      } catch (error) {
+        alert('Gagal membuat ujian. Periksa input Anda.');
+        console.error(error);
+      }
+    });
+  </script>
+</DashboardLayout>

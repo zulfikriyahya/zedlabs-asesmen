@@ -1,0 +1,67 @@
+---
+interface Props {
+  surah: string; // "Al-Fatihah"
+  ayahStart: number;
+  ayahEnd: number;
+}
+const { surah, ayahStart, ayahEnd } = Astro.props;
+---
+
+<div class="card bg-base-100 border border-base-200">
+  <div class="card-body p-4 md:p-6">
+    <div class="flex justify-between items-center mb-4 border-b pb-2">
+      <h3 class="font-bold text-lg">QS. {surah}: {ayahStart}-{ayahEnd}</h3>
+      <button class="btn btn-xs btn-ghost gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        Putar Audio
+      </button>
+    </div>
+
+    <!-- Container Ayat -->
+    <div class="space-y-6" dir="rtl">
+      <!-- Contoh Ayat (Static for blueprint, dynamic in real app) -->
+      <div class="ayat-item group">
+        <div class="flex gap-4 items-start">
+          <div class="flex-1">
+            <p class="font-quran text-3xl md:text-4xl leading-[2.5] text-right text-base-content">
+              بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+            </p>
+          </div>
+          <div class="mt-2">
+            <span class="w-8 h-8 rounded-full border border-primary flex items-center justify-center text-xs font-mono">
+              1
+            </span>
+          </div>
+        </div>
+        <p class="text-sm text-base-content/60 mt-2 text-left italic hidden group-hover:block transition-all" dir="ltr">
+          Dengan menyebut nama Allah Yang Maha Pemurah lagi Maha Penyayang.
+        </p>
+      </div>
+      
+      <div class="ayat-item group">
+        <div class="flex gap-4 items-start">
+          <div class="flex-1">
+            <p class="font-quran text-3xl md:text-4xl leading-[2.5] text-right text-base-content">
+              ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ
+            </p>
+          </div>
+          <div class="mt-2">
+            <span class="w-8 h-8 rounded-full border border-primary flex items-center justify-center text-xs font-mono">
+              2
+            </span>
+          </div>
+        </div>
+        <p class="text-sm text-base-content/60 mt-2 text-left italic hidden group-hover:block transition-all" dir="ltr">
+          Segala puji bagi Allah, Tuhan semesta alam.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Pastikan font sudah diload di global.css */
+  .font-quran {
+    font-family: 'Scheherazade', 'Amiri', serif;
+  }
+</style>

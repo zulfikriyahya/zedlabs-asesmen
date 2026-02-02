@@ -1,0 +1,20 @@
+---
+interface Props {
+  compact?: boolean;
+  zebra?: boolean;
+  class?: string;
+}
+
+const { compact = false, zebra = false, class: className = '' } = Astro.props;
+---
+
+<div class="overflow-x-auto">
+  <table class:list={[
+    'table',
+    { 'table-xs': compact },
+    { 'table-zebra': zebra },
+    className
+  ]}>
+    <slot />
+  </table>
+</div>

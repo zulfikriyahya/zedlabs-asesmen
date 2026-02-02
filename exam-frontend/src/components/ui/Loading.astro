@@ -1,0 +1,35 @@
+---
+// src/components/ui/Loading.astro
+interface Props {
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  text?: string;
+  fullscreen?: boolean;
+}
+
+const {
+  size = 'md',
+  text,
+  fullscreen = false,
+} = Astro.props;
+
+const sizeClass = {
+  xs: 'loading-xs',
+  sm: 'loading-sm',
+  md: 'loading-md',
+  lg: 'loading-lg',
+}[size];
+---
+
+{fullscreen ? (
+  <div class="fixed inset-0 bg-base-200/80 flex items-center justify-center z-50">
+    <div class="text-center">
+      <span class:list={['loading loading-spinner', sizeClass]}></span>
+      {text && <p class="mt-4 text-base-content">{text}</p>}
+    </div>
+  </div>
+) : (
+  <div class="flex items-center gap-2">
+    <span class:list={['loading loading-spinner', sizeClass]}></span>
+    {text && <span>{text}</span>}
+  </div>
+)}

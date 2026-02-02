@@ -1,0 +1,56 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+---
+
+<DashboardLayout title="Laporan & Cetak" role="operator">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    
+    <!-- Kartu Peserta -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Kartu Peserta</h2>
+        <p>Cetak kartu login peserta ujian dengan QR Code.</p>
+        <div class="form-control mt-4">
+          <label class="label"><span class="label-text">Pilih Kelas</span></label>
+          <select class="select select-bordered select-sm">
+            <option>Semua Kelas</option>
+            <option>XII IPA 1</option>
+          </select>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button class="btn btn-primary btn-sm">Cetak PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daftar Hadir -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Daftar Hadir</h2>
+        <p>Cetak daftar hadir peserta per ruang/sesi.</p>
+        <div class="form-control mt-4">
+          <label class="label"><span class="label-text">Pilih Sesi</span></label>
+          <select class="select select-bordered select-sm">
+            <option>Sesi 1</option>
+            <option>Sesi 2</option>
+          </select>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button class="btn btn-primary btn-sm">Cetak PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Berita Acara -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Berita Acara</h2>
+        <p>Generate berita acara pelaksanaan ujian.</p>
+        <div class="card-actions justify-end mt-auto">
+          <button class="btn btn-primary btn-sm">Buat Laporan</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</DashboardLayout>

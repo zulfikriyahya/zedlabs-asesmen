@@ -1,0 +1,72 @@
+---
+interface Props {
+  items: Array<{ id: string; label: string; active?: boolean }>;
+  boxed?: boolean;
+  bordered?: boolean;
+  lifted?: boolean;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const { items, boxed, bordered, lifted, size, class: className = '' } = Astro.props;
+
+const sizeClass = size ? `tabs-${size}` : '';
+---
+
+<div role="tablist" class:list={[
+  'tabs',
+  { 'tabs-boxed': boxed },
+  { 'tabs-bordered': bordered },
+  { 'tabs-lifted': lifted },
+  sizeClass,
+  className
+]}>
+  {items.map((item) => (
+    <a
+      role="tab"
+      href={`#${item.id}`}
+      class:list={['tab', { 'tab-active': item.active }]}
+      data-tab-target={item.id}
+    >
+      {item.label}
+    </a>
+  ))}
+</div>
+
+<div class="tab-content-container mt-4">
+  <slot />
+</div>
+
+<script>
+  // Simple tab switching logic
+  const tabs = document.querySelectorAll('[data-tab-target]');
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      
+      // Remove active class from all tabs in this group
+      const parent = tab.parentElement;
+      parent?.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
+      
+      // Add active class to clicked tab
+      tab.classList.add('tab-active');
+      
+      // Hide all contents
+      const targetId = tab.getAttribute('data-tab-target');
+      const container = parent?.nextElementSibling;
+      
+      if (container) {
+        // Assuming slot content has ids matching tab targets
+        const contents = container.children;
+        Array.from(contents).forEach((content) => {
+          if (content.id === targetId) {
+            content.classList.remove('hidden');
+          } else {
+            content.classList.add('hidden');
+          }
+        });
+      }
+    });
+  });
+</script>

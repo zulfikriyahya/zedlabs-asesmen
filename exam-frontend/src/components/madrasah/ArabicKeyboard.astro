@@ -1,0 +1,119 @@
+---
+// src/components/madrasah/ArabicKeyboard.astro
+interface Props {
+  targetInputId: string;
+}
+
+const { targetInputId } = Astro.props;
+
+const arabicKeys = [
+  ['ض', 'ص', 'ث', 'ق', 'ف', 'غ', 'ع', 'ه', 'خ', 'ح', 'ج', 'د'],
+  ['ش', 'س', 'ي', 'ب', 'ل', 'ا', 'ت', 'ن', 'م', 'ك', 'ط'],
+  ['ئ', 'ء', 'ؤ', 'ر', 'لا', 'ى', 'ة', 'و', 'ز', 'ظ'],
+  ['ذ', 'ّ', 'ُ', 'ِ', 'َ', 'ْ', 'ٌ', 'ٍ', 'ً', 'آ'],
+];
+---
+
+<div class="arabic-keyboard card bg-base-200">
+  <div class="card-body">
+    <div class="mb-4 flex items-center justify-between">
+      <h4 class="font-semibold">Keyboard Arab</h4>
+      <button type="button" id="toggle-keyboard" class="btn btn-ghost btn-sm">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"
+          ></path>
+        </svg>
+      </button>
+    </div>
+
+    <div id="keyboard-container" class="space-y-2">
+      {
+        arabicKeys.map((row) => (
+          <div class="flex justify-center gap-1">
+            {row.map((key) => (
+              <button type="button" class="btn btn-sm font-arabic text-xl" data-key={key}>
+                {key}
+              </button>
+            ))}
+          </div>
+        ))
+      }
+
+      <div class="mt-4 flex justify-center gap-2">
+        <button type="button" class="btn btn-sm" data-key=" "> Space </button>
+        <button type="button" class="btn btn-warning btn-sm" id="backspace-btn">
+          ⌫ Backspace
+        </button>
+        <button type="button" class="btn btn-error btn-sm" id="clear-btn"> Clear </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ targetInputId }}>
+  const keyboardContainer = document.getElementById('keyboard-container');
+  const toggleBtn = document.getElementById('toggle-keyboard');
+  const backspaceBtn = document.getElementById('backspace-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const targetInput = document.getElementById(targetInputId) as
+    | HTMLInputElement
+    | HTMLTextAreaElement;
+
+  let isVisible = true;
+
+  toggleBtn?.addEventListener('click', () => {
+    isVisible = !isVisible;
+    if (keyboardContainer) {
+      keyboardContainer.style.display = isVisible ? 'block' : 'none';
+    }
+  });
+
+  document.querySelectorAll('[data-key]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-key');
+      if (!key || !targetInput) return;
+
+      const start = targetInput.selectionStart || 0;
+      const end = targetInput.selectionEnd || 0;
+      const text = targetInput.value;
+
+      targetInput.value = text.substring(0, start) + key + text.substring(end);
+      targetInput.selectionStart = targetInput.selectionEnd = start + key.length;
+      targetInput.focus();
+
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+
+  backspaceBtn?.addEventListener('click', () => {
+    if (!targetInput) return;
+
+    const start = targetInput.selectionStart || 0;
+    const end = targetInput.selectionEnd || 0;
+    const text = targetInput.value;
+
+    if (start === end && start > 0) {
+      targetInput.value = text.substring(0, start - 1) + text.substring(end);
+      targetInput.selectionStart = targetInput.selectionEnd = start - 1;
+    } else if (start !== end) {
+      targetInput.value = text.substring(0, start) + text.substring(end);
+      targetInput.selectionStart = targetInput.selectionEnd = start;
+    }
+
+    targetInput.focus();
+    targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  clearBtn?.addEventListener('click', () => {
+    if (!targetInput) return;
+    targetInput.value = '';
+    targetInput.focus();
+    targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+</script>
+
+<style>
+  .font-arabic {
+    font-family: 'Amiri', 'Traditional Arabic', serif;
+  }
+</style>

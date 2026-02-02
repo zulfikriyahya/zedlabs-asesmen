@@ -1,0 +1,91 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import { db } from '@/lib/db/schema';
+
+// Mock user data (would normally come from auth store/middleware)
+const user = {
+  name: 'Ahmad Siswa',
+  nis: '12345678',
+  class: 'XII IPA 1',
+  email: 'ahmad@sekolah.sch.id',
+  avatar: null
+};
+---
+
+<DashboardLayout title="Profil Saya" role="siswa">
+  <div class="max-w-2xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body items-center text-center">
+        <div class="avatar placeholder mb-4">
+          <div class="bg-neutral text-neutral-content rounded-full w-24">
+            <span class="text-3xl">{user.name.charAt(0)}</span>
+          </div>
+        </div>
+        
+        <h2 class="card-title text-2xl">{user.name}</h2>
+        <p class="text-base-content/70">{user.nis} • {user.class}</p>
+        
+        <div class="divider"></div>
+        
+        <div class="w-full text-left space-y-4">
+          <div class="form-control">
+            <label class="label"><span class="label-text">Email</span></label>
+            <input type="text" value={user.email} class="input input-bordered" disabled />
+          </div>
+          
+          <div class="form-control">
+            <label class="label"><span class="label-text">Password</span></label>
+            <button class="btn btn-outline btn-sm w-full">Ganti Password</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl mt-6">
+      <div class="card-body">
+        <h3 class="card-title text-lg">Statistik Perangkat</h3>
+        <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+          <div class="stat">
+            <div class="stat-title">Storage Terpakai</div>
+            <div class="stat-value text-sm" id="storage-usage">Calculating...</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">Ujian Offline</div>
+            <div class="stat-value text-sm" id="offline-count">0 File</div>
+          </div>
+        </div>
+        <div class="card-actions justify-end mt-4">
+          <button id="clear-data-btn" class="btn btn-error btn-sm text-white">Hapus Data Offline</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { db } from '@/lib/db/schema';
+    import { formatFileSize } from '@/lib/utils/format';
+
+    async function loadStats() {
+      const exams = await db.downloaded_exams.count();
+      const media = await db.media_files.count();
+      
+      document.getElementById('offline-count')!.textContent = `${exams} Ujian (${media} Media)`;
+      
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        document.getElementById('storage-usage')!.textContent = formatFileSize(estimate.usage || 0);
+      }
+    }
+
+    document.getElementById('clear-data-btn')?.addEventListener('click', async () => {
+      if(confirm('Yakin ingin menghapus semua data ujian offline? Anda harus mendownload ulang nanti.')) {
+        await db.downloaded_exams.clear();
+        await db.media_files.clear();
+        alert('Data berhasil dihapus.');
+        loadStats();
+      }
+    });
+
+    loadStats();
+  </script>
+</DashboardLayout>

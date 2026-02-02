@@ -1,0 +1,66 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
+
+// SSR Placeholder data
+const stats = {
+  totalExams: 12,
+  activeExams: 3,
+  completedExams: 150,
+  averageScore: 78.5
+};
+---
+
+<DashboardLayout title="Dashboard Guru" role="guru">
+  <div class="space-y-8">
+    <DashboardStats stats={stats} />
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Quick Actions -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Aksi Cepat</h2>
+          <div class="grid grid-cols-2 gap-4 mt-4">
+            <a href="/guru/soal/create" class="btn btn-outline btn-primary h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+              Buat Soal Baru
+            </a>
+            <a href="/guru/ujian/create" class="btn btn-outline btn-secondary h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              Jadwalkan Ujian
+            </a>
+            <a href="/guru/grading" class="btn btn-outline btn-accent h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Koreksi Esai
+            </a>
+            <a href="/guru/hasil" class="btn btn-outline h-auto py-4 flex flex-col gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Lihat Hasil
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Ujian Aktif</h2>
+          <ul class="menu bg-base-200 w-full rounded-box">
+            <li>
+              <a class="flex justify-between">
+                <span>Matematika X-A</span>
+                <span class="badge badge-success">Berjalan</span>
+              </a>
+            </li>
+            <li>
+              <a class="flex justify-between">
+                <span>Biologi XI-IPA</span>
+                <span class="badge badge-warning">Selesai</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

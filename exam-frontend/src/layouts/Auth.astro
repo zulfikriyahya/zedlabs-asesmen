@@ -1,0 +1,30 @@
+---
+import '@/styles/global.css';
+import Toast from '@/components/ui/Toast.astro';
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="bg-base-200 min-h-screen flex items-center justify-center">
+    <Toast />
+    <main class="w-full max-w-md p-4">
+      <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold text-primary mb-2">ExamApp</h1>
+        <p class="text-base-content/70">Sistem Ujian Sekolah & Madrasah</p>
+      </div>
+      <slot />
+    </main>
+  </body>
+</html>

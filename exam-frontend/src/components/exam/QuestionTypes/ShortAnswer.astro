@@ -1,0 +1,96 @@
+---
+// src/components/exam/QuestionTypes/ShortAnswer.astro
+interface Props {
+  question: {
+    id: number;
+    question_text: string;
+    question_html?: string;
+    media_url?: string;
+    media_type?: 'image' | 'audio' | 'video';
+    max_length?: number;
+  };
+  savedAnswer?: string;
+  readonly?: boolean;
+}
+
+const { question, savedAnswer = '', readonly = false } = Astro.props;
+const maxLength = question.max_length || 500;
+---
+
+<div class="question-container space-y-6">
+  <!-- Question Text -->
+  <div class="question-text prose max-w-none">
+    {
+      question.question_html ? (
+        <div set:html={question.question_html} />
+      ) : (
+        <p class="text-lg">{question.question_text}</p>
+      )
+    }
+  </div>
+
+  <!-- Question Media -->
+  {
+    question.media_url && (
+      <div class="question-media">
+        {question.media_type === 'image' && (
+          <img
+            src={question.media_url}
+            alt="Question media"
+            class="max-w-full rounded-lg shadow-lg"
+          />
+        )}
+
+        {question.media_type === 'audio' && (
+          <audio controls class="w-full">
+            <source src={question.media_url} type="audio/mpeg" />
+          </audio>
+        )}
+
+        {question.media_type === 'video' && (
+          <video controls class="w-full rounded-lg">
+            <source src={question.media_url} type="video/mp4" />
+          </video>
+        )}
+      </div>
+    )
+  }
+
+  <!-- Answer Input -->
+  <div class="answer-input">
+    <textarea
+      name={`question-${question.id}`}
+      placeholder="Ketik jawaban Anda di sini..."
+      maxlength={maxLength}
+      rows="4"
+      class="textarea textarea-bordered w-full text-base"
+      data-answer-input
+      readonly={readonly}>{savedAnswer}</textarea
+    >
+
+    <div class="mt-2 flex items-center justify-between text-sm text-base-content/70">
+      <span>Jawaban singkat</span>
+      <span>
+        <span id="char-count">{savedAnswer.length}</span>/{maxLength} karakter
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const textarea = document.querySelector('textarea[data-answer-input]');
+  const charCount = document.getElementById('char-count');
+
+  if (textarea && charCount) {
+    textarea.addEventListener('input', () => {
+      charCount.textContent = textarea.value.length.toString();
+    });
+  }
+</script>
+
+<style>
+  textarea:focus {
+    outline: none;
+    border-color: hsl(var(--p));
+  }
+</style>

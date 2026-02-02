@@ -1,0 +1,56 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import QuestionEditor from '@/components/questions/QuestionEditor.astro';
+import { getQuestionById } from '@/lib/api/question';
+
+const { id } = Astro.params;
+
+// Server-side Data Fetching (Astro SSR)
+let questionData = null;
+let error = null;
+
+try {
+  // Asumsi fungsi ini mengembalikan data soal lengkap
+  // Di real app, perlu handle cookie/auth token untuk request ini
+  // questionData = await getQuestionById(parseInt(id!));
+  
+  // Mock Data untuk blueprint
+  questionData = {
+    id: 1,
+    type: 'multiple_choice',
+    question_text: 'Apa ibu kota Indonesia?',
+    points: 5,
+    options: [
+      { id: 1, text: 'Jakarta', is_correct: true },
+      { id: 2, text: 'Bandung', is_correct: false }
+    ]
+  };
+} catch (e) {
+  error = "Gagal memuat data soal.";
+}
+---
+
+<DashboardLayout title="Edit Soal" role="guru">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-sm breadcrumbs mb-4">
+      <ul>
+        <li><a href="/guru/dashboard">Dashboard</a></li>
+        <li><a href="/guru/soal">Bank Soal</a></li>
+        <li class="font-bold">Edit Soal #{id}</li>
+      </ul>
+    </div>
+
+    {error ? (
+      <div class="alert alert-error">
+        <span>{error}</span>
+        <button onclick="history.back()" class="btn btn-sm">Kembali</button>
+      </div>
+    ) : (
+      <QuestionEditor 
+        examId="" 
+        initialData={questionData} 
+        mode="edit"
+      />
+    )}
+  </div>
+</DashboardLayout>

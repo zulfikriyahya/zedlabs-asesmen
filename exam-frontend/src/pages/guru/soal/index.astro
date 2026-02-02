@@ -1,0 +1,67 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
+
+// Mock Data
+const questions = [
+  { id: 101, text: 'Apa ibukota Indonesia?', type: 'multiple_choice', points: 5, tags: ['Geografi', 'Mudah'] },
+  { id: 102, text: 'Jelaskan proses fotosintesis.', type: 'essay', points: 10, tags: ['Biologi', 'Sukar'] },
+];
+---
+
+<DashboardLayout title="Bank Soal" role="guru">
+  <div slot="actions" class="flex gap-2">
+    <a href="/guru/soal/import" class="btn btn-secondary btn-sm">Import Excel</a>
+    <a href="/guru/soal/create" class="btn btn-primary btn-sm">+ Buat Soal</a>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex flex-col md:flex-row gap-4 mb-4">
+        <input type="text" placeholder="Cari pertanyaan..." class="input input-bordered w-full" />
+        <select class="select select-bordered w-full md:w-48">
+          <option value="">Semua Tipe</option>
+          <option value="multiple_choice">Pilihan Ganda</option>
+          <option value="essay">Esai</option>
+        </select>
+      </div>
+
+      <Table>
+        <thead>
+          <tr>
+            <th class="w-12">ID</th>
+            <th>Pertanyaan</th>
+            <th>Tipe</th>
+            <th>Tags</th>
+            <th>Poin</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {questions.map((q) => (
+            <tr>
+              <td>{q.id}</td>
+              <td>
+                <div class="line-clamp-2">{q.text}</div>
+              </td>
+              <td>
+                <div class="badge badge-outline text-xs">{q.type}</div>
+              </td>
+              <td>
+                <div class="flex gap-1 flex-wrap">
+                  {q.tags.map(tag => <span class="badge badge-ghost badge-xs">{tag}</span>)}
+                </div>
+              </td>
+              <td>{q.points}</td>
+              <td>
+                <a href={`/guru/soal/${q.id}/edit`} class="btn btn-square btn-xs btn-ghost">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  </div>
+</DashboardLayout>

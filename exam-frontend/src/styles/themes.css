@@ -1,0 +1,32 @@
+/* src/styles/themes.css */
+
+/* Custom Theme Variables Override */
+:root {
+  --rounded-box: 1rem;
+  --rounded-btn: 0.5rem;
+  --rounded-badge: 1.9rem;
+  --animation-btn: 0.25s;
+  --animation-input: 0.2s;
+  --btn-focus-scale: 0.95;
+  --border-btn: 1px;
+  --tab-border: 1px;
+  --tab-radius: 0.5rem;
+}
+
+/* High Contrast Mode Overrides */
+.high-contrast {
+  --p: 220 100% 40%; /* Darker Primary */
+  --bc: 0 0% 0%; /* Blacker Content */
+  --b1: 0 0% 100%; /* Whiter Background */
+}
+
+.high-contrast .btn {
+  border-width: 2px;
+}
+
+.high-contrast .input, 
+.high-contrast .select, 
+.high-contrast .textarea {
+  border-width: 2px;
+  border-color: black;
+}

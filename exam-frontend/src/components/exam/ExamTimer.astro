@@ -1,0 +1,187 @@
+---
+// src/components/exam/ExamTimer.astro
+---
+
+<div class="exam-timer flex items-center gap-3 rounded-lg bg-base-200 px-4 py-2">
+  <svg class="h-5 w-5 text-base-content/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+  </svg>
+
+  <div>
+    <p class="text-xs text-base-content/70">Sisa Waktu</p>
+    <p id="timer-display" class="font-mono text-xl font-bold">00:00:00</p>
+  </div>
+
+  <div id="timer-warning" class="ml-auto hidden">
+    <span class="badge badge-warning badge-sm animate-pulse">Hampir Habis!</span>
+  </div>
+</div>
+
+<script>
+  import { $timerStore, setTimeRemaining, decrementTime } from '@/stores/timer';
+
+  const timerDisplay = document.getElementById('timer-display');
+  const timerWarning = document.getElementById('timer-warning');
+  let timerInterval: number | null = null;
+
+  // Format time as HH:MM:SS
+  function formatTime(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Update display
+  function updateDisplay(seconds: number) {
+    if (!timerDisplay) return;
+
+    timerDisplay.textContent = formatTime(seconds);
+
+    // Color changes based on remaining time
+    if (seconds <= 60) {
+      // Last minute - red and flash
+      timerDisplay.classList.add('text-error', 'animate-pulse');
+      timerWarning?.classList.remove('hidden');
+    } else if (seconds <= 300) {
+      // Last 5 minutes - warning
+      timerDisplay.classList.add('text-warning');
+      timerDisplay.classList.remove('text-error');
+      timerWarning?.classList.remove('hidden');
+    } else if (seconds <= 600) {
+      // Last 10 minutes - info
+      timerDisplay.classList.add('text-info');
+      timerDisplay.classList.remove('text-warning');
+      timerWarning?.classList.add('hidden');
+    } else {
+      timerDisplay.classList.remove('text-error', 'text-warning', 'text-info', 'animate-pulse');
+      timerWarning?.classList.add('hidden');
+    }
+  }
+
+  // Start timer
+  function startTimer() {
+    // Update display immediately
+    const initialTime = $timerStore.get().timeRemaining;
+    updateDisplay(initialTime);
+
+    // Update every second
+    timerInterval = window.setInterval(() => {
+      const state = $timerStore.get();
+
+      if (!state.isPaused && state.timeRemaining > 0) {
+        decrementTime();
+        updateDisplay(state.timeRemaining - 1);
+
+        // Time warnings (play sound if available)
+        if (state.timeRemaining === 600) {
+          // 10 minutes
+          showTimeWarning('10 menit lagi!');
+        } else if (state.timeRemaining === 300) {
+          // 5 minutes
+          showTimeWarning('5 menit lagi!');
+        } else if (state.timeRemaining === 60) {
+          // 1 minute
+          showTimeWarning('1 menit lagi!');
+        }
+
+        // Auto-submit when time runs out
+        if (state.timeRemaining <= 0) {
+          handleTimeUp();
+        }
+      }
+    }, 1000);
+  }
+
+  function showTimeWarning(message: string) {
+    // Show toast notification
+    const toast = document.createElement('div');
+    toast.className =
+      'alert alert-warning fixed top-4 right-4 w-auto shadow-lg z-50 animate-bounce';
+    toast.innerHTML = `
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+
+    // Play sound (if available)
+    try {
+      const audio = new Audio('/sounds/timer-warning.mp3');
+      audio.play().catch(() => {}); // Ignore if no sound file
+    } catch (e) {}
+
+    // Remove after 3 seconds
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  function handleTimeUp() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
+
+    // Show time up modal
+    const modal = document.createElement('div');
+    modal.className = 'modal modal-open';
+    modal.innerHTML = `
+      <div class="modal-box">
+        <h3 class="font-bold text-lg text-error">Waktu Habis!</h3>
+        <p class="py-4">Waktu ujian telah berakhir. Jawaban Anda akan disubmit otomatis.</p>
+        <div class="modal-action">
+          <button class="btn btn-primary" id="submit-now-btn">Submit Sekarang</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Auto-submit after 3 seconds
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('exam:auto-submit'));
+    }, 3000);
+
+    document.getElementById('submit-now-btn')?.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('exam:auto-submit'));
+    });
+  }
+
+  // Subscribe to timer store changes
+  $timerStore.subscribe((state) => {
+    updateDisplay(state.timeRemaining);
+  });
+
+  // Start timer when page loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startTimer);
+  } else {
+    startTimer();
+  }
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
+  });
+</script>
+
+<style>
+  @keyframes pulse-slow {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .animate-pulse {
+    animation: pulse-slow 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+</style>

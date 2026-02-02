@@ -1,0 +1,119 @@
+---
+// src/pages/login.astro
+import AuthLayout from '@/layouts/Auth.astro';
+import Input from '@/components/ui/Input.astro';
+import Button from '@/components/ui/Button.astro';
+import DeviceLockWarning from '@/components/auth/DeviceLockWarning.astro';
+
+// PERBAIKAN: Tambahkan ini
+export const prerender = false;
+
+// Jika user sudah login, redirect langsung (Server Side Check)
+if (Astro.cookies.has('access_token')) {
+  // Logic redirect sederhana, idealnya cek role dari token
+  return Astro.redirect('/siswa/dashboard');
+}
+---
+
+<AuthLayout title="Login Peserta">
+  <!-- Konten sama seperti sebelumnya -->
+  <div class="card w-full max-w-sm bg-base-100 shadow-2xl">
+    <div class="card-body">
+      <div class="text-center mb-4">
+        <img src="/icons/icon-192.png" alt="Logo" class="w-16 h-16 mx-auto mb-2" />
+        <h2 class="card-title justify-center text-2xl font-bold">Masuk Ujian</h2>
+        <p class="text-sm text-base-content/70">Masukkan kredensial Anda</p>
+      </div>
+
+      <div id="alert-container" class="hidden alert alert-error text-sm py-2 mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span id="error-msg">Error message here</span>
+      </div>
+
+      <form id="login-form" class="space-y-4">
+        <Input 
+          name="username" 
+          label="Username / NIS" 
+          placeholder="Contoh: 12345" 
+          required 
+        />
+        
+        <Input 
+          type="password" 
+          name="password" 
+          label="Password" 
+          placeholder="••••••••" 
+          required 
+        />
+
+        <div class="form-control">
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" required />
+            <span class="label-text text-xs">Saya siap mematuhi tata tertib ujian.</span>
+          </label>
+        </div>
+
+        <div class="card-actions mt-4">
+          <Button type="submit" variant="primary" block id="login-btn">
+            Masuk
+          </Button>
+        </div>
+      </form>
+
+      <div class="divider text-xs">Versi 1.0.0</div>
+      
+      <div class="text-center text-xs text-base-content/50">
+        <p>Aplikasi ini membutuhkan akses lokasi dan kamera untuk validasi.</p>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="device-lock-modal" class="modal">
+    <div class="modal-box">
+      <DeviceLockWarning />
+    </div>
+  </dialog>
+</AuthLayout>
+
+<script>
+  import { login } from '@/lib/api/auth';
+  import { generateDeviceFingerprint } from '@/lib/utils/device';
+
+  const form = document.getElementById('login-form') as HTMLFormElement;
+  const btn = document.getElementById('login-btn') as HTMLButtonElement;
+  const alertBox = document.getElementById('alert-container');
+  const errorMsg = document.getElementById('error-msg');
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading loading-spinner"></span> Memproses...';
+    alertBox?.classList.add('hidden');
+
+    try {
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData);
+      
+      const fingerprint = await generateDeviceFingerprint();
+      
+      await login({
+        username: data.username as string,
+        password: data.password as string,
+        // device_fingerprint: fingerprint // Uncomment jika API support
+      });
+
+      window.location.href = '/siswa/dashboard';
+
+    } catch (error: any) {
+      console.error(error);
+      if (alertBox && errorMsg) {
+        errorMsg.textContent = error.message || 'Login gagal. Periksa koneksi atau password.';
+        alertBox.classList.remove('hidden');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Masuk';
+    }
+  });
+</script>

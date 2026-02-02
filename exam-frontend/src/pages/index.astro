@@ -1,0 +1,38 @@
+---
+// src/pages/index.astro
+// PERBAIKAN: Tambahkan baris ini agar berjalan di mode Server (SSR)
+export const prerender = false;
+---
+
+<script>
+  import { $authStore } from '@/stores/auth';
+  
+  // Logic client-side redirect sebagai fallback
+  const authState = $authStore.get();
+  
+  if (!authState.isAuthenticated) {
+    window.location.href = '/login';
+  } else {
+    const role = authState.user?.role;
+    
+    switch (role) {
+      case 'siswa':
+        window.location.href = '/siswa/dashboard';
+        break;
+      case 'guru':
+        window.location.href = '/guru/dashboard';
+        break;
+      case 'pengawas':
+        window.location.href = '/pengawas/dashboard';
+        break;
+      case 'operator':
+        window.location.href = '/operator/dashboard';
+        break;
+      case 'superadmin':
+        window.location.href = '/superadmin/dashboard';
+        break;
+      default:
+        window.location.href = '/login';
+    }
+  }
+</script>

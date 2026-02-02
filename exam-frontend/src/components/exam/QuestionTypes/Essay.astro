@@ -1,0 +1,176 @@
+---
+// src/components/exam/QuestionTypes/Essay.astro
+interface Props {
+  question: {
+    id: number;
+    question_text: string;
+    question_html?: string;
+    media_url?: string;
+    media_type?: 'image' | 'audio' | 'video';
+    min_words?: number;
+    max_words?: number;
+    require_media?: boolean;
+    media_type_required?: 'audio' | 'video';
+    max_media_duration?: number;
+  };
+  savedAnswer?: {
+    text?: string;
+    media_blob?: Blob;
+    media_url?: string;
+  };
+  readonly?: boolean;
+}
+
+const { question, savedAnswer, readonly = false } = Astro.props;
+---
+
+<div class="question-container space-y-6">
+  <!-- Question Text -->
+  <div class="question-text prose max-w-none">
+    {question.question_html ? (
+      <div set:html={question.question_html} />
+    ) : (
+      <p class="text-lg">{question.question_text}</p>
+    )}
+    
+    {question.require_media && (
+      <div class="alert alert-info mt-4">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span class="text-sm">
+          Rekaman {question.media_type_required === 'audio' ? 'audio' : 'video'} <strong>wajib</strong> dilampirkan
+        </span>
+      </div>
+    )}
+  </div>
+
+  <!-- Question Media -->
+  {question.media_url && (
+    <div class="question-media">
+      {question.media_type === 'image' && (
+        <img 
+          src={question.media_url} 
+          alt="Question media"
+          class="max-w-full rounded-lg shadow-lg"
+        />
+      )}
+      
+      {question.media_type === 'audio' && (
+        <audio controls class="w-full">
+          <source src={question.media_url} type="audio/mpeg" />
+        </audio>
+      )}
+      
+      {question.media_type === 'video' && (
+        <video controls class="w-full rounded-lg">
+          <source src={question.media_url} type="video/mp4" />
+        </video>
+      )}
+    </div>
+  )}
+
+  <!-- Text Answer -->
+  <div class="answer-section">
+    <label class="label">
+      <span class="label-text font-semibold">Jawaban Esai</span>
+      {(question.min_words || question.max_words) && (
+        <span class="label-text-alt">
+          {question.min_words && `Min: ${question.min_words} kata`}
+          {question.min_words && question.max_words && ' • '}
+          {question.max_words && `Max: ${question.max_words} kata`}
+        </span>
+      )}
+    </label>
+    
+    <textarea
+      id={`essay-${question.id}`}
+      name={`question-${question.id}`}
+      placeholder="Tulis jawaban esai Anda di sini..."
+      rows="10"
+      class="textarea textarea-bordered w-full text-base"
+      data-answer-input
+      readonly={readonly}
+    >{savedAnswer?.text || ''}</textarea>
+    
+    <div class="flex justify-between items-center mt-2 text-sm text-base-content/70">
+      <span id="word-count">0 kata</span>
+      <span id="char-count">0 karakter</span>
+    </div>
+  </div>
+
+  <!-- Media Recording (if required) -->
+  {question.require_media && question.media_type_required && (
+    <div class="media-recording-section" id="media-section">
+      <div class="divider">REKAMAN MEDIA</div>
+      
+      <div id="recorder-placeholder" class="text-center">
+        <p class="text-base-content/70 mb-4">
+          {question.media_type_required === 'audio' ? 'Rekam jawaban audio Anda' : 'Rekam jawaban video Anda'}
+        </p>
+        <button 
+          type="button"
+          id="start-recording-btn"
+          class="btn btn-primary"
+        >
+          <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="3"/>
+          </svg>
+          Mulai Merekam
+        </button>
+      </div>
+
+      <div id="recording-ui" class="hidden">
+        <!-- Recording UI will be injected here -->
+      </div>
+
+      {savedAnswer?.media_url && (
+        <div class="saved-media mt-4">
+          <p class="text-sm font-semibold mb-2">Rekaman Tersimpan:</p>
+          {question.media_type_required === 'audio' ? (
+            <audio controls class="w-full">
+              <source src={savedAnswer.media_url} type="audio/webm" />
+            </audio>
+          ) : (
+            <video controls class="w-full rounded-lg">
+              <source src={savedAnswer.media_url} type="video/webm" />
+            </video>
+          )}
+        </div>
+      )}
+    </div>
+  )}
+</div>
+
+<script>
+  // Word and character counter
+  const textarea = document.querySelector('textarea[data-answer-input]') as HTMLTextAreaElement;
+  const wordCount = document.getElementById('word-count');
+  const charCount = document.getElementById('char-count');
+  
+  function updateCounts() {
+    if (!textarea || !wordCount || !charCount) return;
+    
+    const text = textarea.value.trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    const chars = text.length;
+    
+    wordCount.textContent = `${words} kata`;
+    charCount.textContent = `${chars} karakter`;
+  }
+  
+  if (textarea) {
+    textarea.addEventListener('input', updateCounts);
+    updateCounts(); // Initial count
+  }
+
+  // Media recording (to be implemented with MediaRecorder component)
+  const startRecordingBtn = document.getElementById('start-recording-btn');
+  
+  if (startRecordingBtn) {
+    startRecordingBtn.addEventListener('click', () => {
+      // TODO: Load MediaRecorder component dynamically
+      alert('Media recorder akan dimuat...');
+    });
+  }
+</script>

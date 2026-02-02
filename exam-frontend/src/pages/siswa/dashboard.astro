@@ -1,0 +1,98 @@
+---
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import DashboardStats from '@/components/analytics/DashboardStats.astro';
+import { db } from '@/lib/db/schema';
+
+// Mock data for SSR (in real app, fetch from API or DB if client-side)
+const stats = {
+  totalExams: 0,
+  activeExams: 0,
+  completedExams: 0,
+  averageScore: 0
+};
+---
+
+<DashboardLayout title="Dashboard Siswa" role="siswa">
+  <div class="space-y-8">
+    <!-- Stats Overview -->
+    <DashboardStats stats={stats} />
+
+    <!-- Active Exams Section -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="card-title">Ujian Tersedia</h2>
+          <a href="/siswa/ujian" class="btn btn-sm btn-ghost">Lihat Semua</a>
+        </div>
+        
+        <div id="active-exams-list" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div class="loading loading-spinner loading-lg mx-auto col-span-full"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Results -->
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title">Riwayat Terakhir</h2>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Mata Pelajaran</th>
+                <th>Tanggal</th>
+                <th>Nilai</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-list">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { db } from '@/lib/db/schema';
+    import { getAvailableExams } from '@/lib/api/exam';
+
+    async function loadDashboardData() {
+      try {
+        // Load local data first
+        const downloadedExams = await db.downloaded_exams.toArray();
+        const container = document.getElementById('active-exams-list');
+        
+        if (container) {
+          if (downloadedExams.length === 0) {
+            container.innerHTML = `
+              <div class="col-span-full text-center py-8 text-base-content/50">
+                <p>Belum ada ujian yang didownload.</p>
+                <a href="/siswa/ujian" class="btn btn-primary btn-sm mt-2">Cari Ujian</a>
+              </div>
+            `;
+          } else {
+            container.innerHTML = downloadedExams.map(exam => `
+              <div class="card bg-base-200">
+                <div class="card-body p-4">
+                  <h3 class="font-bold">Ujian #${exam.exam_id}</h3>
+                  <div class="text-xs text-base-content/70 mt-1">
+                    Downloaded: ${new Date(exam.downloaded_at).toLocaleDateString()}
+                  </div>
+                  <div class="card-actions justify-end mt-3">
+                    <a href="/siswa/ujian/${exam.exam_id}" class="btn btn-primary btn-sm">Mulai</a>
+                  </div>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    loadDashboardData();
+  </script>
+</DashboardLayout>

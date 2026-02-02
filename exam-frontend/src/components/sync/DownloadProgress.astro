@@ -1,0 +1,131 @@
+---
+// src/components/sync/DownloadProgress.astro
+interface Props {
+  examId: number;
+}
+const { examId } = Astro.props;
+---
+
+<div class="card bg-base-100 shadow-xl w-full max-w-lg">
+  <div class="card-body">
+    <h3 class="card-title text-lg">Status Download</h3>
+    
+    <!-- Progress Bar Utama -->
+    <div class="w-full mt-4">
+      <div class="flex justify-between mb-1">
+        <span id="phase-text" class="text-sm font-semibold">Menghubungkan...</span>
+        <span id="percent-text" class="text-sm font-bold">0%</span>
+      </div>
+      <progress id="main-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
+    </div>
+
+    <!-- Detail File (untuk media) -->
+    <div id="file-detail" class="mt-2 text-xs text-base-content/70 hidden">
+      Mengunduh: <span id="current-file" class="font-mono truncate">...</span>
+    </div>
+
+    <!-- Log Console Kecil -->
+    <div class="mockup-code bg-base-300 text-base-content mt-6 h-32 overflow-y-auto text-xs scale-90 origin-top-left w-[110%]">
+      <pre id="download-log" class="px-4 py-2"><code>Inisialisasi...</code></pre>
+    </div>
+
+    <!-- Error State -->
+    <div id="error-box" class="hidden alert alert-error mt-4">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      <span id="error-msg">Gagal mengunduh.</span>
+    </div>
+
+    <!-- Actions -->
+    <div class="card-actions justify-end mt-6">
+      <button id="cancel-btn" class="btn btn-ghost btn-sm">Batal</button>
+      <button id="retry-btn" class="btn btn-primary btn-sm hidden">Coba Lagi</button>
+      <a id="start-btn" href={`/siswa/ujian/${examId}`} class="btn btn-success btn-sm text-white hidden">Mulai Ujian</a>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ examId }}>
+  import { downloadExam } from '@/lib/offline/download';
+
+  const progressBar = document.getElementById('main-progress');
+  const percentText = document.getElementById('percent-text');
+  const phaseText = document.getElementById('phase-text');
+  const fileDetail = document.getElementById('file-detail');
+  const currentFile = document.getElementById('current-file');
+  const logContainer = document.getElementById('download-log');
+  const errorBox = document.getElementById('error-box');
+  const errorMsg = document.getElementById('error-msg');
+  
+  const cancelBtn = document.getElementById('cancel-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const startBtn = document.getElementById('start-btn');
+
+  function addLog(msg) {
+    if (!logContainer) return;
+    const line = document.createElement('div');
+    line.textContent = `> ${msg}`;
+    logContainer.appendChild(line);
+    logContainer.parentElement.scrollTop = logContainer.parentElement.scrollHeight;
+  }
+
+  async function runDownload() {
+    // Reset UI
+    progressBar.value = 0;
+    errorBox.classList.add('hidden');
+    retryBtn.classList.add('hidden');
+    startBtn.classList.add('hidden');
+    cancelBtn.classList.remove('hidden');
+    
+    try {
+      addLog(`Memulai download ujian ID: ${examId}`);
+      
+      await downloadExam(examId, (progress) => {
+        // Update Progress Bar
+        progressBar.value = progress.percentage;
+        percentText.textContent = `${Math.round(progress.percentage)}%`;
+
+        // Update Phase Text
+        const phases = {
+          preparing: 'Menyiapkan paket soal...',
+          exam_data: 'Mengunduh data enkripsi...',
+          media_files: `Mengunduh file media (${progress.current}/${progress.total})`,
+          complete: 'Verifikasi selesai!'
+        };
+        phaseText.textContent = phases[progress.phase];
+
+        // Update File Detail
+        if (progress.phase === 'media_files' && progress.currentFile) {
+          fileDetail.classList.remove('hidden');
+          currentFile.textContent = progress.currentFile.split('/').pop();
+        } else {
+          fileDetail.classList.add('hidden');
+        }
+
+        // Log significant steps
+        if (progress.percentage % 20 === 0 || progress.phase !== 'media_files') {
+          // addLog(`${phases[progress.phase]} - ${Math.round(progress.percentage)}%`);
+        }
+      });
+
+      addLog('Download Berhasil!');
+      phaseText.textContent = "Selesai!";
+      progressBar.classList.add('progress-success');
+      cancelBtn.classList.add('hidden');
+      startBtn.classList.remove('hidden');
+
+    } catch (error) {
+      console.error(error);
+      addLog(`ERROR: ${error.message}`);
+      errorMsg.textContent = error.message || "Terjadi kesalahan koneksi.";
+      errorBox.classList.remove('hidden');
+      retryBtn.classList.remove('hidden');
+      progressBar.classList.add('progress-error');
+    }
+  }
+
+  cancelBtn.addEventListener('click', () => window.history.back());
+  retryBtn.addEventListener('click', runDownload);
+
+  // Auto start
+  runDownload();
+</script>

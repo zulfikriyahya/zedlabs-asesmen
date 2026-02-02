@@ -1,0 +1,26 @@
+---
+import MainLayout from '@/layouts/Auth.astro';
+---
+
+<MainLayout title="Offline - Tidak Ada Koneksi">
+  <div class="text-center">
+    <div class="mb-6 inline-block p-4 bg-base-200 rounded-full">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+      </svg>
+    </div>
+    
+    <h1 class="text-3xl font-bold mb-2">Anda Sedang Offline</h1>
+    <p class="mb-8 text-base-content/70">Koneksi internet terputus. Beberapa fitur mungkin tidak tersedia.</p>
+    
+    <div class="space-y-3">
+      <a href="/siswa/dashboard" class="btn btn-primary w-full">
+        Ke Dashboard (Mode Offline)
+      </a>
+      <button onclick="window.location.reload()" class="btn btn-ghost w-full">
+        Coba Lagi
+      </button>
+    </div>
+  </div>
+</MainLayout>

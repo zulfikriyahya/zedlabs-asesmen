@@ -1,0 +1,54 @@
+---
+// src/components/ui/Button.astro
+interface Props {
+  type?: 'button' | 'submit' | 'reset';
+  variant?: 'primary' | 'secondary' | 'accent' | 'ghost' | 'link' | 'error' | 'success';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  loading?: boolean;
+  block?: boolean;
+  class?: string;
+}
+
+const {
+  type = 'button',
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  block = false,
+  class: className = '',
+} = Astro.props;
+
+const variantClass = {
+  primary: 'btn-primary',
+  secondary: 'btn-secondary',
+  accent: 'btn-accent',
+  ghost: 'btn-ghost',
+  link: 'btn-link',
+  error: 'btn-error',
+  success: 'btn-success',
+}[variant];
+
+const sizeClass = {
+  xs: 'btn-xs',
+  sm: 'btn-sm',
+  md: 'btn-md',
+  lg: 'btn-lg',
+}[size];
+---
+
+<button
+  type={type}
+  class:list={[
+    'btn',
+    variantClass,
+    sizeClass,
+    { 'btn-block': block },
+    { 'loading': loading },
+    className,
+  ]}
+  disabled={disabled || loading}
+>
+  <slot />
+</button>
