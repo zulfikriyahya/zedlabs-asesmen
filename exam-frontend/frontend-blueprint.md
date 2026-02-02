@@ -1772,83 +1772,106 @@ const percentage = (answered / total) * 100;
 ```astro
 ---
 // src/components/exam/QuestionNavigation.astro
-interface Props {
-  questions: Array<{
-    id: number;
-    number: number;
-    type: string;
-  }>;
-  currentIndex: number;
-  answeredQuestions: Set<number>;
-  flaggedQuestions: Set<number>;
-}
-
-const { questions, currentIndex, answeredQuestions, flaggedQuestions } = Astro.props;
+// Props tidak diperlukan karena data diambil dari Client Store
 ---
 
-<div class="question-navigation flex h-full flex-col">
-  <div class="border-b border-base-300 p-4">
-    <h3 class="text-lg font-bold">Navigasi Soal</h3>
-    <div class="mt-2 text-sm text-base-content/70">
-      <span>{answeredQuestions.size}/{questions.length} terjawab</span>
+<div class="flex h-full flex-col bg-base-100">
+  <div class="p-4 border-b border-base-300">
+    <h3 class="font-bold text-lg">Navigasi Soal</h3>
+    <div class="flex gap-2 text-xs mt-2">
+      <div class="flex items-center gap-1">
+        <div class="w-3 h-3 bg-primary rounded"></div> Aktif
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="w-3 h-3 bg-success rounded"></div> Jawab
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="w-3 h-3 bg-warning rounded"></div> Ragu
+      </div>
     </div>
   </div>
 
   <div class="flex-1 overflow-y-auto p-4">
-    <div class="grid grid-cols-5 gap-2">
-      {
-        questions.map((q, index) => {
-          const isAnswered = answeredQuestions.has(q.id);
-          const isFlagged = flaggedQuestions.has(q.id);
-          const isCurrent = index === currentIndex;
-
-          return (
-            <button
-              type="button"
-              class={`aspect-square rounded-lg border-2 font-semibold transition-all ${
-                isCurrent
-                  ? 'border-primary bg-primary text-primary-content'
-                  : isAnswered
-                    ? 'border-success bg-success/20 text-success-content'
-                    : isFlagged
-                      ? 'border-warning bg-warning/20 text-warning-content'
-                      : 'hover:border-base-400 border-base-300'
-              }`}
-              data-question-index={index}
-            >
-              <div class="flex h-full flex-col items-center justify-center">
-                <span class="text-lg">{q.number}</span>
-                {isFlagged && (
-                  <svg class="mt-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M3 6l3-3v12l-3-3V6zm4 0v12l10-6L7 6z" />
-                  </svg>
-                )}
-              </div>
-            </button>
-          );
-        })
-      }
-    </div>
-  </div>
-
-  <div class="border-t border-base-300 p-4">
-    <div class="flex gap-2 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="bg-primary h-4 w-4 rounded"></div>
-        <span>Aktif</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="h-4 w-4 rounded border-2 border-success bg-success/20"></div>
-        <span>Terjawab</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="h-4 w-4 rounded border-2 border-warning bg-warning/20"></div>
-        <span>Ditandai</span>
-      </div>
+    <!-- Grid container akan diisi oleh script -->
+    <div id="nav-grid" class="grid grid-cols-4 gap-2">
+      <!-- Skeleton Loading -->
+      {Array.from({ length: 20 }).map(() => (
+        <div class="aspect-square rounded bg-base-200 animate-pulse"></div>
+      ))}
     </div>
   </div>
 </div>
 
+<script>
+  import { $examUI, $questionStatus, setCurrentIndex } from '@/stores/exam';
+  import { ExamController } from '@/lib/exam/controller'; // Asumsi instance global atau akses via event
+
+  const grid = document.getElementById('nav-grid');
+  let questionsList: any[] = [];
+
+  // Listen for initialization event from parent page
+  window.addEventListener('exam:init-nav', (e: any) => {
+    questionsList = e.detail.questions;
+    renderGrid();
+  });
+
+  function renderGrid() {
+    if (!grid || questionsList.length === 0) return;
+    
+    grid.innerHTML = '';
+    
+    questionsList.forEach((q, idx) => {
+      const btn = document.createElement('button');
+      btn.id = `nav-btn-${q.id}`;
+      btn.textContent = (idx + 1).toString();
+      btn.className = `aspect-square rounded-lg border-2 font-semibold text-sm transition-all hover:brightness-95`;
+      
+      // Click handler
+      btn.onclick = () => {
+        // Dispatch event agar Controller di parent page menangkapnya
+        window.dispatchEvent(new CustomEvent('exam:goto', { detail: { index: idx } }));
+      };
+
+      grid.appendChild(btn);
+    });
+  }
+
+  // Subscribe to UI changes to update classes efficiently
+  // Menggabungkan store UI dan Status Soal
+  import { computed } from 'nanostores';
+
+  const $combinedState = computed([$examUI, $questionStatus], (ui, status) => ({
+    currentIndex: ui.currentQuestionIndex,
+    status
+  }));
+
+  $combinedState.subscribe(({ currentIndex, status }) => {
+    if (questionsList.length === 0) return;
+
+    questionsList.forEach((q, idx) => {
+      const btn = document.getElementById(`nav-btn-${q.id}`);
+      if (!btn) return;
+
+      const qStatus = status[q.id] || { answered: false, flagged: false };
+      const isCurrent = idx === currentIndex;
+
+      // Reset classes
+      let classes = "aspect-square rounded-lg border-2 font-semibold text-sm transition-all ";
+
+      if (isCurrent) {
+        classes += "bg-primary text-white border-primary shadow-md scale-105";
+      } else if (qStatus.flagged) {
+        classes += "bg-warning text-warning-content border-warning";
+      } else if (qStatus.answered) {
+        classes += "bg-success text-white border-success";
+      } else {
+        classes += "bg-base-100 border-base-300 text-base-content";
+      }
+
+      btn.className = classes;
+    });
+  });
+</script>
 ```
 
 ---
@@ -3655,81 +3678,54 @@ const arabicKeys = [
 
 ```astro
 ---
-// src/components/madrasah/HafalanRecorder.astro
 interface Props {
   surah: string;
-  ayahRange: string;
-  maxDuration?: number;
+  ayahStart: number;
+  ayahEnd: number;
+  maxDuration?: number; // detik
 }
 
-const { surah, ayahRange, maxDuration = 600 } = Astro.props;
+const { surah, ayahStart, ayahEnd, maxDuration = 300 } = Astro.props;
 ---
 
-<div class="hafalan-recorder card bg-base-200">
-  <div class="card-body">
-    <div class="mb-4 text-center">
-      <h3 class="font-arabic text-lg font-bold">{surah}</h3>
-      <p class="text-sm text-base-content/70">Ayat {ayahRange}</p>
-    </div>
+<div class="card bg-base-100 border border-base-200 shadow-sm">
+  <div class="card-body p-4">
+    <h3 class="font-bold text-center mb-2">Rekaman Hafalan</h3>
+    <p class="text-xs text-center text-base-content/70 mb-4">
+      QS. {surah}: {ayahStart}-{ayahEnd} (Maks. {maxDuration / 60} menit)
+    </p>
 
-    <div class="alert alert-info mb-4">
-      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-      </svg>
-      <div class="text-sm">
-        <p class="font-semibold">Petunjuk Rekaman Hafalan:</p>
-        <ul class="mt-1 list-inside list-disc">
-          <li>Pastikan suara jelas dan tanpa noise</li>
-          <li>Bacakan ayat dengan tartil</li>
-          <li>Maksimal durasi: {maxDuration / 60} menit</li>
-        </ul>
+    <!-- Visualizer Area -->
+    <div class="bg-base-300 rounded-lg h-24 flex items-center justify-center mb-4 relative overflow-hidden">
+      <div id="waveform" class="flex items-end gap-[2px] h-16 w-full px-4 justify-center opacity-50">
+        <!-- Bars generated by JS -->
+      </div>
+      <div id="timer-display" class="absolute inset-0 flex items-center justify-center font-mono text-2xl font-bold z-10">
+        00:00
       </div>
     </div>
 
-    <div id="recording-status" class="mb-4 hidden">
-      <div class="flex items-center justify-between rounded bg-error/10 p-4">
-        <div class="flex items-center gap-3">
-          <div class="animate-pulse">
-            <div class="h-3 w-3 rounded-full bg-error"></div>
-          </div>
-          <span class="font-semibold">Merekam...</span>
-        </div>
-        <div class="font-mono text-2xl" id="rec-timer">00:00</div>
-      </div>
-    </div>
-
-    <div id="waveform-container" class="mb-4 hidden">
-      <canvas id="waveform-canvas" class="h-32 w-full rounded bg-base-300"></canvas>
-    </div>
-
-    <div class="mb-4 flex justify-center gap-2">
-      <button type="button" id="start-hafalan-rec" class="btn btn-primary btn-lg">
-        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
-          <circle cx="10" cy="10" r="6"></circle>
+    <!-- Controls -->
+    <div class="flex justify-center gap-4">
+      <button id="record-btn" class="btn btn-circle btn-error btn-lg shadow-lg border-4 border-base-100">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
         </svg>
-        Mulai Rekam Hafalan
       </button>
 
-      <button type="button" id="stop-hafalan-rec" class="btn btn-error btn-lg hidden">
-        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
-          <rect x="6" y="6" width="8" height="8"></rect>
+      <button id="stop-btn" class="btn btn-circle btn-neutral btn-lg hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" />
         </svg>
-        Stop
       </button>
     </div>
 
-    <div id="playback-section" class="hidden">
-      <div class="divider">Preview Hafalan</div>
-
-      <audio id="hafalan-playback" class="mb-4 w-full" controls></audio>
-
-      <div class="grid grid-cols-2 gap-2">
-        <button type="button" id="retry-hafalan" class="btn btn-ghost"> Rekam Ulang </button>
-        <button type="button" id="submit-hafalan" class="btn btn-success"> Submit Hafalan </button>
+    <!-- Playback Preview (Hidden initially) -->
+    <div id="preview-container" class="hidden mt-4">
+      <audio id="audio-preview" controls class="w-full mb-2"></audio>
+      <div class="flex justify-end gap-2">
+        <button id="retry-btn" class="btn btn-ghost btn-sm">Rekam Ulang</button>
+        <button id="save-btn" class="btn btn-primary btn-sm">Simpan</button>
       </div>
     </div>
   </div>
@@ -3737,8 +3733,7 @@ const { surah, ayahRange, maxDuration = 600 } = Astro.props;
 
 <script define:vars={{ maxDuration }}>
   let mediaRecorder;
-  let recordedChunks = [];
-  let stream;
+  let audioChunks = [];
   let startTime;
   let timerInterval;
   let audioContext;
@@ -3746,192 +3741,137 @@ const { surah, ayahRange, maxDuration = 600 } = Astro.props;
   let dataArray;
   let animationId;
 
-  const startBtn = document.getElementById('start-hafalan-rec');
-  const stopBtn = document.getElementById('stop-hafalan-rec');
-  const retryBtn = document.getElementById('retry-hafalan');
-  const submitBtn = document.getElementById('submit-hafalan');
-  const recordingStatus = document.getElementById('recording-status');
-  const timerEl = document.getElementById('rec-timer');
-  const playbackSection = document.getElementById('playback-section');
-  const playback = document.getElementById('hafalan-playback') as HTMLAudioElement;
-  const waveformContainer = document.getElementById('waveform-container');
-  const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
+  const recordBtn = document.getElementById('record-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const previewContainer = document.getElementById('preview-container');
+  const audioPreview = document.getElementById('audio-preview');
+  const timerDisplay = document.getElementById('timer-display');
+  const waveform = document.getElementById('waveform');
+  const retryBtn = document.getElementById('retry-btn');
+  const saveBtn = document.getElementById('save-btn');
 
-  startBtn?.addEventListener('click', startRecording);
-  stopBtn?.addEventListener('click', stopRecording);
-  retryBtn?.addEventListener('click', retryRecording);
-  submitBtn?.addEventListener('click', submitHafalan);
+  // Initialize Visualizer Bars
+  for(let i=0; i<30; i++) {
+    const bar = document.createElement('div');
+    bar.className = "w-1 bg-primary rounded-t transition-all duration-75";
+    bar.style.height = "10%";
+    waveform.appendChild(bar);
+  }
+  const bars = waveform.children;
 
   async function startRecording() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      setupAudioVisualizer(stream);
-
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus',
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Setup Visualizer
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      // Setup Recorder
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
-        }
+        audioChunks.push(event.data);
       };
 
-      mediaRecorder.onstop = handleRecordingStop;
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioPreview.src = audioUrl;
+        
+        // Stop Visualizer
+        cancelAnimationFrame(animationId);
+        audioContext.close();
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Show Preview
+        previewContainer.classList.remove('hidden');
+        recordBtn.classList.add('hidden');
+        stopBtn.classList.add('hidden');
+        
+        // Expose blob for parent form
+        window.currentHafalanBlob = audioBlob;
+      };
 
-      recordedChunks = [];
       mediaRecorder.start();
       startTime = Date.now();
-
-      startBtn?.classList.add('hidden');
-      stopBtn?.classList.remove('hidden');
-      recordingStatus?.classList.remove('hidden');
-      waveformContainer?.classList.remove('hidden');
-      playbackSection?.classList.add('hidden');
-
       updateTimer();
-      timerInterval = setInterval(updateTimer, 1000);
+      visualize();
 
-      setTimeout(() => {
-        if (mediaRecorder?.state === 'recording') {
-          stopRecording();
-          alert(`Durasi maksimal ${maxDuration / 60} menit tercapai.`);
-        }
-      }, maxDuration * 1000);
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      alert('Gagal memulai rekaman. Pastikan izin mikrofon sudah diberikan.');
+      // UI Updates
+      recordBtn.classList.add('hidden');
+      stopBtn.classList.remove('hidden');
+      previewContainer.classList.add('hidden');
+
+    } catch (err) {
+      alert("Gagal mengakses mikrofon. Pastikan izin diberikan.");
+      console.error(err);
     }
-  }
-
-  function setupAudioVisualizer(audioStream) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaStreamSource(audioStream);
-    source.connect(analyser);
-    analyser.fftSize = 2048;
-
-    const bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
-
-    drawWaveform();
-  }
-
-  function drawWaveform() {
-    if (!waveformCanvas || !analyser) return;
-
-    const ctx = waveformCanvas.getContext('2d');
-    if (!ctx) return;
-
-    const WIDTH = (waveformCanvas.width = waveformCanvas.offsetWidth);
-    const HEIGHT = (waveformCanvas.height = waveformCanvas.offsetHeight);
-
-    animationId = requestAnimationFrame(drawWaveform);
-
-    analyser.getByteTimeDomainData(dataArray);
-
-    ctx.fillStyle = 'rgb(30, 30, 30)';
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgb(59, 130, 246)';
-    ctx.beginPath();
-
-    const sliceWidth = WIDTH / dataArray.length;
-    let x = 0;
-
-    for (let i = 0; i < dataArray.length; i++) {
-      const v = dataArray[i] / 128.0;
-      const y = (v * HEIGHT) / 2;
-
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
-
-      x += sliceWidth;
-    }
-
-    ctx.lineTo(WIDTH, HEIGHT / 2);
-    ctx.stroke();
   }
 
   function stopRecording() {
-    if (mediaRecorder?.state === 'recording') {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
-      stream?.getTracks().forEach((track) => track.stop());
-
-      if (timerInterval) clearInterval(timerInterval);
-      if (animationId) cancelAnimationFrame(animationId);
-      if (audioContext) audioContext.close();
-
-      startBtn?.classList.remove('hidden');
-      stopBtn?.classList.add('hidden');
-      recordingStatus?.classList.add('hidden');
-      waveformContainer?.classList.add('hidden');
+      clearInterval(timerInterval);
     }
   }
 
-  function handleRecordingStop() {
-    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-    const url = URL.createObjectURL(blob);
-
-    if (playback) {
-      playback.src = url;
-      playbackSection?.classList.remove('hidden');
+  function visualize() {
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Update bars height based on frequency
+    for(let i=0; i < bars.length; i++) {
+      // Map frequency data to bars (simple mapping)
+      const value = dataArray[i] || 0;
+      const percent = Math.max(10, (value / 255) * 100);
+      bars[i].style.height = `${percent}%`;
     }
-
-    window.hafalanBlob = blob;
-    window.hafalanDuration = (Date.now() - startTime) / 1000;
-  }
-
-  function retryRecording() {
-    recordedChunks = [];
-    if (timerEl) timerEl.textContent = '00:00';
-    playbackSection?.classList.add('hidden');
-    startRecording();
-  }
-
-  function submitHafalan() {
-    if (!window.hafalanBlob) return;
-
-    window.dispatchEvent(
-      new CustomEvent('hafalan-submitted', {
-        detail: {
-          blob: window.hafalanBlob,
-          duration: window.hafalanDuration,
-        },
-      })
-    );
-
-    alert('Hafalan berhasil disubmit!');
+    
+    animationId = requestAnimationFrame(visualize);
   }
 
   function updateTimer() {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
+    timerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+      const secs = (elapsed % 60).toString().padStart(2, '0');
+      timerDisplay.textContent = `${mins}:${secs}`;
 
-    if (timerEl) {
-      timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      if (elapsed >= maxDuration) {
+        stopRecording();
+        alert("Waktu maksimal tercapai.");
+      }
+    }, 1000);
+  }
+
+  recordBtn.addEventListener('click', startRecording);
+  stopBtn.addEventListener('click', stopRecording);
+  
+  retryBtn.addEventListener('click', () => {
+    previewContainer.classList.add('hidden');
+    recordBtn.classList.remove('hidden');
+    timerDisplay.textContent = "00:00";
+    // Reset bars
+    Array.from(bars).forEach(b => b.style.height = "10%");
+  });
+
+  saveBtn.addEventListener('click', () => {
+    // Trigger custom event for parent component to handle upload/save
+    if (window.currentHafalanBlob) {
+      window.dispatchEvent(new CustomEvent('hafalan:saved', { 
+        detail: { blob: window.currentHafalanBlob } 
+      }));
+      saveBtn.textContent = "Tersimpan!";
+      saveBtn.disabled = true;
+      retryBtn.disabled = true;
     }
-  }
+  });
 </script>
-
-<style>
-  .font-arabic {
-    font-family: 'Amiri', 'Traditional Arabic', serif;
-  }
-</style>
-
 ```
 
 ---
@@ -3940,259 +3880,72 @@ const { surah, ayahRange, maxDuration = 600 } = Astro.props;
 
 ```astro
 ---
-// src/components/madrasah/QuranDisplay.astro
 interface Props {
-  surah: string;
+  surah: string; // "Al-Fatihah"
   ayahStart: number;
   ayahEnd: number;
-  showTajwid?: boolean;
-  showTransliteration?: boolean;
-  showTranslation?: boolean;
 }
-
-const {
-  surah,
-  ayahStart,
-  ayahEnd,
-  showTajwid = true,
-  showTransliteration = false,
-  showTranslation = true,
-} = Astro.props;
+const { surah, ayahStart, ayahEnd } = Astro.props;
 ---
 
-<div class="quran-display card bg-base-100" dir="rtl">
-  <div class="card-body">
-    <div class="surah-header mb-6 text-center">
-      <h2 class="font-arabic text-3xl font-bold">{surah}</h2>
-      <p class="mt-2 text-sm text-base-content/70">
-        الآيات {ayahStart} - {ayahEnd}
-      </p>
+<div class="card bg-base-100 border border-base-200">
+  <div class="card-body p-4 md:p-6">
+    <div class="flex justify-between items-center mb-4 border-b pb-2">
+      <h3 class="font-bold text-lg">QS. {surah}: {ayahStart}-{ayahEnd}</h3>
+      <button class="btn btn-xs btn-ghost gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        Putar Audio
+      </button>
     </div>
 
-    <div class="controls mb-4 flex justify-center gap-2" dir="ltr">
-      <label class="label cursor-pointer gap-2">
-        <input
-          type="checkbox"
-          id="toggle-tajwid"
-          class="checkbox-primary checkbox checkbox-sm"
-          checked={showTajwid}
-        />
-        <span class="label-text text-sm">Tajwid</span>
-      </label>
-
-      <label class="label cursor-pointer gap-2">
-        <input
-          type="checkbox"
-          id="toggle-transliteration"
-          class="checkbox-primary checkbox checkbox-sm"
-          checked={showTransliteration}
-        />
-        <span class="label-text text-sm">Transliterasi</span>
-      </label>
-
-      <label class="label cursor-pointer gap-2">
-        <input
-          type="checkbox"
-          id="toggle-translation"
-          class="checkbox-primary checkbox checkbox-sm"
-          checked={showTranslation}
-        />
-        <span class="label-text text-sm">Terjemahan</span>
-      </label>
-    </div>
-
-    <div id="ayat-container" class="space-y-6">
-      <div class="loading loading-spinner loading-lg mx-auto"></div>
-    </div>
-
-    <div class="audio-player mt-6" dir="ltr">
-      <div class="mb-2 flex items-center gap-2">
-        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-          <path
-            d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"
-          ></path>
-        </svg>
-        <span class="text-sm font-semibold">Murattal</span>
+    <!-- Container Ayat -->
+    <div class="space-y-6" dir="rtl">
+      <!-- Contoh Ayat (Static for blueprint, dynamic in real app) -->
+      <div class="ayat-item group">
+        <div class="flex gap-4 items-start">
+          <div class="flex-1">
+            <p class="font-quran text-3xl md:text-4xl leading-[2.5] text-right text-base-content">
+              بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+            </p>
+          </div>
+          <div class="mt-2">
+            <span class="w-8 h-8 rounded-full border border-primary flex items-center justify-center text-xs font-mono">
+              1
+            </span>
+          </div>
+        </div>
+        <p class="text-sm text-base-content/60 mt-2 text-left italic hidden group-hover:block transition-all" dir="ltr">
+          Dengan menyebut nama Allah Yang Maha Pemurah lagi Maha Penyayang.
+        </p>
       </div>
-      <audio id="murattal-player" class="w-full" controls preload="metadata">
-        <source src={`/api/quran/audio/${surah}/${ayahStart}`} type="audio/mpeg" />
-      </audio>
+      
+      <div class="ayat-item group">
+        <div class="flex gap-4 items-start">
+          <div class="flex-1">
+            <p class="font-quran text-3xl md:text-4xl leading-[2.5] text-right text-base-content">
+              ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ
+            </p>
+          </div>
+          <div class="mt-2">
+            <span class="w-8 h-8 rounded-full border border-primary flex items-center justify-center text-xs font-mono">
+              2
+            </span>
+          </div>
+        </div>
+        <p class="text-sm text-base-content/60 mt-2 text-left italic hidden group-hover:block transition-all" dir="ltr">
+          Segala puji bagi Allah, Tuhan semesta alam.
+        </p>
+      </div>
     </div>
   </div>
 </div>
 
-<script define:vars={{ surah, ayahStart, ayahEnd, showTajwid }}>
-  let currentShowTajwid = showTajwid;
-  let currentShowTransliteration = false;
-  let currentShowTranslation = true;
-
-  const toggleTajwid = document.getElementById('toggle-tajwid') as HTMLInputElement;
-  const toggleTransliteration = document.getElementById(
-    'toggle-transliteration'
-  ) as HTMLInputElement;
-  const toggleTranslation = document.getElementById('toggle-translation') as HTMLInputElement;
-
-  toggleTajwid?.addEventListener('change', (e) => {
-    currentShowTajwid = (e.target as HTMLInputElement).checked;
-    renderAyat();
-  });
-
-  toggleTransliteration?.addEventListener('change', (e) => {
-    currentShowTransliteration = (e.target as HTMLInputElement).checked;
-    renderAyat();
-  });
-
-  toggleTranslation?.addEventListener('change', (e) => {
-    currentShowTranslation = (e.target as HTMLInputElement).checked;
-    renderAyat();
-  });
-
-  async function loadAyat() {
-    try {
-      const response = await fetch(
-        `/api/quran/${encodeURIComponent(surah)}/${ayahStart}/${ayahEnd}`
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to load ayat');
-      }
-
-      const ayatData = await response.json();
-      window.ayatData = ayatData;
-      renderAyat();
-    } catch (error) {
-      console.error('Failed to load ayat:', error);
-      const container = document.getElementById('ayat-container');
-      if (container) {
-        container.innerHTML = `
-          <div class="alert alert-error">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <span>Gagal memuat ayat. Silakan coba lagi.</span>
-          </div>
-        `;
-      }
-    }
-  }
-
-  function renderAyat() {
-    const container = document.getElementById('ayat-container');
-    if (!container || !window.ayatData) return;
-
-    container.innerHTML = window.ayatData
-      .map((ayat) => {
-        let arabicText = ayat.text;
-
-        if (currentShowTajwid) {
-          arabicText = applyTajwidColors(arabicText);
-        }
-
-        return `
-        <div class="ayat-item p-6 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
-          <div class="flex items-start gap-4 mb-3">
-            <span class="badge badge-primary badge-lg">${ayat.number}</span>
-            <p class="text-3xl md:text-4xl font-quran leading-loose flex-1 text-right">
-              ${arabicText}
-            </p>
-          </div>
-          ${
-            currentShowTransliteration
-              ? `
-            <p class="text-sm text-base-content/70 italic mb-2 text-left" dir="ltr">
-              ${ayat.transliteration || ''}
-            </p>
-          `
-              : ''
-          }
-          ${
-            currentShowTranslation
-              ? `
-            <p class="text-base mt-3 text-left border-l-4 border-primary pl-4" dir="ltr">
-              ${ayat.translation || ''}
-            </p>
-          `
-              : ''
-          }
-        </div>
-      `;
-      })
-      .join('');
-  }
-
-  function applyTajwidColors(text) {
-    const rules = [
-      { pattern: /([نم])\s*([بم])/g, class: 'tajwid-ikhfa', name: 'Ikhfa' },
-      { pattern: /([نملر])\s*([نملر])/g, class: 'tajwid-idgham', name: 'Idgham' },
-      { pattern: /[قطبجد]/g, class: 'tajwid-qalqalah', name: 'Qalqalah' },
-      { pattern: /~|ّ/g, class: 'tajwid-ghunnah', name: 'Ghunnah' },
-      { pattern: /ا[َُِ]/g, class: 'tajwid-mad', name: 'Mad' },
-    ];
-
-    let result = text;
-
-    rules.forEach((rule) => {
-      result = result.replace(rule.pattern, (match) => {
-        return `<span class="${rule.class}" title="${rule.name}">${match}</span>`;
-      });
-    });
-
-    return result;
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadAyat);
-  } else {
-    loadAyat();
-  }
-</script>
-
 <style>
-  .font-arabic {
-    font-family: 'Amiri', 'Traditional Arabic', serif;
-  }
-
+  /* Pastikan font sudah diload di global.css */
   .font-quran {
     font-family: 'Scheherazade', 'Amiri', serif;
-    line-height: 2.5;
-  }
-
-  .tajwid-ikhfa {
-    background: rgba(251, 191, 36, 0.3);
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: help;
-  }
-
-  .tajwid-idgham {
-    background: rgba(34, 197, 94, 0.3);
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: help;
-  }
-
-  .tajwid-qalqalah {
-    background: rgba(239, 68, 68, 0.3);
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: help;
-  }
-
-  .tajwid-ghunnah {
-    background: rgba(168, 85, 247, 0.3);
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: help;
-  }
-
-  .tajwid-mad {
-    background: rgba(59, 130, 246, 0.3);
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: help;
   }
 </style>
-
 ```
 
 ---
@@ -4970,65 +4723,125 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 
 ```astro
 ---
-// Editor untuk Soal Menjodohkan
+interface Props {
+  initialPairs?: Array<{
+    left_text: string;
+    right_text: string;
+    left_media?: string;
+    right_media?: string;
+  }>;
+}
+
+const { initialPairs = [] } = Astro.props;
 ---
 
-<div id="pairs-container" class="space-y-4">
-  <!-- Pairs will be injected here -->
+<div class="bg-base-200 rounded-box p-4">
+  <div class="flex justify-between items-center mb-4">
+    <h4 class="font-bold text-sm">Pasangan Item</h4>
+    <span class="text-xs text-base-content/60">Sisi Kiri (Soal) — Sisi Kanan (Jawaban)</span>
+  </div>
+
+  <div id="pairs-container" class="space-y-4">
+    <!-- Pair items injected here -->
+  </div>
+
+  <button type="button" id="add-pair-btn" class="btn btn-outline btn-sm btn-block border-dashed mt-4">
+    + Tambah Pasangan
+  </button>
 </div>
 
-<button type="button" id="add-pair-btn" class="btn btn-outline btn-sm mt-4 w-full border-dashed">
-  + Tambah Pasangan
-</button>
+<template id="pair-tpl">
+  <div class="pair-item card bg-base-100 shadow-sm border border-base-300">
+    <div class="card-body p-3">
+      <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
+        
+        <!-- Left Side -->
+        <div class="flex-1 w-full">
+          <div class="badge badge-primary badge-xs mb-1">A</div>
+          <input type="text" class="left-text input input-bordered input-sm w-full" placeholder="Teks Kiri..." required />
+          <!-- Simple Media Trigger -->
+          <label class="label cursor-pointer justify-start gap-2 mt-1">
+            <input type="checkbox" class="toggle toggle-xs media-toggle" />
+            <span class="label-text-alt">Media</span>
+          </label>
+          <input type="file" class="left-media file-input file-input-bordered file-input-xs w-full hidden" accept="image/*" />
+        </div>
 
-<template id="pair-template">
-  <div class="pair-item grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto] gap-2 items-start bg-base-200 p-3 rounded-lg">
-    
-    <!-- Left Side -->
-    <div class="form-control">
-      <label class="label text-xs"><span class="label-text">Sisi Kiri (Pertanyaan)</span></label>
-      <input type="text" class="input input-bordered input-sm w-full left-text" placeholder="Teks..." required />
-      <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-1 left-media" accept="image/*" />
+        <!-- Connector Icon -->
+        <div class="text-base-content/30 rotate-90 md:rotate-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+        </div>
+
+        <!-- Right Side -->
+        <div class="flex-1 w-full">
+          <div class="badge badge-secondary badge-xs mb-1">1</div>
+          <input type="text" class="right-text input input-bordered input-sm w-full" placeholder="Teks Kanan..." required />
+        </div>
+
+        <!-- Delete Action -->
+        <button type="button" class="btn btn-square btn-ghost btn-sm text-error remove-pair">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
     </div>
-
-    <div class="self-center pt-6 text-base-content/50">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-      </svg>
-    </div>
-
-    <!-- Right Side -->
-    <div class="form-control">
-      <label class="label text-xs"><span class="label-text">Sisi Kanan (Jawaban)</span></label>
-      <input type="text" class="input input-bordered input-sm w-full right-text" placeholder="Teks..." required />
-      <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-1 right-media" accept="image/*" />
-    </div>
-
-    <button type="button" class="btn btn-ghost btn-xs text-error self-center mt-6 remove-pair">✕</button>
   </div>
 </template>
 
-<script>
+<script define:vars={{ initialPairs }}>
   const container = document.getElementById('pairs-container');
   const addBtn = document.getElementById('add-pair-btn');
-  const template = document.getElementById('pair-template') as HTMLTemplateElement;
-  
-  function addPair() {
-    const clone = template.content.cloneNode(true) as DocumentFragment;
+  const tpl = document.getElementById('pair-tpl');
+  let pairCount = 0;
+
+  function addPair(data = null) {
+    const clone = tpl.content.cloneNode(true);
     const item = clone.querySelector('.pair-item');
-    const removeBtn = clone.querySelector('.remove-pair');
+    const leftText = clone.querySelector('.left-text');
+    const rightText = clone.querySelector('.right-text');
+    const leftBadge = clone.querySelector('.badge-primary');
+    const rightBadge = clone.querySelector('.badge-secondary');
     
-    removeBtn?.addEventListener('click', () => {
-      item?.remove();
+    // Media toggle logic
+    const mediaToggle = clone.querySelector('.media-toggle');
+    const mediaInput = clone.querySelector('.left-media');
+    
+    mediaToggle.addEventListener('change', (e) => {
+      if(e.target.checked) mediaInput.classList.remove('hidden');
+      else mediaInput.classList.add('hidden');
     });
+
+    // Indexing
+    const char = String.fromCharCode(65 + pairCount); // A, B, C...
+    leftBadge.textContent = char;
+    rightBadge.textContent = (pairCount + 1).toString(); // 1, 2, 3...
     
-    container?.appendChild(clone);
+    if (data) {
+      leftText.value = data.left_text;
+      rightText.value = data.right_text;
+    }
+
+    clone.querySelector('.remove-pair').addEventListener('click', () => {
+      item.remove();
+      // Re-index logic could be added here if strict ordering is needed
+    });
+
+    container.appendChild(clone);
+    pairCount++;
   }
-  
-  addBtn?.addEventListener('click', addPair);
-  
-  // Add initial pairs
-  for(let i=0; i<2; i++) addPair();
+
+  addBtn.addEventListener('click', () => addPair());
+
+  // Init
+  if (initialPairs && initialPairs.length > 0) {
+    initialPairs.forEach(p => addPair(p));
+  } else {
+    addPair(); // Default 1 pair
+    addPair();
+  }
 </script>
 ```
 
@@ -5041,76 +4854,64 @@ const progressPercentage = (progress.answered / progress.total_questions) * 100;
 interface Props {
   id: string;
   label?: string;
-  accept?: string;
-  maxSizeMB?: number;
+  accept?: string; // "image/*,audio/*"
 }
 
-const { id, label = 'Upload Media', accept = 'image/*,audio/*,video/*', maxSizeMB = 5 } = Astro.props;
+const { id, label = "Upload File", accept = "image/*,audio/*,video/*" } = Astro.props;
 ---
 
 <div class="form-control w-full">
-  <label class="label">
+  <label class="label" for={id}>
     <span class="label-text">{label}</span>
-    <span class="label-text-alt">Max {maxSizeMB}MB</span>
   </label>
-  <input 
-    type="file" 
-    id={id} 
-    class="file-input file-input-bordered w-full" 
-    accept={accept}
-    data-max-size={maxSizeMB * 1024 * 1024}
-  />
-  <div id={`${id}-preview`} class="mt-4 hidden">
-    <!-- Preview container -->
+  
+  <div class="flex gap-4 items-start">
+    <input 
+      type="file" 
+      id={id} 
+      name={id}
+      class="file-input file-input-bordered w-full max-w-xs" 
+      accept={accept}
+    />
+    
+    <!-- Preview Container -->
+    <div id={`${id}-preview`} class="hidden w-24 h-24 rounded-lg border border-base-300 bg-base-200 flex items-center justify-center overflow-hidden relative">
+      <img id={`${id}-img`} class="w-full h-full object-cover hidden" />
+      <div id={`${id}-icon`} class="hidden text-2xl">🎵</div>
+      <button type="button" id={`${id}-clear`} class="btn btn-xs btn-circle btn-error absolute top-1 right-1">✕</button>
+    </div>
   </div>
 </div>
 
 <script define:vars={{ id }}>
   const input = document.getElementById(id);
-  const preview = document.getElementById(`${id}-preview`);
-  
-  input?.addEventListener('change', (e) => {
+  const previewBox = document.getElementById(`${id}-preview`);
+  const imgPreview = document.getElementById(`${id}-img`);
+  const iconPreview = document.getElementById(`${id}-icon`);
+  const clearBtn = document.getElementById(`${id}-clear`);
+
+  input.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    previewBox.classList.remove('hidden');
     
-    // Validate size
-    const maxSize = parseInt(input.dataset.maxSize);
-    if (file.size > maxSize) {
-      alert(`File terlalu besar. Maksimal ${maxSize / (1024*1024)}MB`);
-      input.value = '';
-      return;
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      imgPreview.src = url;
+      imgPreview.classList.remove('hidden');
+      iconPreview.classList.add('hidden');
+    } else {
+      imgPreview.classList.add('hidden');
+      iconPreview.classList.remove('hidden');
+      // Set icon based on type
+      iconPreview.textContent = file.type.startsWith('audio/') ? '🎵' : '🎬';
     }
-    
-    // Show preview
-    if (preview) {
-      preview.classList.remove('hidden');
-      preview.innerHTML = '';
-      
-      if (file.type.startsWith('image/')) {
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        img.className = 'max-h-48 rounded-lg border';
-        preview.appendChild(img);
-      } else if (file.type.startsWith('audio/')) {
-        const audio = document.createElement('audio');
-        audio.src = URL.createObjectURL(file);
-        audio.controls = true;
-        audio.className = 'w-full';
-        preview.appendChild(audio);
-      } else if (file.type.startsWith('video/')) {
-        const video = document.createElement('video');
-        video.src = URL.createObjectURL(file);
-        video.controls = true;
-        video.className = 'max-h-48 rounded-lg border';
-        preview.appendChild(video);
-      }
-    }
-    
-    // Dispatch event for parent form
-    input.dispatchEvent(new CustomEvent('media-selected', { 
-      bubbles: true, 
-      detail: { file } 
-    }));
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    previewBox.classList.add('hidden');
   });
 </script>
 ```
@@ -5121,66 +4922,64 @@ const { id, label = 'Upload Media', accept = 'image/*,audio/*,video/*', maxSizeM
 
 ```astro
 ---
-// Editor untuk Pilihan Ganda
+interface Props {
+  initialOptions?: any[];
+}
+const { initialOptions = [] } = Astro.props;
 ---
 
-<div id="options-container" class="space-y-4">
-  <!-- Option items will be injected here -->
+<div id="options-list" class="space-y-3">
+  <!-- Options injected here -->
 </div>
 
-<button type="button" id="add-option-btn" class="btn btn-outline btn-sm mt-4 w-full border-dashed">
-  + Tambah Opsi
+<button type="button" id="add-option-btn" class="btn btn-outline btn-sm btn-block border-dashed mt-4">
+  + Tambah Opsi Jawaban
 </button>
 
-<template id="option-template">
-  <div class="option-item flex gap-2 items-start bg-base-200 p-3 rounded-lg">
+<template id="option-item-tpl">
+  <div class="option-item flex gap-3 items-start">
     <div class="pt-3">
-      <input type="radio" name="correct_answer" class="radio radio-primary" title="Tandai sebagai jawaban benar" />
+      <input type="radio" name="correct_answer" class="radio radio-success" title="Tandai sebagai kunci jawaban" />
     </div>
-    <div class="flex-1 space-y-2">
-      <input type="text" class="input input-bordered input-sm w-full option-text" placeholder="Teks Opsi Jawaban" required />
-      <div class="collapse collapse-arrow border border-base-300 bg-base-100 rounded-box">
-        <input type="checkbox" /> 
-        <div class="collapse-title text-xs font-medium min-h-0 py-2">
-          Media & HTML (Opsional)
-        </div>
-        <div class="collapse-content text-sm">
-          <textarea class="textarea textarea-bordered textarea-xs w-full mt-2 option-html" placeholder="HTML Content (MathJax/Latex)"></textarea>
-          <input type="file" class="file-input file-input-bordered file-input-xs w-full mt-2 option-media" accept="image/*" />
-        </div>
-      </div>
+    <div class="flex-1">
+      <input type="text" class="option-text input input-bordered w-full" placeholder="Teks jawaban..." required />
+      <!-- Optional: Add image button here -->
     </div>
-    <button type="button" class="btn btn-ghost btn-xs text-error remove-option">✕</button>
+    <button type="button" class="btn btn-square btn-ghost text-error remove-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+    </button>
   </div>
 </template>
 
-<script>
-  const container = document.getElementById('options-container');
+<script define:vars={{ initialOptions }}>
+  const container = document.getElementById('options-list');
   const addBtn = document.getElementById('add-option-btn');
-  const template = document.getElementById('option-template') as HTMLTemplateElement;
-  
-  let optionCount = 0;
-  
-  function addOption() {
-    const clone = template.content.cloneNode(true) as DocumentFragment;
+  const tpl = document.getElementById('option-item-tpl');
+
+  function addOption(data = null) {
+    const clone = tpl.content.cloneNode(true);
     const item = clone.querySelector('.option-item');
-    const radio = clone.querySelector('input[type="radio"]') as HTMLInputElement;
-    const removeBtn = clone.querySelector('.remove-option');
+    const input = clone.querySelector('.option-text');
+    const radio = clone.querySelector('input[type="radio"]');
     
-    radio.value = optionCount.toString();
-    optionCount++;
-    
-    removeBtn?.addEventListener('click', () => {
-      item?.remove();
-    });
-    
-    container?.appendChild(clone);
+    if (data) {
+      input.value = data.option_text || data.text;
+      radio.checked = data.is_correct;
+    }
+
+    clone.querySelector('.remove-btn').addEventListener('click', () => item.remove());
+    container.appendChild(clone);
   }
-  
-  addBtn?.addEventListener('click', addOption);
-  
-  // Add initial options (A, B, C, D)
-  for(let i=0; i<4; i++) addOption();
+
+  addBtn.addEventListener('click', () => addOption());
+
+  // Init
+  if (initialOptions && initialOptions.length > 0) {
+    initialOptions.forEach(opt => addOption(opt));
+  } else {
+    // Default 4 options
+    for(let i=0; i<4; i++) addOption();
+  }
 </script>
 ```
 
@@ -5192,86 +4991,206 @@ const { id, label = 'Upload Media', accept = 'image/*,audio/*,video/*', maxSizeM
 ---
 import MediaUpload from './MediaUpload.astro';
 import OptionsEditor from './OptionsEditor.astro';
-import Select from '@/components/ui/Select.astro';
+import MatchingEditor from './MatchingEditor.astro';
 
 interface Props {
   examId: string;
+  initialData?: any;
+  mode?: 'create' | 'edit';
 }
 
-const { examId } = Astro.props;
+const { examId, initialData, mode = 'create' } = Astro.props;
 ---
 
-<form id="question-form" class="space-y-8">
-  <div class="card bg-base-100 shadow-xl">
-    <div class="card-body">
-      <h2 class="card-title">Konten Soal</h2>
-      
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Select
-          name="type"
-          label="Tipe Soal"
-          options={[
-            { value: 'multiple_choice', label: 'Pilihan Ganda' },
-            { value: 'multiple_choice_complex', label: 'Pilihan Ganda Kompleks' },
-            { value: 'true_false', label: 'Benar/Salah' },
-            { value: 'matching', label: 'Menjodohkan' },
-            { value: 'short_answer', label: 'Isian Singkat' },
-            { value: 'essay', label: 'Uraian / Esai' },
-          ]}
-          required
-        />
-        
-        <div class="form-control">
-          <label class="label"><span class="label-text">Bobot Poin</span></label>
-          <input type="number" name="points" value="1" min="0" class="input input-bordered" required />
-        </div>
-      </div>
-
-      <div class="form-control">
-        <label class="label"><span class="label-text">Pertanyaan (Teks)</span></label>
-        <textarea name="question_text" class="textarea textarea-bordered h-24" required></textarea>
-      </div>
-
-      <div class="collapse collapse-arrow bg-base-200 rounded-box">
-        <input type="checkbox" /> 
-        <div class="collapse-title font-medium">
-          Media & Rich Text Editor
-        </div>
-        <div class="collapse-content">
-          <div class="form-control mb-4">
-            <label class="label"><span class="label-text">Pertanyaan (HTML / Rich Text)</span></label>
-            <textarea name="question_html" class="textarea textarea-bordered font-mono text-sm h-32" placeholder="<p>Gunakan tag HTML atau MathJax...</p>"></textarea>
+<form id="question-form" class="space-y-6">
+  <!-- Hidden Fields -->
+  <input type="hidden" name="exam_id" value={examId} />
+  
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    
+    <!-- Left Column: Settings -->
+    <div class="space-y-6">
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body p-4">
+          <h3 class="font-bold text-sm uppercase text-base-content/50 mb-2">Pengaturan Soal</h3>
+          
+          <div class="form-control w-full">
+            <label class="label"><span class="label-text">Tipe Soal</span></label>
+            <select name="type" id="type-select" class="select select-bordered w-full" disabled={mode==='edit'}>
+              <option value="multiple_choice" selected={initialData?.type === 'multiple_choice'}>Pilihan Ganda</option>
+              <option value="multiple_choice_complex" selected={initialData?.type === 'multiple_choice_complex'}>Pilihan Ganda Kompleks</option>
+              <option value="true_false" selected={initialData?.type === 'true_false'}>Benar / Salah</option>
+              <option value="matching" selected={initialData?.type === 'matching'}>Menjodohkan</option>
+              <option value="short_answer" selected={initialData?.type === 'short_answer'}>Isian Singkat</option>
+              <option value="essay" selected={initialData?.type === 'essay'}>Uraian (Esai)</option>
+            </select>
           </div>
-          <MediaUpload id="question-media" label="Media Pendukung Soal" />
+
+          <div class="form-control w-full mt-2">
+            <label class="label"><span class="label-text">Bobot Poin</span></label>
+            <input type="number" name="points" value={initialData?.points || 1} min="0" class="input input-bordered w-full" />
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer">
+              <span class="label-text">Acak Opsi Jawaban</span>
+              <input type="checkbox" name="randomize_options" class="toggle toggle-sm toggle-primary" checked={initialData?.randomize_options ?? true} />
+            </label>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div class="card bg-base-100 shadow-xl">
-    <div class="card-body">
-      <h2 class="card-title">Jawaban</h2>
+    <!-- Right Column: Content -->
+    <div class="lg:col-span-2 space-y-6">
       
-      <!-- Dynamic Answer Section based on Type -->
-      <div id="answer-editor-container">
-        <div id="editor-multiple_choice">
-          <OptionsEditor />
-        </div>
-        <!-- Other editors would be conditionally shown here -->
-      </div>
-    </div>
-  </div>
+      <!-- Question Text & Media -->
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body">
+          <div class="form-control">
+            <label class="label"><span class="label-text font-bold">Pertanyaan</span></label>
+            <!-- In real app, use a Rich Text Editor like Tiptap/Quill here -->
+            <textarea 
+              name="question_text" 
+              class="textarea textarea-bordered h-32 text-base leading-relaxed" 
+              placeholder="Tulis pertanyaan di sini..." 
+              required
+            >{initialData?.question_text || ''}</textarea>
+          </div>
 
-  <div class="flex justify-end gap-4">
-    <button type="button" class="btn btn-ghost" onclick="history.back()">Batal</button>
-    <button type="submit" class="btn btn-primary">Simpan Soal</button>
+          <div class="collapse collapse-arrow border border-base-300 bg-base-100 rounded-box mt-4">
+            <input type="checkbox" /> 
+            <div class="collapse-title text-sm font-medium">
+              + Tambah Media (Gambar/Audio/Video)
+            </div>
+            <div class="collapse-content">
+              <MediaUpload id="q-media" label="Upload Media Soal" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Answer Editor Area -->
+      <div class="card bg-base-100 shadow-lg border-t-4 border-primary">
+        <div class="card-body">
+          <h3 class="card-title text-base mb-4">Kunci Jawaban</h3>
+          
+          <div id="editor-container">
+            <!-- Content injected by JS based on Type -->
+            <div id="placeholder-editor" class="text-center py-8 text-base-content/50">
+              Pilih tipe soal untuk mengatur jawaban
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex justify-end gap-4 pb-10">
+        <button type="button" onclick="history.back()" class="btn btn-ghost">Batal</button>
+        <button type="submit" class="btn btn-primary w-32">Simpan</button>
+      </div>
+
+    </div>
   </div>
 </form>
 
+<!-- Templates for Editors -->
+<div class="hidden">
+  <template id="tpl-options-editor">
+    <OptionsEditor initialOptions={initialData?.options} />
+  </template>
+  
+  <template id="tpl-matching-editor">
+    <MatchingEditor initialPairs={initialData?.pairs} />
+  </template>
+
+  <template id="tpl-essay-editor">
+    <div class="alert alert-info">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      <span>Soal Uraian dikoreksi secara manual oleh guru.</span>
+    </div>
+    <div class="form-control mt-4">
+      <label class="label"><span class="label-text">Kunci Jawaban / Pedoman Penilaian (Opsional)</span></label>
+      <textarea name="answer_key" class="textarea textarea-bordered h-24" placeholder="Tulis poin-poin penting jawaban..."></textarea>
+    </div>
+  </template>
+</div>
+
 <script>
-  // Logic to handle form submission and type switching
-  const typeSelect = document.getElementById('type');
-  // Implementation for switching editors would go here
+  import { createQuestion, updateQuestion } from '@/lib/api/question';
+
+  const typeSelect = document.getElementById('type-select');
+  const editorContainer = document.getElementById('editor-container');
+  const form = document.getElementById('question-form');
+
+  // Mapping templates
+  const templates = {
+    multiple_choice: 'tpl-options-editor',
+    multiple_choice_complex: 'tpl-options-editor', // Re-use but change validation logic
+    true_false: 'tpl-options-editor', // Simplified options
+    matching: 'tpl-matching-editor',
+    essay: 'tpl-essay-editor',
+    short_answer: 'tpl-essay-editor' // Similar structure
+  };
+
+  function loadEditor(type) {
+    editorContainer.innerHTML = '';
+    const tplId = templates[type];
+    if (tplId) {
+      const tpl = document.getElementById(tplId);
+      const clone = tpl.content.cloneNode(true);
+      
+      // Special logic for True/False to prepopulate if empty
+      if (type === 'true_false' && !form.dataset.initialized) {
+        // Logic to force 2 options: Benar & Salah
+      }
+
+      editorContainer.appendChild(clone);
+    }
+  }
+
+  typeSelect.addEventListener('change', (e) => {
+    loadEditor(e.target.value);
+  });
+
+  // Initial Load
+  loadEditor(typeSelect.value);
+
+  // Form Submit
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    
+    // Collect dynamic data from child components
+    // NOTE: Child components (OptionsEditor) should append hidden inputs to this form
+    // or we gather data manually here.
+    
+    // Example gathering options manually if they are not inputs
+    const options = [];
+    document.querySelectorAll('.option-item').forEach((item, idx) => {
+      options.push({
+        text: item.querySelector('.option-text').value,
+        is_correct: item.querySelector('input[type="radio"], input[type="checkbox"]').checked
+      });
+    });
+
+    const payload = {
+      ...Object.fromEntries(formData),
+      options: options // Add processed options
+    };
+
+    try {
+      // Logic create/update
+      alert('Simulasi: Data tersimpan (Lihat console)');
+      console.log(payload);
+      // await createQuestion(payload);
+      // window.location.href = `/guru/soal`;
+    } catch (err) {
+      alert('Gagal menyimpan soal');
+    }
+  });
 </script>
 ```
 
@@ -5437,144 +5356,134 @@ const { data, expectedChecksum } = Astro.props;
 ---
 // src/components/sync/DownloadProgress.astro
 interface Props {
-  examId?: number;
+  examId: number;
 }
-
 const { examId } = Astro.props;
 ---
 
-<div class="modal modal-open">
-  <div class="modal-box">
-    <h3 class="mb-4 text-lg font-bold">Mengunduh Ujian</h3>
-
-    <div id="progress-container">
-      <div class="space-y-4">
-        <div id="phase-indicator" class="text-sm text-base-content/70"></div>
-
-        <progress id="progress-bar" class="progress progress-primary w-full" value="0" max="100"
-        ></progress>
-
-        <div class="text-center">
-          <p id="progress-text" class="text-lg font-bold">0%</p>
-          <p id="progress-detail" class="mt-1 text-sm text-base-content/70"></p>
-        </div>
-
-        <div id="file-list" class="max-h-40 space-y-1 overflow-y-auto text-xs"></div>
+<div class="card bg-base-100 shadow-xl w-full max-w-lg">
+  <div class="card-body">
+    <h3 class="card-title text-lg">Status Download</h3>
+    
+    <!-- Progress Bar Utama -->
+    <div class="w-full mt-4">
+      <div class="flex justify-between mb-1">
+        <span id="phase-text" class="text-sm font-semibold">Menghubungkan...</span>
+        <span id="percent-text" class="text-sm font-bold">0%</span>
       </div>
+      <progress id="main-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
     </div>
 
-    <div id="error-container" class="hidden">
-      <div class="alert alert-error">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <div>
-          <p class="font-bold">Download Gagal</p>
-          <p id="error-message" class="text-sm"></p>
-        </div>
-      </div>
-
-      <div class="modal-action">
-        <button class="btn btn-ghost" onclick="window.location.reload()"> Coba Lagi </button>
-        <button class="btn" onclick="window.history.back()"> Kembali </button>
-      </div>
+    <!-- Detail File (untuk media) -->
+    <div id="file-detail" class="mt-2 text-xs text-base-content/70 hidden">
+      Mengunduh: <span id="current-file" class="font-mono truncate">...</span>
     </div>
 
-    <div id="success-container" class="hidden">
-      <div class="alert alert-success">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <span>Download selesai! Ujian siap dimulai.</span>
-      </div>
+    <!-- Log Console Kecil -->
+    <div class="mockup-code bg-base-300 text-base-content mt-6 h-32 overflow-y-auto text-xs scale-90 origin-top-left w-[110%]">
+      <pre id="download-log" class="px-4 py-2"><code>Inisialisasi...</code></pre>
+    </div>
 
-      <div class="modal-action">
-        <button class="btn btn-primary" id="start-exam-btn"> Mulai Ujian </button>
-      </div>
+    <!-- Error State -->
+    <div id="error-box" class="hidden alert alert-error mt-4">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      <span id="error-msg">Gagal mengunduh.</span>
+    </div>
+
+    <!-- Actions -->
+    <div class="card-actions justify-end mt-6">
+      <button id="cancel-btn" class="btn btn-ghost btn-sm">Batal</button>
+      <button id="retry-btn" class="btn btn-primary btn-sm hidden">Coba Lagi</button>
+      <a id="start-btn" href={`/siswa/ujian/${examId}`} class="btn btn-success btn-sm text-white hidden">Mulai Ujian</a>
     </div>
   </div>
 </div>
 
-<script>
+<script define:vars={{ examId }}>
   import { downloadExam } from '@/lib/offline/download';
 
-  const progressBar = document.getElementById('progress-bar') as HTMLProgressElement;
-  const progressText = document.getElementById('progress-text');
-  const progressDetail = document.getElementById('progress-detail');
-  const phaseIndicator = document.getElementById('phase-indicator');
-  const fileList = document.getElementById('file-list');
-  const errorContainer = document.getElementById('error-container');
-  const successContainer = document.getElementById('success-container');
-  const errorMessage = document.getElementById('error-message');
+  const progressBar = document.getElementById('main-progress');
+  const percentText = document.getElementById('percent-text');
+  const phaseText = document.getElementById('phase-text');
+  const fileDetail = document.getElementById('file-detail');
+  const currentFile = document.getElementById('current-file');
+  const logContainer = document.getElementById('download-log');
+  const errorBox = document.getElementById('error-box');
+  const errorMsg = document.getElementById('error-msg');
+  
+  const cancelBtn = document.getElementById('cancel-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const startBtn = document.getElementById('start-btn');
 
-  const examId = parseInt(window.location.pathname.split('/').pop() || '0');
+  function addLog(msg) {
+    if (!logContainer) return;
+    const line = document.createElement('div');
+    line.textContent = `> ${msg}`;
+    logContainer.appendChild(line);
+    logContainer.parentElement.scrollTop = logContainer.parentElement.scrollHeight;
+  }
 
-  async function startDownload() {
+  async function runDownload() {
+    // Reset UI
+    progressBar.value = 0;
+    errorBox.classList.add('hidden');
+    retryBtn.classList.add('hidden');
+    startBtn.classList.add('hidden');
+    cancelBtn.classList.remove('hidden');
+    
     try {
+      addLog(`Memulai download ujian ID: ${examId}`);
+      
       await downloadExam(examId, (progress) => {
-        if (progressBar) progressBar.value = progress.percentage;
-        if (progressText) progressText.textContent = `${progress.percentage.toFixed(0)}%`;
+        // Update Progress Bar
+        progressBar.value = progress.percentage;
+        percentText.textContent = `${Math.round(progress.percentage)}%`;
 
+        // Update Phase Text
         const phases = {
-          preparing: 'Mempersiapkan...',
-          exam_data: 'Mengunduh data ujian...',
-          media_files: 'Mengunduh media...',
-          complete: 'Selesai!',
+          preparing: 'Menyiapkan paket soal...',
+          exam_data: 'Mengunduh data enkripsi...',
+          media_files: `Mengunduh file media (${progress.current}/${progress.total})`,
+          complete: 'Verifikasi selesai!'
         };
+        phaseText.textContent = phases[progress.phase];
 
-        if (phaseIndicator) phaseIndicator.textContent = phases[progress.phase];
-
+        // Update File Detail
         if (progress.phase === 'media_files' && progress.currentFile) {
-          if (progressDetail) {
-            progressDetail.textContent = `File ${progress.current} dari ${progress.total}`;
-          }
-
-          if (fileList) {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'text-success flex items-center gap-1';
-            fileItem.innerHTML = `
-              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
-              </svg>
-              <span>${progress.currentFile.split('/').pop()}</span>
-            `;
-            fileList.appendChild(fileItem);
-            fileList.scrollTop = fileList.scrollHeight;
-          }
+          fileDetail.classList.remove('hidden');
+          currentFile.textContent = progress.currentFile.split('/').pop();
+        } else {
+          fileDetail.classList.add('hidden');
         }
 
-        if (progress.phase === 'complete') {
-          setTimeout(() => {
-            document.getElementById('progress-container')?.classList.add('hidden');
-            successContainer?.classList.remove('hidden');
-          }, 500);
+        // Log significant steps
+        if (progress.percentage % 20 === 0 || progress.phase !== 'media_files') {
+          // addLog(`${phases[progress.phase]} - ${Math.round(progress.percentage)}%`);
         }
       });
-    } catch (error: any) {
-      console.error('Download error:', error);
-      document.getElementById('progress-container')?.classList.add('hidden');
-      errorContainer?.classList.remove('hidden');
-      if (errorMessage) {
-        errorMessage.textContent = error.message || 'Terjadi kesalahan saat download';
-      }
+
+      addLog('Download Berhasil!');
+      phaseText.textContent = "Selesai!";
+      progressBar.classList.add('progress-success');
+      cancelBtn.classList.add('hidden');
+      startBtn.classList.remove('hidden');
+
+    } catch (error) {
+      console.error(error);
+      addLog(`ERROR: ${error.message}`);
+      errorMsg.textContent = error.message || "Terjadi kesalahan koneksi.";
+      errorBox.classList.remove('hidden');
+      retryBtn.classList.remove('hidden');
+      progressBar.classList.add('progress-error');
     }
   }
 
-  document.getElementById('start-exam-btn')?.addEventListener('click', () => {
-    window.location.href = `/siswa/ujian/${examId}`;
-  });
+  cancelBtn.addEventListener('click', () => window.history.back());
+  retryBtn.addEventListener('click', runDownload);
 
-  startDownload();
+  // Auto start
+  runDownload();
 </script>
-
 ```
 
 ---
@@ -5714,19 +5623,24 @@ const { examId } = Astro.props;
     emptyState?.classList.add('hidden');
     
     queueList.innerHTML = items.map(item => {
-      const statusBadge = {
-        pending: '<span class="badge badge-warning badge-sm">Pending</span>',
-        processing: '<span class="badge badge-info badge-sm">Processing</span>',
-        failed: '<span class="badge badge-error badge-sm">Failed</span>'
-      }[item.status];
+      // Helper untuk status badge
+      let statusBadge = '';
+      if (item.status === 'pending') {
+        statusBadge = '<span class="badge badge-warning badge-sm">Pending</span>';
+      } else if (item.status === 'processing') {
+        statusBadge = '<span class="badge badge-info badge-sm">Processing</span>';
+      } else if (item.status === 'failed') {
+        statusBadge = '<span class="badge badge-error badge-sm">Failed</span>';
+      }
       
-      const typeLabel = {
-        answer: 'Jawaban',
-        media: 'Media',
-        activity: 'Aktivitas',
-        submission: 'Submission'
-      }[item.type];
+      // Helper untuk tipe label
+      let typeLabel = item.type;
+      if (item.type === 'answer') typeLabel = 'Jawaban';
+      else if (item.type === 'media') typeLabel = 'Media';
+      else if (item.type === 'activity') typeLabel = 'Aktivitas';
+      else if (item.type === 'submission') typeLabel = 'Submission';
       
+      // PERBAIKAN DI SINI: Menggunakan ${ condition ? ... : '' }
       return `
         <div class="card bg-base-200 card-compact">
           <div class="card-body">
@@ -5736,9 +5650,7 @@ const { examId } = Astro.props;
                 <p class="text-xs text-base-content/70">
                   Attempt ID: ${item.attempt_id}
                 </p>
-                {item.error_message && `
-                  <p class="text-xs text-error mt-1">${item.error_message}</p>
-                `}
+                ${item.error_message ? `<p class="text-xs text-error mt-1">${item.error_message}</p>` : ''}
               </div>
               <div class="flex flex-col items-end gap-1">
                 ${statusBadge}
@@ -5763,8 +5675,10 @@ const { examId } = Astro.props;
     window.dispatchEvent(new CustomEvent('sync:retry-all'));
   });
   
+  // Initial Load
   loadQueue();
   
+  // Listen for sync progress
   window.addEventListener('sync:progress', () => {
     loadQueue();
   });
@@ -6681,7 +6595,102 @@ const questionsToGrade = [
 #### 📄 File: `./src/pages/guru/hasil.astro`
 
 ```astro
+---
+// src/pages/guru/hasil.astro
+import DashboardLayout from '@/layouts/Dashboard.astro';
+import Table from '@/components/ui/Table.astro';
 
+// Mock Data (Replace with API fetch in real app)
+const results = [
+  { id: 1, student: 'Adi Pratama', exam: 'Matematika Dasar', score: 85, submitted_at: '2024-01-20 09:30', status: 'Lulus' },
+  { id: 2, student: 'Budi Santoso', exam: 'Matematika Dasar', score: 60, submitted_at: '2024-01-20 09:45', status: 'Remedial' },
+  { id: 3, student: 'Citra Dewi', exam: 'Biologi XI', score: 92, submitted_at: '2024-01-21 10:15', status: 'Lulus' },
+];
+---
+
+<DashboardLayout title="Hasil Ujian" role="guru">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      
+      <!-- Filters -->
+      <div class="flex flex-col md:flex-row gap-4 mb-6">
+        <div class="form-control w-full md:w-auto">
+          <label class="label"><span class="label-text">Pilih Ujian</span></label>
+          <select class="select select-bordered w-full md:w-64">
+            <option>Semua Ujian</option>
+            <option>Matematika Dasar</option>
+            <option>Biologi XI</option>
+          </select>
+        </div>
+
+        <div class="form-control w-full md:w-auto">
+          <label class="label"><span class="label-text">Kelas</span></label>
+          <select class="select select-bordered w-full md:w-48">
+            <option>Semua Kelas</option>
+            <option>X-IPA 1</option>
+            <option>XI-IPA 2</option>
+          </select>
+        </div>
+
+        <div class="form-control w-full md:w-auto md:ml-auto">
+          <label class="label"><span class="label-text">&nbsp;</span></label>
+          <button class="btn btn-success text-white gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Export Excel
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <Table zebra>
+        <thead>
+          <tr>
+            <th>Nama Siswa</th>
+            <th>Mata Pelajaran</th>
+            <th>Waktu Submit</th>
+            <th>Nilai</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((row) => (
+            <tr>
+              <td class="font-bold">{row.student}</td>
+              <td>{row.exam}</td>
+              <td>{row.submitted_at}</td>
+              <td>
+                <span class={`font-bold text-lg ${row.score < 75 ? 'text-error' : 'text-success'}`}>
+                  {row.score}
+                </span>
+              </td>
+              <td>
+                <span class={`badge ${row.score < 75 ? 'badge-error' : 'badge-success'} text-white`}>
+                  {row.status}
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-xs btn-ghost">Detail</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+
+      <!-- Pagination -->
+      <div class="flex justify-center mt-6">
+        <div class="join">
+          <button class="join-item btn">«</button>
+          <button class="join-item btn btn-active">1</button>
+          <button class="join-item btn">2</button>
+          <button class="join-item btn">3</button>
+          <button class="join-item btn">»</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</DashboardLayout>
 ```
 
 ---
@@ -6879,9 +6888,33 @@ const questions = [
 ---
 import DashboardLayout from '@/layouts/Dashboard.astro';
 import QuestionEditor from '@/components/questions/QuestionEditor.astro';
+import { getQuestionById } from '@/lib/api/question';
 
 const { id } = Astro.params;
-const questionId = id; 
+
+// Server-side Data Fetching (Astro SSR)
+let questionData = null;
+let error = null;
+
+try {
+  // Asumsi fungsi ini mengembalikan data soal lengkap
+  // Di real app, perlu handle cookie/auth token untuk request ini
+  // questionData = await getQuestionById(parseInt(id!));
+  
+  // Mock Data untuk blueprint
+  questionData = {
+    id: 1,
+    type: 'multiple_choice',
+    question_text: 'Apa ibu kota Indonesia?',
+    points: 5,
+    options: [
+      { id: 1, text: 'Jakarta', is_correct: true },
+      { id: 2, text: 'Bandung', is_correct: false }
+    ]
+  };
+} catch (e) {
+  error = "Gagal memuat data soal.";
+}
 ---
 
 <DashboardLayout title="Edit Soal" role="guru">
@@ -6890,20 +6923,22 @@ const questionId = id;
       <ul>
         <li><a href="/guru/dashboard">Dashboard</a></li>
         <li><a href="/guru/soal">Bank Soal</a></li>
-        <li>Edit Soal #{questionId}</li>
+        <li class="font-bold">Edit Soal #{id}</li>
       </ul>
     </div>
 
-    <!-- 
-      Di aplikasi nyata, kita akan fetch data soal berdasarkan ID di sini (SSR)
-      lalu mengirimkannya sebagai props ke QuestionEditor untuk pre-fill data.
-    -->
-    <QuestionEditor examId="" /> 
-    
-    <script>
-      // Simulasi load data untuk edit
-      console.log('Mode Edit aktif');
-    </script>
+    {error ? (
+      <div class="alert alert-error">
+        <span>{error}</span>
+        <button onclick="history.back()" class="btn btn-sm">Kembali</button>
+      </div>
+    ) : (
+      <QuestionEditor 
+        examId="" 
+        initialData={questionData} 
+        mode="edit"
+      />
+    )}
   </div>
 </DashboardLayout>
 ```
@@ -7265,11 +7300,14 @@ const itemAnalysis = [
 ```astro
 ---
 // src/pages/index.astro
+// PERBAIKAN: Tambahkan baris ini agar berjalan di mode Server (SSR)
+export const prerender = false;
 ---
 
 <script>
   import { $authStore } from '@/stores/auth';
   
+  // Logic client-side redirect sebagai fallback
   const authState = $authStore.get();
   
   if (!authState.isAuthenticated) {
@@ -7307,97 +7345,123 @@ const itemAnalysis = [
 ```astro
 ---
 // src/pages/login.astro
-import Base from '@/layouts/Base.astro';
-import Button from '@/components/ui/Button.astro';
+import AuthLayout from '@/layouts/Auth.astro';
 import Input from '@/components/ui/Input.astro';
-import Alert from '@/components/ui/Alert.astro';
+import Button from '@/components/ui/Button.astro';
+import DeviceLockWarning from '@/components/auth/DeviceLockWarning.astro';
+
+// PERBAIKAN: Tambahkan ini
+export const prerender = false;
+
+// Jika user sudah login, redirect langsung (Server Side Check)
+if (Astro.cookies.has('access_token')) {
+  // Logic redirect sederhana, idealnya cek role dari token
+  return Astro.redirect('/siswa/dashboard');
+}
 ---
 
-<Base title="Login - Sistem Ujian">
-  <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
-    <div class="card w-full max-w-md bg-base-100 shadow-xl">
-      <div class="card-body">
-        <h2 class="card-title text-2xl font-bold text-center mb-4">
-          Sistem Ujian Sekolah
-        </h2>
+<AuthLayout title="Login Peserta">
+  <!-- Konten sama seperti sebelumnya -->
+  <div class="card w-full max-w-sm bg-base-100 shadow-2xl">
+    <div class="card-body">
+      <div class="text-center mb-4">
+        <img src="/icons/icon-192.png" alt="Logo" class="w-16 h-16 mx-auto mb-2" />
+        <h2 class="card-title justify-center text-2xl font-bold">Masuk Ujian</h2>
+        <p class="text-sm text-base-content/70">Masukkan kredensial Anda</p>
+      </div>
+
+      <div id="alert-container" class="hidden alert alert-error text-sm py-2 mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span id="error-msg">Error message here</span>
+      </div>
+
+      <form id="login-form" class="space-y-4">
+        <Input 
+          name="username" 
+          label="Username / NIS" 
+          placeholder="Contoh: 12345" 
+          required 
+        />
         
-        <div id="error-alert" class="hidden mb-4">
-          <Alert type="error" dismissible>
-            <span id="error-message"></span>
-          </Alert>
+        <Input 
+          type="password" 
+          name="password" 
+          label="Password" 
+          placeholder="••••••••" 
+          required 
+        />
+
+        <div class="form-control">
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" required />
+            <span class="label-text text-xs">Saya siap mematuhi tata tertib ujian.</span>
+          </label>
         </div>
-        
-        <form id="login-form">
-          <Input
-            name="username"
-            label="Username"
-            placeholder="Masukkan username"
-            required
-          />
-          
-          <Input
-            type="password"
-            name="password"
-            label="Password"
-            placeholder="Masukkan password"
-            required
-            class="mt-4"
-          />
-          
-          <div class="form-control mt-6">
-            <Button type="submit" block>
-              <span id="login-text">Login</span>
-              <span id="login-loading" class="loading loading-spinner loading-sm hidden"></span>
-            </Button>
-          </div>
-        </form>
-        
-        <div class="text-center mt-4 text-sm text-base-content/70">
-          <p>Pastikan koneksi internet stabil untuk login pertama kali</p>
+
+        <div class="card-actions mt-4">
+          <Button type="submit" variant="primary" block id="login-btn">
+            Masuk
+          </Button>
         </div>
+      </form>
+
+      <div class="divider text-xs">Versi 1.0.0</div>
+      
+      <div class="text-center text-xs text-base-content/50">
+        <p>Aplikasi ini membutuhkan akses lokasi dan kamera untuk validasi.</p>
       </div>
     </div>
   </div>
 
-  <script>
-    import { login } from '@/lib/api/auth';
+  <dialog id="device-lock-modal" class="modal">
+    <div class="modal-box">
+      <DeviceLockWarning />
+    </div>
+  </dialog>
+</AuthLayout>
+
+<script>
+  import { login } from '@/lib/api/auth';
+  import { generateDeviceFingerprint } from '@/lib/utils/device';
+
+  const form = document.getElementById('login-form') as HTMLFormElement;
+  const btn = document.getElementById('login-btn') as HTMLButtonElement;
+  const alertBox = document.getElementById('alert-container');
+  const errorMsg = document.getElementById('error-msg');
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
     
-    const form = document.getElementById('login-form') as HTMLFormElement;
-    const errorAlert = document.getElementById('error-alert') as HTMLElement;
-    const errorMessage = document.getElementById('error-message') as HTMLElement;
-    const loginText = document.getElementById('login-text') as HTMLElement;
-    const loginLoading = document.getElementById('login-loading') as HTMLElement;
-    const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-    
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      errorAlert.classList.add('hidden');
-      submitBtn.disabled = true;
-      loginText.classList.add('hidden');
-      loginLoading.classList.remove('hidden');
-      
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading loading-spinner"></span> Memproses...';
+    alertBox?.classList.add('hidden');
+
+    try {
       const formData = new FormData(form);
-      const credentials = {
-        username: formData.get('username') as string,
-        password: formData.get('password') as string,
-      };
+      const data = Object.fromEntries(formData);
       
-      try {
-        await login(credentials);
-        
-        window.location.href = '/siswa/dashboard';
-      } catch (error: any) {
-        errorMessage.textContent = error.response?.data?.error || 'Login gagal. Periksa username dan password Anda.';
-        errorAlert.classList.remove('hidden');
-        
-        submitBtn.disabled = false;
-        loginText.classList.remove('hidden');
-        loginLoading.classList.add('hidden');
+      const fingerprint = await generateDeviceFingerprint();
+      
+      await login({
+        username: data.username as string,
+        password: data.password as string,
+        // device_fingerprint: fingerprint // Uncomment jika API support
+      });
+
+      window.location.href = '/siswa/dashboard';
+
+    } catch (error: any) {
+      console.error(error);
+      if (alertBox && errorMsg) {
+        errorMsg.textContent = error.message || 'Login gagal. Periksa koneksi atau password.';
+        alertBox.classList.remove('hidden');
       }
-    });
-  </script>
-</Base>
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Masuk';
+    }
+  });
+</script>
 ```
 
 ---
@@ -7440,94 +7504,110 @@ import MainLayout from '@/layouts/Auth.astro';
 ```astro
 ---
 import DashboardLayout from '@/layouts/Dashboard.astro';
-import DashboardStats from '@/components/analytics/DashboardStats.astro';
 
-// Mock Stats
-const stats = {
-  totalExams: 45,
-  activeExams: 2,
-  completedExams: 43,
-  averageScore: 0 // Not relevant for operator usually
-};
+// Mock Data
+const activeSessions = [
+  { id: 1, name: 'Sesi 1 - Pagi', room: 'Lab A', time: '07:30 - 09:30', login_count: 32, total: 36 },
+  { id: 2, name: 'Sesi 1 - Pagi', room: 'Lab B', time: '07:30 - 09:30', login_count: 35, total: 35 },
+];
 ---
 
 <DashboardLayout title="Dashboard Operator" role="operator">
-  <div class="space-y-6">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <!-- Stats Cards -->
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-figure text-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+      </div>
+      <div class="stat-title">Total Peserta</div>
+      <div class="stat-value">1,204</div>
+      <div class="stat-desc">Terdaftar di sistem</div>
+    </div>
     
-    <!-- Quick Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">Total Siswa</div>
-        <div class="stat-value">1,204</div>
-        <div class="stat-desc">Terdaftar aktif</div>
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-figure text-secondary">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
       </div>
-      <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">Sesi Hari Ini</div>
-        <div class="stat-value text-primary">4</div>
-        <div class="stat-desc">2 Berjalan, 2 Menunggu</div>
-      </div>
-      <div class="stat bg-base-100 shadow rounded-box">
-        <div class="stat-title">Ruang Ujian</div>
-        <div class="stat-value text-secondary">12</div>
-        <div class="stat-desc">Digunakan</div>
-      </div>
+      <div class="stat-title">Klien Online</div>
+      <div class="stat-value text-secondary">67</div>
+      <div class="stat-desc">Sedang aktif</div>
     </div>
 
-    <!-- Quick Links -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <a href="/operator/peserta/import" class="btn btn-outline btn-info h-auto py-4 flex flex-col">
-        <span class="text-2xl">📥</span>
-        <span>Import Peserta</span>
-      </a>
-      <a href="/operator/sesi/create" class="btn btn-outline btn-success h-auto py-4 flex flex-col">
-        <span class="text-2xl">📅</span>
-        <span>Buat Sesi</span>
-      </a>
-      <a href="/operator/ruang" class="btn btn-outline btn-warning h-auto py-4 flex flex-col">
-        <span class="text-2xl">🏫</span>
-        <span>Atur Ruang</span>
-      </a>
-      <a href="/operator/laporan" class="btn btn-outline btn-error h-auto py-4 flex flex-col">
-        <span class="text-2xl">📊</span>
-        <span>Cetak Kartu</span>
-      </a>
+    <div class="stat bg-base-100 shadow rounded-box">
+      <div class="stat-figure text-accent">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+      </div>
+      <div class="stat-title">Status Server</div>
+      <div class="stat-value text-accent text-lg">Normal</div>
+      <div class="stat-desc">CPU: 12% | RAM: 40%</div>
     </div>
+  </div>
 
-    <!-- Active Sessions Table -->
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body">
-        <h2 class="card-title">Sesi Berjalan</h2>
-        <div class="overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Sesi</th>
-                <th>Waktu</th>
-                <th>Ruang</th>
-                <th>Status</th>
-                <th>Peserta Login</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Sesi 1 - Pagi</td>
-                <td>07:30 - 09:30</td>
-                <td>Lab Komputer 1</td>
-                <td><span class="badge badge-success">Aktif</span></td>
-                <td>32/36</td>
-              </tr>
-              <tr>
-                <td>Sesi 1 - Pagi</td>
-                <td>07:30 - 09:30</td>
-                <td>Lab Komputer 2</td>
-                <td><span class="badge badge-success">Aktif</span></td>
-                <td>35/36</td>
-              </tr>
-            </tbody>
-          </table>
+  <!-- Active Sessions -->
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="card-title">Sesi Ujian Berlangsung</h2>
+        <div class="flex gap-2">
+          <button class="btn btn-sm btn-outline btn-error">Force Logout All</button>
+          <button class="btn btn-sm btn-primary">Refresh</button>
         </div>
       </div>
+
+      <div class="overflow-x-auto">
+        <table class="table table-zebra w-full">
+          <thead>
+            <tr>
+              <th>Nama Sesi</th>
+              <th>Ruang</th>
+              <th>Waktu</th>
+              <th>Kehadiran</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeSessions.map(session => (
+              <tr>
+                <td class="font-bold">{session.name}</td>
+                <td>{session.room}</td>
+                <td>{session.time}</td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <progress class="progress progress-success w-24" value={session.login_count} max={session.total}></progress>
+                    <span class="text-xs">{session.login_count}/{session.total}</span>
+                  </div>
+                </td>
+                <td><span class="badge badge-success animate-pulse">Aktif</span></td>
+                <td>
+                  <a href={`/operator/sesi/${session.id}`} class="btn btn-xs btn-ghost">Detail</a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+    <a href="/operator/peserta/import" class="btn h-20 flex-col gap-1 bg-base-100 shadow hover:bg-base-200 border-none">
+      <span class="text-2xl">📥</span>
+      <span class="text-xs">Import Peserta</span>
+    </a>
+    <a href="/operator/cetak-kartu" class="btn h-20 flex-col gap-1 bg-base-100 shadow hover:bg-base-200 border-none">
+      <span class="text-2xl">🖨️</span>
+      <span class="text-xs">Cetak Kartu</span>
+    </a>
+    <a href="/operator/reset-login" class="btn h-20 flex-col gap-1 bg-base-100 shadow hover:bg-base-200 border-none">
+      <span class="text-2xl">🔄</span>
+      <span class="text-xs">Reset Login</span>
+    </a>
+    <a href="/operator/laporan" class="btn h-20 flex-col gap-1 bg-base-100 shadow hover:bg-base-200 border-none">
+      <span class="text-2xl">📊</span>
+      <span class="text-xs">Berita Acara</span>
+    </a>
   </div>
 </DashboardLayout>
 ```
@@ -8407,90 +8487,157 @@ if (!examId) {
 ---
 import DashboardLayout from '@/layouts/Dashboard.astro';
 import Table from '@/components/ui/Table.astro';
+
+// Di mode SSR/Hybrid, kita render kerangka dulu, data di-fetch di client
 ---
 
 <DashboardLayout title="Daftar Ujian" role="siswa">
   <div class="card bg-base-100 shadow-xl">
     <div class="card-body">
-      <div class="flex gap-2 mb-4">
-        <input type="text" placeholder="Cari ujian..." class="input input-bordered w-full max-w-xs" />
-        <select class="select select-bordered">
-          <option>Semua Mata Pelajaran</option>
-          <option>Matematika</option>
-          <option>Bahasa Indonesia</option>
-        </select>
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h2 class="card-title">Jadwal Ujian</h2>
+        
+        <div class="flex gap-2 w-full sm:w-auto">
+          <input type="text" id="search-input" placeholder="Cari ujian..." class="input input-bordered input-sm w-full" />
+          <select id="filter-status" class="select select-bordered select-sm">
+            <option value="all">Semua</option>
+            <option value="downloaded">Siap Offline</option>
+            <option value="pending">Belum Download</option>
+          </select>
+        </div>
       </div>
 
-      <Table zebra>
-        <thead>
-          <tr>
-            <th>Nama Ujian</th>
-            <th>Durasi</th>
-            <th>Jendela Waktu</th>
-            <th>Status</th>
-            <th>Aksi</th>
-          </tr>
-        </thead>
-        <tbody id="exam-list-body">
-          <tr>
-            <td colspan="5" class="text-center">Memuat daftar ujian...</td>
-          </tr>
-        </tbody>
-      </Table>
+      <!-- Alert Offline -->
+      <div id="offline-alert" class="hidden alert alert-warning mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+        <span>Mode Offline: Hanya menampilkan ujian yang sudah diunduh.</span>
+      </div>
+
+      <div class="overflow-x-auto min-h-[300px]">
+        <table class="table table-zebra w-full">
+          <thead>
+            <tr>
+              <th>Mata Pelajaran</th>
+              <th>Waktu Pelaksanaan</th>
+              <th>Durasi</th>
+              <th>Status Data</th>
+              <th class="text-right">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="exam-list-body">
+            <tr>
+              <td colspan="5" class="text-center py-8">
+                <span class="loading loading-spinner loading-lg text-primary"></span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
+</DashboardLayout>
 
-  <script>
-    import { getAvailableExams } from '@/lib/api/exam';
-    import { db } from '@/lib/db/schema';
+<script>
+  import { db } from '@/lib/db/schema';
+  import { getAvailableExams } from '@/lib/api/exam';
+  import { isOnline } from '@/lib/utils/network';
 
-    async function loadExams() {
-      try {
-        const exams = await getAvailableExams();
-        const downloaded = await db.downloaded_exams.toArray();
-        const downloadedIds = new Set(downloaded.map(d => d.exam_id));
-        
-        const tbody = document.getElementById('exam-list-body');
-        if (!tbody) return;
+  const tbody = document.getElementById('exam-list-body');
+  const offlineAlert = document.getElementById('offline-alert');
 
-        if (exams.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="text-center">Tidak ada ujian tersedia saat ini.</td></tr>';
-          return;
+  async function loadExams() {
+    try {
+      const online = isOnline();
+      let exams = [];
+      
+      // 1. Ambil data lokal (Downloaded)
+      const downloaded = await db.downloaded_exams.toArray();
+      const downloadedIds = new Set(downloaded.map(d => d.exam_id));
+      const attemptMap = new Map(); // Map untuk status pengerjaan (jika ada logic resume)
+
+      // 2. Ambil data server (Available) jika online
+      if (online) {
+        try {
+          const serverExams = await getAvailableExams();
+          exams = serverExams;
+        } catch (e) {
+          console.error("Gagal fetch server:", e);
+          // Fallback ke data lokal saja jika API error
+          exams = downloaded.map(d => {
+            // Kita perlu mendekripsi sedikit info untuk ditampilkan jika full offline
+            // Atau simpan metadata terpisah di tabel downloaded_exams (disarankan update schema)
+            return {
+              id: d.exam_id,
+              title: `Ujian #${d.exam_id} (Offline)`, // Idealnya title disimpan di tabel downloaded
+              window_start_at: new Date().toISOString(),
+              window_end_at: d.expires_at,
+              duration_minutes: 0 // Placeholder
+            };
+          });
         }
-
-        tbody.innerHTML = exams.map((exam: any) => {
-          const isDownloaded = downloadedIds.has(exam.id);
-          const actionBtn = isDownloaded
-            ? `<a href="/siswa/ujian/${exam.id}" class="btn btn-success btn-xs">Kerjakan</a>`
-            : `<a href="/siswa/ujian/download?id=${exam.id}" class="btn btn-primary btn-xs">Download</a>`;
-
-          return `
-            <tr>
-              <td class="font-semibold">${exam.title}</td>
-              <td>${exam.duration_minutes} menit</td>
-              <td class="text-sm">
-                ${new Date(exam.window_start_at).toLocaleDateString()} - 
-                ${new Date(exam.window_end_at).toLocaleDateString()}
-              </td>
-              <td>
-                ${isDownloaded 
-                  ? '<span class="badge badge-success badge-sm">Siap Offline</span>' 
-                  : '<span class="badge badge-ghost badge-sm">Online</span>'}
-              </td>
-              <td>${actionBtn}</td>
-            </tr>
-          `;
-        }).join('');
-      } catch (error) {
-        console.error(error);
-        const tbody = document.getElementById('exam-list-body');
-        if(tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-error">Gagal memuat data. Periksa koneksi internet.</td></tr>';
+      } else {
+        offlineAlert?.classList.remove('hidden');
+        // Logic similar to fallback above
       }
+
+      renderTable(exams, downloadedIds);
+
+    } catch (error) {
+      console.error(error);
+      if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-error">Gagal memuat data.</td></tr>`;
+    }
+  }
+
+  function renderTable(exams: any[], downloadedIds: Set<number>) {
+    if (!tbody) return;
+
+    if (exams.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-base-content/60">Tidak ada jadwal ujian tersedia.</td></tr>`;
+      return;
     }
 
-    loadExams();
-  </script>
-</DashboardLayout>
+    tbody.innerHTML = exams.map(exam => {
+      const isDownloaded = downloadedIds.has(exam.id);
+      const startDate = new Date(exam.window_start_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+      const endDate = new Date(exam.window_end_at).toLocaleString('id-ID', { timeStyle: 'short' });
+
+      let statusBadge = '<span class="badge badge-ghost badge-sm">Online Only</span>';
+      let actionBtn = `<a href="/siswa/ujian/download?id=${exam.id}" class="btn btn-primary btn-sm">Download</a>`;
+
+      if (isDownloaded) {
+        statusBadge = '<span class="badge badge-success badge-sm gap-1">✅ Siap Offline</span>';
+        actionBtn = `
+          <div class="flex justify-end gap-2">
+            <button onclick="deleteExam(${exam.id})" class="btn btn-ghost btn-xs text-error" title="Hapus Data">🗑️</button>
+            <a href="/siswa/ujian/${exam.id}" class="btn btn-success btn-sm text-white">Kerjakan</a>
+          </div>
+        `;
+      }
+
+      return `
+        <tr>
+          <td class="font-bold">${exam.title}</td>
+          <td>${startDate} - ${endDate}</td>
+          <td>${exam.duration_minutes} Menit</td>
+          <td>${statusBadge}</td>
+          <td class="text-right">${actionBtn}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Expose delete function globally for the onclick handler
+  window.deleteExam = async (id) => {
+    if(!confirm("Hapus data ujian offline ini? Anda harus download ulang untuk mengerjakannya.")) return;
+    
+    await db.downloaded_exams.delete(id);
+    // Hapus media terkait juga (logic kompleks butuh query media_files)
+    // Untuk MVP, biarkan media tertinggal atau bersihkan saat idle
+    loadExams(); // Refresh
+  };
+
+  loadExams();
+</script>
 ```
 
 ---
@@ -8500,117 +8647,125 @@ import Table from '@/components/ui/Table.astro';
 ```astro
 ---
 import MainLayout from '@/layouts/MainLayout.astro';
-import { formatScore } from '@/lib/utils/format';
 
 const attemptId = Astro.url.searchParams.get('attemptId');
+if (!attemptId) return Astro.redirect('/siswa/dashboard');
 ---
 
 <MainLayout title="Hasil Ujian">
-  <div class="min-h-screen bg-base-200 p-4 md:p-8">
-    <div class="max-w-2xl mx-auto space-y-6">
-      
-      <!-- Status Card -->
-      <div class="card bg-base-100 shadow-xl text-center">
-        <div class="card-body items-center">
-          <div class="w-20 h-20 rounded-full bg-success/20 flex items-center justify-center text-success mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <div class="min-h-screen bg-base-200 flex items-center justify-center p-4">
+    <div class="card w-full max-w-2xl bg-base-100 shadow-xl">
+      <div class="card-body text-center">
+        
+        <!-- Icon Header -->
+        <div class="mx-auto mb-4">
+          <div class="w-24 h-24 rounded-full bg-success/20 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          
-          <h2 class="card-title text-2xl">Ujian Selesai!</h2>
-          <p class="text-base-content/70">Jawaban Anda telah berhasil disimpan.</p>
-          
-          <div class="divider"></div>
-          
-          <div id="result-content" class="w-full">
-            <div class="loading loading-spinner loading-md"></div>
-            <span class="text-sm">Memuat hasil...</span>
+        </div>
+
+        <h2 class="card-title text-3xl justify-center mb-2">Ujian Selesai!</h2>
+        <p class="text-base-content/70">Terima kasih telah mengerjakan ujian dengan jujur.</p>
+
+        <div class="divider"></div>
+
+        <!-- Result Content (Dynamic) -->
+        <div id="result-container" class="py-4 space-y-4">
+          <div class="loading loading-spinner loading-md"></div>
+          <p>Memproses data jawaban...</p>
+        </div>
+
+        <!-- Sync Status (If Offline) -->
+        <div id="sync-warning" class="hidden alert alert-warning text-left mt-4">
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <div>
+            <h3 class="font-bold">Menunggu Sinkronisasi</h3>
+            <div class="text-xs">Jawaban tersimpan di perangkat. Mohon hubungkan ke internet agar nilai dapat diproses.</div>
           </div>
         </div>
-      </div>
 
-      <div class="flex justify-center">
-        <a href="/siswa/dashboard" class="btn btn-primary">Kembali ke Dashboard</a>
+        <div class="card-actions justify-center mt-8">
+          <a href="/siswa/dashboard" class="btn btn-primary px-8">Kembali ke Dashboard</a>
+        </div>
       </div>
     </div>
   </div>
-
-  <script>
-    import { db } from '@/lib/db/schema';
-    import { apiClient } from '@/lib/api/client';
-
-    const attemptId = new URLSearchParams(window.location.search).get('attemptId');
-    const resultContainer = document.getElementById('result-content');
-
-    async function loadResult() {
-      if (!resultContainer || !attemptId) return;
-
-      try {
-        // Coba ambil dari server dulu jika online
-        if (navigator.onLine) {
-          try {
-            const response = await apiClient.get(`/student/attempts/${attemptId}/result`);
-            renderResult(response.data);
-            return;
-          } catch (e) {
-            console.log('Server result not ready, checking local...');
-          }
-        }
-
-        // Fallback ke data lokal (estimasi) atau pesan pending
-        const attempt = await db.exam_states.get(parseInt(attemptId));
-        
-        if (attempt) {
-           resultContainer.innerHTML = `
-            <div class="alert alert-info">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <div>
-                <h3 class="font-bold">Menunggu Sinkronisasi</h3>
-                <div class="text-xs">Jawaban tersimpan di perangkat. Nilai akan muncul setelah sinkronisasi selesai.</div>
-              </div>
-            </div>
-           `;
-        }
-      } catch (error) {
-        resultContainer.innerHTML = '<p class="text-error">Gagal memuat hasil.</p>';
-      }
-    }
-
-    function renderResult(data: any) {
-      if (!resultContainer) return;
-      
-      if (!data.show_score) {
-        resultContainer.innerHTML = `
-          <p class="italic text-base-content/60">Nilai untuk ujian ini disembunyikan oleh guru.</p>
-        `;
-        return;
-      }
-
-      resultContainer.innerHTML = `
-        <div class="stats shadow w-full">
-          <div class="stat place-items-center">
-            <div class="stat-title">Nilai Akhir</div>
-            <div class="stat-value text-primary">${data.score}</div>
-            <div class="stat-desc">Dari 100</div>
-          </div>
-          
-          <div class="stat place-items-center">
-            <div class="stat-title">Benar</div>
-            <div class="stat-value text-success text-2xl">${data.correct_count}</div>
-          </div>
-          
-          <div class="stat place-items-center">
-            <div class="stat-title">Salah</div>
-            <div class="stat-value text-error text-2xl">${data.incorrect_count}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    loadResult();
-  </script>
 </MainLayout>
+
+<script define:vars={{ attemptId }}>
+  import { db } from '@/lib/db/schema';
+  import { syncManager } from '@/lib/offline/sync';
+  
+  const container = document.getElementById('result-container');
+  const syncWarning = document.getElementById('sync-warning');
+
+  async function checkResult() {
+    // 1. Cek status sync di queue
+    const queueItem = await db.sync_queue
+      .where('attempt_id')
+      .equals(parseInt(attemptId))
+      .and(item => item.type === 'submission')
+      .first();
+
+    if (queueItem && queueItem.status !== 'completed') {
+      // Masih pending / offline
+      renderPending();
+      
+      // Coba trigger sync jika online
+      if (navigator.onLine) {
+        syncManager.processSyncQueue();
+      }
+    } else {
+      // Sudah sync atau tidak ada di queue (berarti sudah di server)
+      // Fetch hasil real dari API (Mocked here)
+      renderScore(85, 100); // Contoh nilai
+    }
+  }
+
+  function renderPending() {
+    container.innerHTML = `
+      <div class="stats shadow">
+        <div class="stat">
+          <div class="stat-title">Status</div>
+          <div class="stat-value text-warning text-2xl">Tersimpan</div>
+          <div class="stat-desc">Menunggu upload ke server</div>
+        </div>
+      </div>
+    `;
+    syncWarning.classList.remove('hidden');
+  }
+
+  function renderScore(score, max) {
+    container.innerHTML = `
+      <div class="stats shadow w-full max-w-md">
+        <div class="stat place-items-center">
+          <div class="stat-title">Nilai Akhir</div>
+          <div class="stat-value text-primary text-4xl">${score}</div>
+          <div class="stat-desc">Skala 0 - 100</div>
+        </div>
+        
+        <div class="stat place-items-center">
+          <div class="stat-title">Status</div>
+          <div class="stat-value text-success text-2xl">Lulus</div>
+          <div class="stat-desc">Di atas KKM</div>
+        </div>
+      </div>
+    `;
+    syncWarning.classList.add('hidden');
+  }
+
+  checkResult();
+  
+  // Listen for sync completion
+  window.addEventListener('sync:progress', (e) => {
+    if (e.detail.item.attempt_id === parseInt(attemptId) && e.detail.status === 'completed') {
+      // Refresh result after sync
+      setTimeout(() => renderScore(85, 100), 1000); 
+    }
+  });
+</script>
 ```
 
 ---
@@ -8618,7 +8773,394 @@ const attemptId = Astro.url.searchParams.get('attemptId');
 #### 📄 File: `./src/pages/siswa/ujian/[id].astro`
 
 ```astro
+---
+// src/pages/siswa/ujian/[id].astro
+import ExamLayout from '@/layouts/Exam.astro';
+import QuestionNavigation from '@/components/exam/QuestionNavigation.astro';
+import ExamTimer from '@/components/exam/ExamTimer.astro';
+import AutoSaveIndicator from '@/components/exam/AutoSaveIndicator.astro';
+import Button from '@/components/ui/Button.astro';
 
+// Question Components
+import MultipleChoice from '@/components/exam/QuestionTypes/MultipleChoice.astro';
+import MultipleChoiceComplex from '@/components/exam/QuestionTypes/MultipleChoiceComplex.astro';
+import TrueFalse from '@/components/exam/QuestionTypes/TrueFalse.astro';
+import Matching from '@/components/exam/QuestionTypes/Matching.astro';
+import ShortAnswer from '@/components/exam/QuestionTypes/ShortAnswer.astro';
+import Essay from '@/components/exam/QuestionTypes/Essay.astro';
+
+const { id } = Astro.params;
+---
+
+<ExamLayout title="Ujian Berlangsung">
+  <!-- Loading State (Initial) -->
+  <div id="exam-loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-base-100">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="mt-4 text-lg font-semibold animate-pulse">Memuat Paket Soal...</p>
+    <p class="text-sm text-base-content/70">Mendekripsi data lokal</p>
+  </div>
+
+  <!-- Main Exam UI -->
+  <div id="exam-container" class="flex h-screen flex-col overflow-hidden opacity-0 transition-opacity duration-500">
+    
+    <!-- Header -->
+    <header class="flex items-center justify-between bg-base-200 p-2 shadow-md md:p-4">
+      <div class="flex items-center gap-4">
+        <div class="hidden md:block">
+          <h1 id="exam-title" class="text-lg font-bold">Memuat...</h1>
+          <p id="student-info" class="text-xs text-base-content/70">Siswa</p>
+        </div>
+        <ExamTimer />
+      </div>
+
+      <div class="flex items-center gap-3">
+        <AutoSaveIndicator />
+        <Button variant="primary" size="sm" id="finish-btn">Selesai Ujian</Button>
+      </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Sidebar Navigation -->
+      <aside class="hidden w-72 flex-col border-r border-base-300 bg-base-100 md:flex">
+        <QuestionNavigation 
+          questions={[]} 
+          currentIndex={0} 
+          answeredQuestions={new Set()} 
+          flaggedQuestions={new Set()} 
+        />
+      </aside>
+
+      <!-- Mobile Drawer Toggle (Optional implementation) -->
+
+      <!-- Question Area -->
+      <main class="relative flex-1 overflow-y-auto bg-base-100 p-4 md:p-8" id="main-scroll">
+        <div class="mx-auto max-w-4xl">
+          <!-- Question Header -->
+          <div class="mb-6 flex items-center justify-between border-b border-base-300 pb-4">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-primary badge-lg">Soal No. <span id="q-number">1</span></span>
+              <span id="q-type-badge" class="badge badge-ghost">Tipe Soal</span>
+            </div>
+            <label class="label cursor-pointer gap-2">
+              <span class="label-text text-sm">Ragu-ragu</span>
+              <input type="checkbox" id="flag-checkbox" class="checkbox checkbox-warning checkbox-sm" />
+            </label>
+          </div>
+
+          <!-- Dynamic Question Content -->
+          <div id="question-renderer" class="min-h-[300px]">
+            <!-- Content injected by JS -->
+          </div>
+
+          <!-- Navigation Buttons -->
+          <div class="mt-10 flex justify-between pt-6 border-t border-base-300">
+            <Button variant="ghost" id="prev-btn">
+              <svg class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+              Sebelumnya
+            </Button>
+            
+            <Button variant="primary" id="next-btn">
+              Selanjutnya
+              <svg class="h-5 w-5 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            </Button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Templates for Question Types (Hidden) -->
+  <!-- We use these templates to clone into the renderer -->
+  <div class="hidden">
+    <template id="tpl-multiple-choice">
+      <MultipleChoice question={{id:0, question_text:'', options:[]}} />
+    </template>
+    <!-- Add other templates if not using pure JS rendering -->
+  </div>
+
+  <!-- Modals -->
+  <dialog id="confirm-finish-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Konfirmasi Selesai</h3>
+      <p class="py-4">
+        Anda telah menjawab <span id="modal-answered" class="font-bold">0</span> dari <span id="modal-total" class="font-bold">0</span> soal.
+        <br>
+        <span class="text-warning text-sm mt-2 block">Pastikan semua jawaban sudah tersimpan sebelum mengakhiri ujian.</span>
+      </p>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn">Batal</button>
+          <button id="confirm-finish-btn" class="btn btn-primary">Ya, Selesai</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+</ExamLayout>
+
+<script define:vars={{ examId: id }}>
+  import { db } from '@/lib/db/schema';
+  import { decrypt } from '@/lib/db/encryption';
+  import { ExamController } from '@/lib/exam/controller';
+  import { AutoSaveManager } from '@/lib/exam/autoSave';
+  import { TimerController } from '@/lib/exam/timer';
+  import { ActivityLogger } from '@/lib/exam/activityLogger';
+  import { $timerStore, setTimeRemaining } from '@/stores/timer';
+  import { $answersStore, setAnswer, markSaved } from '@/stores/answers';
+
+  // State
+  let controller;
+  let autoSave;
+  let timer;
+  let logger;
+  let currentQuestionId = null;
+
+  // DOM Elements
+  const container = document.getElementById('exam-container');
+  const loading = document.getElementById('exam-loading');
+  const renderer = document.getElementById('question-renderer');
+  const titleEl = document.getElementById('exam-title');
+  const qNumberEl = document.getElementById('q-number');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const flagCheckbox = document.getElementById('flag-checkbox');
+  const navContainer = document.querySelector('.question-navigation .grid'); // Adjust selector based on component structure
+
+  async function init() {
+    try {
+      // 1. Load Data
+      const download = await db.downloaded_exams.get(parseInt(examId));
+      if (!download) {
+        alert('Data ujian tidak ditemukan!');
+        window.location.href = '/siswa/ujian';
+        return;
+      }
+
+      // 2. Decrypt
+      const exam = JSON.parse(decrypt(download.exam_data));
+      const questions = JSON.parse(decrypt(download.questions));
+
+      // 3. Initialize Controllers
+      controller = new ExamController(exam, questions, download.attempt_id);
+      await controller.loadState(); // Load previous answers/progress
+
+      logger = new ActivityLogger(download.attempt_id);
+      autoSave = new AutoSaveManager(download.attempt_id);
+      
+      // Timer Setup
+      const savedState = await db.exam_states.get(download.attempt_id);
+      const initialTime = savedState?.time_remaining_seconds ?? (exam.duration_minutes * 60);
+      
+      timer = new TimerController(initialTime);
+      timer.start((time) => {
+        setTimeRemaining(time); // Update Nanostore for UI component
+        if (time <= 0) finishExam(true);
+      });
+
+      // Auto Save Setup
+      autoSave.start(30000, async () => {
+        await controller.saveState();
+        // Sync to DB handled inside controller, trigger UI update
+        window.dispatchEvent(new CustomEvent('exam:save-success'));
+      });
+
+      // 4. UI Setup
+      titleEl.textContent = exam.title;
+      renderQuestion();
+      updateNavigation();
+      
+      // Show UI
+      loading.classList.add('hidden');
+      container.classList.remove('opacity-0');
+      
+      // Log Start
+      logger.log('exam_resumed', { timestamp: new Date() });
+
+    } catch (e) {
+      console.error(e);
+      alert('Gagal memuat ujian: ' + e.message);
+    }
+  }
+
+  function renderQuestion() {
+    const question = controller.getCurrentQuestion();
+    const index = controller.getCurrentQuestionIndex();
+    const total = controller.getTotalQuestions();
+    const answer = controller.getAnswer(question.id);
+
+    currentQuestionId = question.id;
+    qNumberEl.textContent = index + 1;
+    
+    // Update Buttons
+    prevBtn.disabled = index === 0;
+    nextBtn.textContent = index === total - 1 ? 'Selesai' : 'Selanjutnya';
+    
+    // Update Flag
+    flagCheckbox.checked = controller.isFlagged(question.id);
+
+    // Render Content (Using innerHTML for simplicity in this hybrid mode, 
+    // ideally use framework components if fully hydrated)
+    // NOTE: In a real implementation, you'd likely use a switch case to 
+    // render specific HTML structures based on question.type
+    
+    let html = `<div class="prose max-w-none mb-6">${question.question_html || question.question_text}</div>`;
+    
+    // Media
+    if (question.media_url) {
+      // Add media player logic here
+    }
+
+    // Inputs based on type
+    if (question.type === 'multiple_choice') {
+      html += `<div class="flex flex-col gap-3">`;
+      question.options.forEach((opt, i) => {
+        const checked = answer?.answer_json === opt.id ? 'checked' : '';
+        const char = String.fromCharCode(65 + i);
+        html += `
+          <label class="flex items-center gap-4 p-4 border rounded-lg cursor-pointer hover:bg-base-200 ${checked ? 'bg-primary/10 border-primary' : ''}">
+            <input type="radio" name="ans_${question.id}" value="${opt.id}" class="radio radio-primary" ${checked} onchange="window.handleAnswerChange(${question.id}, ${opt.id})">
+            <span class="badge badge-neutral">${char}</span>
+            <div class="flex-1">${opt.option_html || opt.option_text}</div>
+          </label>
+        `;
+      });
+      html += `</div>`;
+    } else if (question.type === 'essay') {
+      html += `
+        <textarea 
+          class="textarea textarea-bordered w-full h-48" 
+          placeholder="Tulis jawaban Anda..."
+          oninput="window.handleAnswerChange(${question.id}, this.value)"
+        >${answer?.answer_text || ''}</textarea>
+      `;
+    }
+    // ... Add other types
+
+    renderer.innerHTML = html;
+    updateNavigation();
+  }
+
+  function updateNavigation() {
+    // Update sidebar UI based on controller state
+    // This assumes QuestionNavigation.astro has logic to listen to updates 
+    // or we manually update classes here
+    const navItems = document.querySelectorAll('[data-question-index]');
+    navItems.forEach((el, idx) => {
+      const qId = controller.getQuestions()[idx].id;
+      const isCurrent = idx === controller.getCurrentQuestionIndex();
+      const isAnswered = controller.isAnswered(qId);
+      const isFlagged = controller.isFlagged(qId);
+
+      el.className = `aspect-square rounded-lg border-2 font-semibold transition-all flex items-center justify-center
+        ${isCurrent ? 'border-primary bg-primary text-white' : 
+          isAnswered ? 'border-success bg-success/20' : 
+          isFlagged ? 'border-warning bg-warning/20' : 'border-base-300 hover:border-base-400'}
+      `;
+    });
+  }
+
+  // Global handlers for inline HTML events
+  window.handleAnswerChange = (qId, value) => {
+    // Determine answer structure based on type
+    const q = controller.getQuestions().find(q => q.id === qId);
+    let ansData = {
+      question_id: qId,
+      attempt_id: controller.getAttemptId(),
+      answered_at: new Date(),
+      synced: false
+    };
+
+    if (q.type === 'multiple_choice') {
+      ansData.answer_json = parseInt(value);
+    } else {
+      ansData.answer_text = value;
+    }
+
+    controller.saveAnswer(qId, ansData);
+    updateNavigation();
+    
+    // Trigger auto-save indicator
+    window.dispatchEvent(new CustomEvent('exam:save-start'));
+  };
+
+  // Event Listeners
+  prevBtn.addEventListener('click', () => {
+    controller.previousQuestion();
+    renderQuestion();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (controller.getCurrentQuestionIndex() === controller.getTotalQuestions() - 1) {
+      document.getElementById('confirm-finish-modal').showModal();
+      // Update stats in modal
+      document.getElementById('modal-answered').textContent = controller.getAnsweredCount();
+      document.getElementById('modal-total').textContent = controller.getTotalQuestions();
+    } else {
+      controller.nextQuestion();
+      renderQuestion();
+    }
+  });
+
+  flagCheckbox.addEventListener('change', (e) => {
+    controller.toggleFlag(currentQuestionId);
+    updateNavigation();
+  });
+
+  document.getElementById('confirm-finish-btn').addEventListener('click', () => {
+    finishExam();
+  });
+
+  // Sidebar navigation click
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-question-index]');
+    if (target) {
+      const idx = parseInt(target.dataset.questionIndex);
+      controller.goToQuestion(idx);
+      renderQuestion();
+    }
+  });
+
+  async function finishExam(isAuto = false) {
+    loading.classList.remove('hidden');
+    loading.querySelector('p').textContent = 'Menyimpan & Mengumpulkan...';
+    
+    try {
+      await controller.saveState();
+      timer.stop();
+      autoSave.stop();
+      
+      const attemptId = controller.getAttemptId();
+      
+      // Add to sync queue
+      await db.sync_queue.add({
+        attempt_id: attemptId,
+        type: 'submission',
+        data: {
+          submitted_at: new Date(),
+          answers: controller.getAnswers(),
+          is_auto_submit: isAuto
+        },
+        priority: 5,
+        retry_count: 0,
+        max_retries: 10,
+        status: 'pending',
+        created_at: new Date()
+      });
+
+      window.location.href = `/siswa/ujian/result?attemptId=${attemptId}`;
+    } catch (e) {
+      alert('Gagal submit: ' + e.message);
+      loading.classList.add('hidden');
+    }
+  }
+
+  // Prevent accidental exit
+  window.onbeforeunload = () => {
+    return "Apakah Anda yakin ingin keluar? Jawaban mungkin belum tersimpan.";
+  };
+
+  init();
+</script>
 ```
 
 ---
@@ -9186,35 +9728,145 @@ const { title } = Astro.props;
 ---
 
 <!DOCTYPE html>
-<html lang="id" class="exam-mode">
+<html lang="id" class="exam-mode" oncontextmenu="return false;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{title} - Ujian</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>{title} - ExamApp</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#3b82f6" />
+    
     <style>
-      /* Exam specific styles to prevent cheating/distractions */
+      /* Prevent text selection */
       body {
-        user-select: none;
         -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
       }
-      .exam-content {
-        user-select: text;
+      
+      /* Allow selection only in inputs */
+      input, textarea {
         -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
+      }
+
+      /* Hide scrollbar for cleaner look but allow scroll */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #888; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555; 
       }
     </style>
   </head>
-  <body class="bg-base-100 min-h-screen flex flex-col">
+  <body class="bg-base-100 min-h-screen flex flex-col overflow-hidden">
     <Toast />
+    
     <slot />
     
     <script>
-      // Prevent basic copy/paste and context menu
+      // Security Measures
+      
+      // 1. Prevent Right Click
       document.addEventListener('contextmenu', event => event.preventDefault());
-      document.addEventListener('copy', event => event.preventDefault());
-      document.addEventListener('cut', event => event.preventDefault());
-      document.addEventListener('paste', event => event.preventDefault());
+
+      // 2. Prevent Copy/Cut/Paste shortcuts
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'p' || e.key === 's')) {
+          e.preventDefault();
+          alert('Aksi ini dilarang selama ujian!');
+        }
+        // Prevent F12 / DevTools shortcut (basic prevention)
+        if (e.key === 'F12' || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I')) {
+          e.preventDefault();
+        }
+      });
+
+      // 3. Detect Focus Loss (Blur)
+      window.addEventListener('blur', () => {
+        document.title = "⚠️ KEMBALI KE UJIAN!";
+        // Log suspicious activity via API/IndexedDB logic handled in page script
+      });
+
+      window.addEventListener('focus', () => {
+        document.title = "Ujian Berlangsung";
+      });
+    </script>
+  </body>
+</html>
+```
+
+---
+
+#### 📄 File: `./src/layouts/MainLayout.astro`
+
+```astro
+---
+// src/layouts/MainLayout.astro
+import Header from '@/components/layout/Header.astro';
+import Sidebar from '@/components/layout/Sidebar.astro';
+import Footer from '@/components/layout/Footer.astro';
+import { $uiStore } from '@/stores/ui';
+
+interface Props {
+  title: string;
+  hideNav?: boolean;
+  hideSidebar?: boolean;
+  role?: 'siswa' | 'guru' | 'pengawas' | 'operator' | 'superadmin';
+}
+
+const { title, hideNav = false, hideSidebar = false, role } = Astro.props;
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} - Sistem Ujian</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+  </head>
+  <body class="bg-base-200 min-h-screen flex flex-col">
+    
+    {!hideNav && <Header hideNav={hideNav} />}
+
+    <div class="flex flex-1 relative">
+      <!-- Sidebar Logic -->
+      {(!hideSidebar && role) && (
+        <div class="hidden lg:block h-[calc(100vh-4rem)] sticky top-16 overflow-y-auto z-20 bg-base-100 border-r border-base-300">
+          <Sidebar role={role} currentPath={currentPath} />
+        </div>
+      )}
+
+      <main class="flex-1 p-4 md:p-6 overflow-x-hidden w-full">
+        <slot />
+      </main>
+    </div>
+
+    {!hideNav && <Footer />}
+
+    <script>
+      import { $uiStore } from '@/stores/ui';
+      
+      // Apply theme on load
+      const state = $uiStore.get();
+      document.documentElement.setAttribute('data-theme', state.theme);
+      
+      if (state.fontSize === 'small') document.documentElement.classList.add('text-sm');
+      if (state.fontSize === 'large') document.documentElement.classList.add('text-lg');
     </script>
   </body>
 </html>
@@ -9354,73 +10006,51 @@ export async function checkAuth(): Promise<boolean> {
 #### 📄 File: `./src/lib/api/client.ts`
 
 ```typescript
-// src/lib/api/client.ts
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosError } from 'axios';
 import { $authStore } from '@/stores/auth';
 
-// Base URL from environment variable
 const BASE_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:8000/api';
 
-// Create axios instance
-export const apiClient: AxiosInstance = axios.create({
+export const apiClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor - add auth token
-apiClient.interceptors.request.use(
-  (config) => {
-    const authState = $authStore.get();
-    
-    if (authState.accessToken) {
-      config.headers.Authorization = `Bearer ${authState.accessToken}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+// Request Interceptor
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
 
-// Response interceptor - handle errors
+// Response Interceptor
 apiClient.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Unauthorized - try to refresh token
-      // If refresh fails, redirect to login
-      const authState = $authStore.get();
-      
-      if (authState.isAuthenticated) {
-        try {
-          // Attempt token refresh
-          const { refreshAccessToken } = await import('./auth');
-          const newToken = await refreshAccessToken();
-          
-          // Retry the original request
-          if (error.config) {
-            error.config.headers.Authorization = `Bearer ${newToken}`;
-            return axios.request(error.config);
-          }
-        } catch (refreshError) {
-          // Refresh failed - logout
-          const { logout } = await import('./auth');
-          await logout();
-        }
-      }
+    // 1. Handle Network Error (Offline)
+    if (!error.response) {
+      // Ini terjadi jika tidak ada koneksi internet atau server down
+      const customError = new Error('OFFLINE_MODE');
+      (customError as any).isNetworkError = true;
+      (customError as any).originalRequest = error.config;
+      return Promise.reject(customError);
     }
-    
+
+    // 2. Handle Unauthorized (401) - Auto Refresh Logic
+    if (error.response.status === 401) {
+      // Logic refresh token (simplified)
+      // Di real app, gunakan queue untuk menampung request selama refreshing
+      window.location.href = '/login'; 
+    }
+
     return Promise.reject(error);
   }
 );
-
-export default apiClient;
 ```
 
 ---
@@ -10180,49 +10810,72 @@ export class ActivityLogger {
 
 ```typescript
 // src/lib/exam/autoSave.ts
+import { db } from '@/lib/db/schema';
+import type { ExamAnswer } from '@/types/answer';
+
 export class AutoSaveManager {
   private attemptId: number;
-  private intervalId: number | null = null;
-  private isPaused: boolean = false;
-  private onSaveCallback: (() => Promise<void>) | null = null;
+  private pendingChanges: Map<number, ExamAnswer> = new Map();
+  private saveInterval: number | null = null;
+  private isSaving: boolean = false;
+  
+  // Callback untuk update UI status
+  private onStatusChange: (status: 'idle' | 'saving' | 'saved' | 'error') => void;
 
-  constructor(attemptId: number) {
+  constructor(attemptId: number, onStatusChange: (status: any) => void) {
     this.attemptId = attemptId;
+    this.onStatusChange = onStatusChange;
   }
 
-  start(intervalMs: number, onSave: () => Promise<void>): void {
-    this.onSaveCallback = onSave;
-    this.isPaused = false;
+  // Queue changes (dipanggil setiap user ngetik/pilih jawaban)
+  enqueue(questionId: number, answer: ExamAnswer) {
+    this.pendingChanges.set(questionId, answer);
+    this.onStatusChange('idle'); // Status "Belum tersimpan" (bisa diubah logicnya)
+  }
 
-    this.intervalId = window.setInterval(async () => {
-      if (!this.isPaused && this.onSaveCallback) {
-        try {
-          await this.onSaveCallback();
-        } catch (error) {
-          console.error('Auto-save failed:', error);
-        }
-      }
+  start(intervalMs: number = 30000) {
+    this.saveInterval = window.setInterval(() => {
+      this.save();
     }, intervalMs);
   }
 
-  pause(): void {
-    this.isPaused = true;
-  }
-
-  resume(): void {
-    this.isPaused = false;
-  }
-
-  stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+  stop() {
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = null;
     }
+    // Force save on stop
+    this.save();
   }
 
-  async saveNow(): Promise<void> {
-    if (this.onSaveCallback) {
-      await this.onSaveCallback();
+  async save() {
+    if (this.pendingChanges.size === 0 || this.isSaving) return;
+
+    this.isSaving = true;
+    this.onStatusChange('saving');
+
+    try {
+      // Ambil snapshot data yang akan disimpan
+      const changesToSave = Array.from(this.pendingChanges.values());
+      
+      // 1. Simpan ke IndexedDB (Critical)
+      await db.exam_answers.bulkPut(changesToSave);
+      
+      // 2. Clear pending map (hanya yang sudah diambil)
+      changesToSave.forEach(ans => {
+        // Cek apakah ada perubahan baru selama proses save
+        const currentPending = this.pendingChanges.get(ans.question_id!);
+        if (currentPending === ans) {
+          this.pendingChanges.delete(ans.question_id!);
+        }
+      });
+
+      this.onStatusChange('saved');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      this.onStatusChange('error');
+    } finally {
+      this.isSaving = false;
     }
   }
 }
@@ -10253,22 +10906,17 @@ export class ExamController {
     this.attemptId = attemptId;
   }
 
-  async start(): Promise<void> {
-    await this.saveState();
-  }
-
+  // Initialize and load saved data
   async loadState(): Promise<void> {
+    // 1. Load transient state (navigation, flags)
     const state = await db.exam_states.get(this.attemptId);
     
     if (state) {
       this.currentQuestionIndex = state.current_question_index;
       this.flags = new Set(state.flags);
-      
-      for (const [questionId, answer] of Object.entries(state.answers)) {
-        this.answers.set(parseInt(questionId), answer as ExamAnswer);
-      }
     }
     
+    // 2. Load answers (source of truth)
     const savedAnswers = await db.exam_answers
       .where('attempt_id')
       .equals(this.attemptId)
@@ -10279,7 +10927,13 @@ export class ExamController {
     });
   }
 
+  async start(): Promise<void> {
+    await this.saveState();
+  }
+
+  // Persist current state to IndexedDB
   async saveState(): Promise<void> {
+    // Convert Map to Object for storage
     const answersObj: Record<number, any> = {};
     this.answers.forEach((answer, questionId) => {
       answersObj[questionId] = answer;
@@ -10288,8 +10942,9 @@ export class ExamController {
     const state: ExamState = {
       attempt_id: this.attemptId,
       current_question_index: this.currentQuestionIndex,
-      time_remaining_seconds: 0,
-      started_at: new Date(),
+      time_remaining_seconds: 0, // Managed by TimerController usually, but good to snapshot
+      started_at: new Date(), // Should be original start time
+      paused_at: undefined,
       answers: answersObj,
       flags: Array.from(this.flags),
     };
@@ -10297,6 +10952,7 @@ export class ExamController {
     await db.exam_states.put(state);
   }
 
+  // Navigation
   getCurrentQuestion(): Question {
     return this.questions[this.currentQuestionIndex];
   }
@@ -10334,8 +10990,24 @@ export class ExamController {
     }
   }
 
-  saveAnswer(questionId: number, answer: ExamAnswer): void {
-    this.answers.set(questionId, answer);
+  // Answering
+  saveAnswer(questionId: number, answerData: Partial<ExamAnswer>): void {
+    const existing = this.answers.get(questionId) || {};
+    
+    const fullAnswer: ExamAnswer = {
+      attempt_id: this.attemptId,
+      question_id: questionId,
+      answered_at: new Date(),
+      synced: false,
+      ...existing,
+      ...answerData
+    } as ExamAnswer;
+
+    this.answers.set(questionId, fullAnswer);
+    
+    // Also save to persistent answer table immediately for safety
+    db.exam_answers.put(fullAnswer);
+    
     this.saveState();
   }
 
@@ -10347,6 +11019,7 @@ export class ExamController {
     return Array.from(this.answers.values());
   }
 
+  // Flagging
   toggleFlag(questionId: number): void {
     if (this.flags.has(questionId)) {
       this.flags.delete(questionId);
@@ -10360,6 +11033,7 @@ export class ExamController {
     return this.flags.has(questionId);
   }
 
+  // Stats
   getAnsweredCount(): number {
     return this.answers.size;
   }
@@ -10370,10 +11044,6 @@ export class ExamController {
 
   getAttemptId(): number {
     return this.attemptId;
-  }
-
-  getExam(): Exam {
-    return this.exam;
   }
 }
 ```
@@ -10492,62 +11162,78 @@ export class ExamStateManager {
 ```typescript
 // src/lib/exam/timer.ts
 export class TimerController {
-  private timeRemaining: number;
+  private durationSeconds: number;
+  private endTime: number;
   private intervalId: number | null = null;
-  private onTickCallback: ((timeRemaining: number) => void) | null = null;
+  private onTick: (remaining: number) => void;
+  private onComplete: () => void;
   private isPaused: boolean = false;
+  private pausedTimeRemaining: number = 0;
 
-  constructor(durationSeconds: number) {
-    this.timeRemaining = durationSeconds;
+  constructor(
+    durationSeconds: number, 
+    onTick: (remaining: number) => void,
+    onComplete: () => void
+  ) {
+    this.durationSeconds = durationSeconds;
+    this.onTick = onTick;
+    this.onComplete = onComplete;
+    // Set initial end time
+    this.endTime = Date.now() + (durationSeconds * 1000);
   }
 
-  start(onTick: (timeRemaining: number) => void): void {
-    this.onTickCallback = onTick;
-    this.isPaused = false;
+  start() {
+    if (this.intervalId) return;
 
-    this.intervalId = window.setInterval(() => {
-      if (!this.isPaused && this.timeRemaining > 0) {
-        this.timeRemaining--;
-        this.onTickCallback?.(this.timeRemaining);
-      }
+    // Jika resume dari pause, hitung ulang endTime
+    if (this.isPaused) {
+      this.endTime = Date.now() + (this.pausedTimeRemaining * 1000);
+      this.isPaused = false;
+    }
 
-      if (this.timeRemaining <= 0) {
+    const tick = () => {
+      const now = Date.now();
+      const remainingMs = this.endTime - now;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+
+      if (remainingSec <= 0) {
         this.stop();
+        this.onTick(0);
+        this.onComplete();
+      } else {
+        this.onTick(remainingSec);
       }
-    }, 1000);
+    };
 
-    this.onTickCallback(this.timeRemaining);
+    // Run immediately
+    tick();
+    
+    // Check every second
+    this.intervalId = window.setInterval(tick, 1000);
   }
 
-  pause(): void {
+  pause() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    
+    const now = Date.now();
+    const remainingMs = Math.max(0, this.endTime - now);
+    this.pausedTimeRemaining = remainingMs / 1000;
     this.isPaused = true;
   }
 
-  resume(): void {
-    this.isPaused = false;
-  }
-
-  stop(): void {
+  stop() {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
   }
 
-  getTimeRemaining(): number {
-    return this.timeRemaining;
-  }
-
-  setTimeRemaining(seconds: number): void {
-    this.timeRemaining = seconds;
-  }
-
-  addTime(seconds: number): void {
-    this.timeRemaining += seconds;
-  }
-
-  subtractTime(seconds: number): void {
-    this.timeRemaining = Math.max(0, this.timeRemaining - seconds);
+  // Sinkronisasi waktu jika server mendeteksi drift
+  sync(serverRemainingSeconds: number) {
+    this.endTime = Date.now() + (serverRemainingSeconds * 1000);
   }
 }
 ```
@@ -10605,7 +11291,49 @@ export function isExamComplete(questions: Question[], answers: Record<number, Ex
 #### 📄 File: `./src/lib/hooks/useAuth.ts`
 
 ```typescript
+// src/lib/hooks/useAuth.ts
+import { useStore } from '@nanostores/react';
+import { $authStore, login, logout, refreshAccessToken } from '@/stores/auth';
+import type { LoginCredentials } from '@/lib/api/auth';
 
+export function useAuth() {
+  const authState = useStore($authStore);
+
+  return {
+    // State
+    user: authState.user,
+    school: authState.school,
+    isAuthenticated: authState.isAuthenticated,
+    token: authState.accessToken,
+    
+    // Helpers
+    role: authState.user?.role,
+    isStudent: authState.user?.role === 'siswa',
+    isTeacher: authState.user?.role === 'guru',
+    isAdmin: authState.user?.role === 'superadmin' || authState.user?.role === 'operator',
+    
+    // Actions (Wrapped for convenience)
+    login: async (credentials: LoginCredentials) => {
+      try {
+        await login(credentials);
+        return { success: true };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+    logout: async () => {
+      await logout();
+    },
+    refreshToken: async () => {
+      try {
+        await refreshAccessToken();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+  };
+}
 ```
 
 ---
@@ -12364,137 +13092,57 @@ export function setAccessToken(token: string): void {
 
 ```typescript
 // src/stores/exam.ts
-import { atom, computed } from 'nanostores';
-import type { Exam, ExamAttempt, ExamState } from '@/types/exam';
+import { atom, map } from 'nanostores';
 import type { Question } from '@/types/question';
 
-interface CurrentExamState {
-  exam: Exam | null;
-  attempt: ExamAttempt | null;
-  questions: Question[];
-  currentQuestionIndex: number;
-  flags: number[];
-  isLoading: boolean;
-  error: string | null;
-}
-
-const initialState: CurrentExamState = {
-  exam: null,
-  attempt: null,
-  questions: [],
+// State untuk status UI Ujian
+export const $examUI = map({
+  isLoading: true,
+  isSubmitting: false,
   currentQuestionIndex: 0,
-  flags: [],
-  isLoading: false,
-  error: null,
-};
-
-export const $examStore = atom<CurrentExamState>(initialState);
-
-// Computed values
-export const $currentQuestion = computed($examStore, (state) => {
-  if (state.questions.length === 0) return null;
-  return state.questions[state.currentQuestionIndex] || null;
+  totalQuestions: 0,
+  timeRemaining: 0, // dalam detik
+  isSidebarOpen: false,
 });
 
-export const $totalQuestions = computed($examStore, (state) => {
-  return state.questions.length;
-});
-
-export const $hasNext = computed($examStore, (state) => {
-  return state.currentQuestionIndex < state.questions.length - 1;
-});
-
-export const $hasPrevious = computed($examStore, (state) => {
-  return state.currentQuestionIndex > 0;
-});
+// State untuk status jawaban (untuk navigasi visual)
+// Key: questionId, Value: { answered: boolean, flagged: boolean }
+export const $questionStatus = map<Record<number, { answered: boolean; flagged: boolean }>>({});
 
 // Actions
-export function setExam(exam: Exam): void {
-  $examStore.set({
-    ...$examStore.get(),
-    exam,
-  });
+export function setExamLoading(loading: boolean) {
+  $examUI.setKey('isLoading', loading);
 }
 
-export function setAttempt(attempt: ExamAttempt): void {
-  $examStore.set({
-    ...$examStore.get(),
-    attempt,
-  });
+export function setCurrentIndex(index: number) {
+  $examUI.setKey('currentQuestionIndex', index);
 }
 
-export function setQuestions(questions: Question[]): void {
-  $examStore.set({
-    ...$examStore.get(),
-    questions,
-  });
+export function updateTime(seconds: number) {
+  $examUI.setKey('timeRemaining', seconds);
 }
 
-export function setCurrentQuestionIndex(index: number): void {
-  const state = $examStore.get();
-  if (index >= 0 && index < state.questions.length) {
-    $examStore.set({
-      ...state,
-      currentQuestionIndex: index,
-    });
-  }
+export function toggleSidebar() {
+  const current = $examUI.get().isSidebarOpen;
+  $examUI.setKey('isSidebarOpen', !current);
 }
 
-export function nextQuestion(): void {
-  const state = $examStore.get();
-  if (state.currentQuestionIndex < state.questions.length - 1) {
-    setCurrentQuestionIndex(state.currentQuestionIndex + 1);
-  }
-}
-
-export function previousQuestion(): void {
-  const state = $examStore.get();
-  if (state.currentQuestionIndex > 0) {
-    setCurrentQuestionIndex(state.currentQuestionIndex - 1);
-  }
-}
-
-export function goToQuestion(index: number): void {
-  setCurrentQuestionIndex(index);
-}
-
-export function toggleFlag(questionId: number): void {
-  const state = $examStore.get();
-  const flags = [...state.flags];
-  const index = flags.indexOf(questionId);
+export function updateQuestionStatus(id: number, status: Partial<{ answered: boolean; flagged: boolean }>) {
+  const current = $questionStatus.get();
+  const existing = current[id] || { answered: false, flagged: false };
   
-  if (index > -1) {
-    flags.splice(index, 1);
-  } else {
-    flags.push(questionId);
-  }
-  
-  $examStore.set({
-    ...state,
-    flags,
+  $questionStatus.set({
+    ...current,
+    [id]: { ...existing, ...status }
   });
 }
 
-export function isFlagged(questionId: number): boolean {
-  return $examStore.get().flags.includes(questionId);
-}
-
-export function setLoading(isLoading: boolean): void {
-  $examStore.set({
-    ...$examStore.get(),
-    isLoading,
+export function initQuestionStatuses(questions: Question[]) {
+  const statusMap: Record<number, { answered: boolean; flagged: boolean }> = {};
+  questions.forEach(q => {
+    statusMap[q.id] = { answered: false, flagged: false };
   });
-}
-
-export function setError(error: string | null): void {
-  $examStore.set({
-    ...$examStore.get(),
-    error,
-  });
-}
-
-export function resetExam(): void {
-  $examStore.set(initialState);
+  $questionStatus.set(statusMap);
 }
 ```
 
@@ -13491,7 +14139,8 @@ export interface SuperAdmin extends User {
 
 @layer base {
   * {
-    @apply border-border;
+    /* PERBAIKAN: Ganti border-border menjadi border-base-300 */
+    @apply border-base-300; 
   }
   
   body {
@@ -13545,17 +14194,14 @@ export interface SuperAdmin extends User {
 }
 
 @layer utilities {
-  /* Text utilities */
   .text-balance {
     text-wrap: balance;
   }
   
-  /* Focus visible */
   .focus-visible-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2;
   }
   
-  /* Truncate multiline */
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -13573,21 +14219,13 @@ export interface SuperAdmin extends User {
 
 /* Animations */
 @keyframes slideIn {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .slide-in {
@@ -13603,7 +14241,6 @@ export interface SuperAdmin extends User {
   body {
     @apply bg-white text-black;
   }
-  
   .no-print {
     display: none !important;
   }
@@ -13933,135 +14570,99 @@ Allow: /
 ### 📄 File: `./public/service-worker.js`
 
 ```javascript
-// public/service-worker.js
 const CACHE_NAME = 'exam-app-v1';
-const OFFLINE_CACHE = 'exam-offline-v1';
+const ASSETS_CACHE = 'assets-v1';
 
+// Aset statis yang WAJIB ada agar app bisa jalan offline
 const STATIC_ASSETS = [
   '/',
   '/login',
-  '/offline',
+  '/offline', // Halaman fallback
   '/manifest.json',
+  '/fonts/Amiri-Regular.ttf',
+  '/fonts/Scheherazade-Regular.ttf',
+  '/icons/icon-192.png',
+  '/favicon.svg'
 ];
 
-// Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('[SW] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching static assets');
       return cache.addAll(STATIC_ASSETS);
     })
   );
   self.skipWaiting();
 });
 
-// Activate event - cleanup old caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log('[SW] Activating...');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== OFFLINE_CACHE)
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name);
-            return caches.delete(name);
-          })
+        keys.map((key) => {
+          if (key !== CACHE_NAME && key !== ASSETS_CACHE) {
+            return caches.delete(key);
+          }
+        })
       );
     })
   );
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const url = new URL(event.request.url);
 
-  // Skip cross-origin requests
-  if (url.origin !== location.origin) {
+  // 1. API Requests (Network First, then fail silently or return cached error)
+  // Note: Data ujian disimpan di IndexedDB oleh aplikasi, bukan di Cache Storage API.
+  // Jadi SW hanya perlu memastikan request API tidak memblokir UI.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // Return JSON error agar frontend bisa handle (misal masuk queue)
+        return new Response(JSON.stringify({ error: 'offline' }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 503
+        });
+      })
+    );
     return;
   }
 
-  // API calls - network first, fallback to cache
-  if (url.pathname.startsWith('/api/')) {
+  // 2. Navigation (HTML Pages) - Network First, Fallback to /offline
+  if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Cache successful responses
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(OFFLINE_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return response;
-        })
+      fetch(event.request)
         .catch(() => {
-          // Fallback to cache
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            // Return offline page for failed API calls
-            return new Response(
-              JSON.stringify({ error: 'You are offline' }),
-              {
-                status: 503,
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
+          return caches.match(event.request).then((cached) => {
+            // Jika halaman ada di cache (misal dashboard), return itu
+            if (cached) return cached;
+            // Jika tidak, return halaman offline generic
+            return caches.match('/offline');
           });
         })
     );
     return;
   }
 
-  // Static assets - cache first, fallback to network
+  // 3. Static Assets (Stale-While-Revalidate)
+  // Font, CSS, JS, Images
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(request)
-        .then((response) => {
-          // Cache for future use
-          if (response.ok && request.method === 'GET') {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Return offline page for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match('/offline');
-          }
-          return new Response('Offline', { status: 503 });
-        });
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        // Cache new version
+        if (networkResponse.ok) {
+          const clone = networkResponse.clone();
+          caches.open(ASSETS_CACHE).then((cache) => cache.put(event.request, clone));
+        }
+        return networkResponse;
+      });
+      
+      // Return cached immediately if available, else wait for network
+      return cachedResponse || fetchPromise;
     })
   );
-});
-
-// Message event - for manual cache updates
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    event.waitUntil(
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => caches.delete(cacheName))
-        );
-      })
-    );
-  }
 });
 ```
 
