@@ -27,88 +27,94 @@ mkdir -p src/app
 touch src/app/{layout.tsx,page.tsx,not-found.tsx,loading.tsx,global.css}
 
 # (auth)
-mkdir -p src/app/\(auth\)/login
-touch src/app/\(auth\)/layout.tsx
-touch src/app/\(auth\)/login/page.tsx
+mkdir -p "src/app/(auth)/login"
+touch "src/app/(auth)/layout.tsx"
+touch "src/app/(auth)/login/page.tsx"
 
 # (siswa)
-mkdir -p src/app/\(siswa\)/{dashboard,profile}
-mkdir -p src/app/\(siswa\)/ujian/{download}
-mkdir -p "src/app/(siswa)/ujian/[sessionId]"
+mkdir -p "src/app/(siswa)/dashboard"
+mkdir -p "src/app/(siswa)/profile"
+mkdir -p "src/app/(siswa)/ujian/download"
 mkdir -p "src/app/(siswa)/ujian/[sessionId]/review"
 mkdir -p "src/app/(siswa)/ujian/[sessionId]/result"
-touch src/app/\(siswa\)/layout.tsx
-touch src/app/\(siswa\)/dashboard/page.tsx
-touch src/app/\(siswa\)/profile/page.tsx
-touch src/app/\(siswa\)/ujian/page.tsx
-touch src/app/\(siswa\)/ujian/download/page.tsx
+touch "src/app/(siswa)/layout.tsx"
+touch "src/app/(siswa)/dashboard/page.tsx"
+touch "src/app/(siswa)/profile/page.tsx"
+touch "src/app/(siswa)/ujian/page.tsx"
+touch "src/app/(siswa)/ujian/download/page.tsx"
 touch "src/app/(siswa)/ujian/[sessionId]/page.tsx"
 touch "src/app/(siswa)/ujian/[sessionId]/review/page.tsx"
 touch "src/app/(siswa)/ujian/[sessionId]/result/page.tsx"
 
 # (guru)
-mkdir -p src/app/\(guru\)/{dashboard,hasil}
-mkdir -p src/app/\(guru\)/soal/{create,import}
+mkdir -p "src/app/(guru)/dashboard"
+mkdir -p "src/app/(guru)/hasil"
+mkdir -p "src/app/(guru)/soal/create"
+mkdir -p "src/app/(guru)/soal/import"
 mkdir -p "src/app/(guru)/soal/[id]/edit"
-mkdir -p src/app/\(guru\)/ujian/create
+mkdir -p "src/app/(guru)/ujian/create"
 mkdir -p "src/app/(guru)/ujian/[id]/edit"
 mkdir -p "src/app/(guru)/ujian/[id]/preview"
 mkdir -p "src/app/(guru)/ujian/[id]/statistics"
 mkdir -p "src/app/(guru)/grading/[attemptId]"
-touch src/app/\(guru\)/layout.tsx
-touch src/app/\(guru\)/dashboard/page.tsx
-touch src/app/\(guru\)/hasil/page.tsx
-touch src/app/\(guru\)/soal/page.tsx
-touch src/app/\(guru\)/soal/create/page.tsx
-touch src/app/\(guru\)/soal/import/page.tsx
+touch "src/app/(guru)/layout.tsx"
+touch "src/app/(guru)/dashboard/page.tsx"
+touch "src/app/(guru)/hasil/page.tsx"
+touch "src/app/(guru)/soal/page.tsx"
+touch "src/app/(guru)/soal/create/page.tsx"
+touch "src/app/(guru)/soal/import/page.tsx"
 touch "src/app/(guru)/soal/[id]/edit/page.tsx"
-touch src/app/\(guru\)/ujian/page.tsx
-touch src/app/\(guru\)/ujian/create/page.tsx
+touch "src/app/(guru)/ujian/page.tsx"
+touch "src/app/(guru)/ujian/create/page.tsx"
 touch "src/app/(guru)/ujian/[id]/edit/page.tsx"
 touch "src/app/(guru)/ujian/[id]/preview/page.tsx"
 touch "src/app/(guru)/ujian/[id]/statistics/page.tsx"
-touch src/app/\(guru\)/grading/page.tsx
+touch "src/app/(guru)/grading/page.tsx"
 touch "src/app/(guru)/grading/[attemptId]/page.tsx"
 
 # (pengawas)
-mkdir -p src/app/\(pengawas\)/dashboard
-mkdir -p src/app/\(pengawas\)/monitoring/live
+mkdir -p "src/app/(pengawas)/dashboard"
+mkdir -p "src/app/(pengawas)/monitoring/live"
 mkdir -p "src/app/(pengawas)/monitoring/[sessionId]"
-touch src/app/\(pengawas\)/layout.tsx
-touch src/app/\(pengawas\)/dashboard/page.tsx
-touch src/app/\(pengawas\)/monitoring/live/page.tsx
+touch "src/app/(pengawas)/layout.tsx"
+touch "src/app/(pengawas)/dashboard/page.tsx"
+touch "src/app/(pengawas)/monitoring/live/page.tsx"
 touch "src/app/(pengawas)/monitoring/[sessionId]/page.tsx"
 
 # (operator)
-mkdir -p src/app/\(operator\)/{dashboard,laporan}
-mkdir -p src/app/\(operator\)/sesi/create
+mkdir -p "src/app/(operator)/dashboard"
+mkdir -p "src/app/(operator)/laporan"
+mkdir -p "src/app/(operator)/sesi/create"
 mkdir -p "src/app/(operator)/sesi/[id]/edit"
-mkdir -p src/app/\(operator\)/ruang/create
+mkdir -p "src/app/(operator)/ruang/create"
 mkdir -p "src/app/(operator)/ruang/[id]/edit"
-mkdir -p src/app/\(operator\)/peserta/import
-touch src/app/\(operator\)/layout.tsx
-touch src/app/\(operator\)/dashboard/page.tsx
-touch src/app/\(operator\)/laporan/page.tsx
-touch src/app/\(operator\)/sesi/page.tsx
-touch src/app/\(operator\)/sesi/create/page.tsx
+mkdir -p "src/app/(operator)/peserta/import"
+touch "src/app/(operator)/layout.tsx"
+touch "src/app/(operator)/dashboard/page.tsx"
+touch "src/app/(operator)/laporan/page.tsx"
+touch "src/app/(operator)/sesi/page.tsx"
+touch "src/app/(operator)/sesi/create/page.tsx"
 touch "src/app/(operator)/sesi/[id]/edit/page.tsx"
-touch src/app/\(operator\)/ruang/page.tsx
-touch src/app/\(operator\)/ruang/create/page.tsx
+touch "src/app/(operator)/ruang/page.tsx"
+touch "src/app/(operator)/ruang/create/page.tsx"
 touch "src/app/(operator)/ruang/[id]/edit/page.tsx"
-touch src/app/\(operator\)/peserta/page.tsx
-touch src/app/\(operator\)/peserta/import/page.tsx
+touch "src/app/(operator)/peserta/page.tsx"
+touch "src/app/(operator)/peserta/import/page.tsx"
 
 # (superadmin)
-mkdir -p src/app/\(superadmin\)/{dashboard,users,settings,audit-logs}
-mkdir -p src/app/\(superadmin\)/schools/create
+mkdir -p "src/app/(superadmin)/dashboard"
+mkdir -p "src/app/(superadmin)/users"
+mkdir -p "src/app/(superadmin)/settings"
+mkdir -p "src/app/(superadmin)/audit-logs"
+mkdir -p "src/app/(superadmin)/schools/create"
 mkdir -p "src/app/(superadmin)/schools/[id]/edit"
-touch src/app/\(superadmin\)/layout.tsx
-touch src/app/\(superadmin\)/dashboard/page.tsx
-touch src/app/\(superadmin\)/users/page.tsx
-touch src/app/\(superadmin\)/settings/page.tsx
-touch src/app/\(superadmin\)/audit-logs/page.tsx
-touch src/app/\(superadmin\)/schools/page.tsx
-touch src/app/\(superadmin\)/schools/create/page.tsx
+touch "src/app/(superadmin)/layout.tsx"
+touch "src/app/(superadmin)/dashboard/page.tsx"
+touch "src/app/(superadmin)/users/page.tsx"
+touch "src/app/(superadmin)/settings/page.tsx"
+touch "src/app/(superadmin)/audit-logs/page.tsx"
+touch "src/app/(superadmin)/schools/page.tsx"
+touch "src/app/(superadmin)/schools/create/page.tsx"
 touch "src/app/(superadmin)/schools/[id]/edit/page.tsx"
 
 # API Route Handlers
