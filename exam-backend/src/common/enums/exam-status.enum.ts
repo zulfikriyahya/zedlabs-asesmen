@@ -5,3 +5,18 @@ export enum ExamPackageStatus {
   PUBLISHED = 'PUBLISHED',
   ARCHIVED = 'ARCHIVED',
 }
+
+export enum SessionStatus {
+  SCHEDULED = 'SCHEDULED',
+  ACTIVE = 'ACTIVE',
+  PAUSED = 'PAUSED',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum AttemptStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUBMITTED = 'SUBMITTED',
+  TIMED_OUT = 'TIMED_OUT',
+  ABANDONED = 'ABANDONED',
+}
