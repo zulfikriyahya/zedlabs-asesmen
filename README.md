@@ -67,7 +67,7 @@ Jalankan dari direktori ini (sejajar dengan `exam-frontend` dan `exam-backend`):
 bash generate.sh ../exam-frontend ../exam-backend
 ```
 
-Menghasilkan `draft_fe.md` dan `draft_be.md` yang berisi seluruh kode sumber dalam format Markdown, siap dilampirkan sebagai konteks ke AI assistant.
+Menghasilkan `DRAFT_FE.md` dan `DRAFT_BE.md` yang berisi seluruh kode sumber dalam format Markdown, siap dilampirkan sebagai konteks ke AI assistant.
 
 ---
 
