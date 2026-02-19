@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Script untuk membuat struktur project exam-backend (NestJS)
-# Sistem Asesmen Sekolah/Madrasah - Offline-First Multi-Tenant
+# Setup exam-backend — NestJS REST API
+# Sistem Ujian Offline-First Multi-Tenant
 # Stack: NestJS + Prisma + PostgreSQL + BullMQ + Redis + MinIO
 
-set -e
+set -euo pipefail
 
 PROJECT_NAME="exam-backend"
 
@@ -12,16 +12,16 @@ echo "=========================================="
 echo "Creating $PROJECT_NAME NestJS API structure"
 echo "=========================================="
 
-mkdir -p $PROJECT_NAME
-cd $PROJECT_NAME
+mkdir -p "$PROJECT_NAME"
+cd "$PROJECT_NAME"
 
 # ============================================
-# SRC - MAIN APPLICATION
+# SRC — MAIN APPLICATION
 # ============================================
 
 mkdir -p src/{common,config,prisma,modules}
 mkdir -p src/common/{decorators,dto,entities,enums,exceptions,filters,guards,interceptors,middleware,pipes,utils,validators}
-mkdir -p src/prisma/{migrations,seeds,factories}
+mkdir -p src/prisma/{seeds,factories}
 
 # ============================================
 # MODULES
@@ -35,15 +35,15 @@ touch src/modules/auth/auth.module.ts
 touch src/modules/auth/controllers/auth.controller.ts
 touch src/modules/auth/services/auth.service.ts
 touch src/modules/auth/strategies/{jwt.strategy.ts,jwt-refresh.strategy.ts,local.strategy.ts}
-touch src/modules/auth/dto/{login.dto.ts,register.dto.ts,refresh-token.dto.ts,change-password.dto.ts}
+touch src/modules/auth/dto/{login.dto.ts,refresh-token.dto.ts,change-password.dto.ts}
 touch src/modules/auth/guards/{jwt-auth.guard.ts,local-auth.guard.ts,roles.guard.ts,device.guard.ts}
 
-# Schools (multi-tenant root)
-mkdir -p src/modules/schools/{controllers,services,dto}
-touch src/modules/schools/schools.module.ts
-touch src/modules/schools/controllers/schools.controller.ts
-touch src/modules/schools/services/schools.service.ts
-touch src/modules/schools/dto/{create-school.dto.ts,update-school.dto.ts}
+# Tenants (multi-tenant root)
+mkdir -p src/modules/tenants/{controllers,services,dto}
+touch src/modules/tenants/tenants.module.ts
+touch src/modules/tenants/controllers/tenants.controller.ts
+touch src/modules/tenants/services/tenants.service.ts
+touch src/modules/tenants/dto/{create-tenant.dto.ts,update-tenant.dto.ts}
 
 # Users
 mkdir -p src/modules/users/{controllers,services,dto}
@@ -66,7 +66,7 @@ touch src/modules/question-tags/controllers/question-tags.controller.ts
 touch src/modules/question-tags/services/question-tags.service.ts
 touch src/modules/question-tags/dto/{create-tag.dto.ts,update-tag.dto.ts}
 
-# Questions (Question Bank)
+# Questions (Bank Soal)
 mkdir -p src/modules/questions/{controllers,services,dto,interfaces}
 touch src/modules/questions/questions.module.ts
 touch src/modules/questions/controllers/questions.controller.ts
@@ -74,13 +74,13 @@ touch src/modules/questions/services/{questions.service.ts,question-import.servi
 touch src/modules/questions/dto/{create-question.dto.ts,update-question.dto.ts,import-questions.dto.ts,approve-question.dto.ts}
 touch src/modules/questions/interfaces/{question-options.interface.ts,correct-answer.interface.ts}
 
-# Exams
-mkdir -p src/modules/exams/{controllers,services,dto,interfaces}
-touch src/modules/exams/exams.module.ts
-touch src/modules/exams/controllers/exams.controller.ts
-touch src/modules/exams/services/{exams.service.ts,exam-statistics.service.ts,item-analysis.service.ts}
-touch src/modules/exams/dto/{create-exam.dto.ts,update-exam.dto.ts,publish-exam.dto.ts,add-questions.dto.ts}
-touch src/modules/exams/interfaces/exam-settings.interface.ts
+# Exam Packages
+mkdir -p src/modules/exam-packages/{controllers,services,dto,interfaces}
+touch src/modules/exam-packages/exam-packages.module.ts
+touch src/modules/exam-packages/controllers/exam-packages.controller.ts
+touch src/modules/exam-packages/services/{exam-packages.service.ts,exam-package-builder.service.ts,item-analysis.service.ts}
+touch src/modules/exam-packages/dto/{create-exam-package.dto.ts,update-exam-package.dto.ts,publish-exam-package.dto.ts,add-questions.dto.ts}
+touch src/modules/exam-packages/interfaces/exam-package-settings.interface.ts
 
 # Exam Rooms
 mkdir -p src/modules/exam-rooms/{controllers,services,dto}
@@ -89,20 +89,20 @@ touch src/modules/exam-rooms/controllers/exam-rooms.controller.ts
 touch src/modules/exam-rooms/services/exam-rooms.service.ts
 touch src/modules/exam-rooms/dto/{create-room.dto.ts,update-room.dto.ts}
 
-# Exam Sessions
-mkdir -p src/modules/exam-sessions/{controllers,services,dto}
-touch src/modules/exam-sessions/exam-sessions.module.ts
-touch src/modules/exam-sessions/controllers/exam-sessions.controller.ts
-touch src/modules/exam-sessions/services/{exam-sessions.service.ts,session-monitoring.service.ts}
-touch src/modules/exam-sessions/dto/{create-session.dto.ts,update-session.dto.ts,assign-students.dto.ts}
+# Sessions
+mkdir -p src/modules/sessions/{controllers,services,dto}
+touch src/modules/sessions/sessions.module.ts
+touch src/modules/sessions/controllers/sessions.controller.ts
+touch src/modules/sessions/services/{sessions.service.ts,session-monitoring.service.ts}
+touch src/modules/sessions/dto/{create-session.dto.ts,update-session.dto.ts,assign-students.dto.ts}
 
-# Exam Attempts (CRITICAL — Student Exam Flow)
-mkdir -p src/modules/exam-attempts/{controllers,services,dto,interfaces}
-touch src/modules/exam-attempts/exam-attempts.module.ts
-touch src/modules/exam-attempts/controllers/{student-exam.controller.ts,exam-attempts.controller.ts}
-touch src/modules/exam-attempts/services/{exam-attempts.service.ts,exam-download.service.ts,exam-submission.service.ts,auto-grading.service.ts}
-touch src/modules/exam-attempts/dto/{start-attempt.dto.ts,submit-answer.dto.ts,submit-exam.dto.ts,upload-media.dto.ts}
-touch src/modules/exam-attempts/interfaces/{exam-package.interface.ts,grading-result.interface.ts}
+# Submissions (CRITICAL — Student Exam Flow)
+mkdir -p src/modules/submissions/{controllers,services,dto,interfaces}
+touch src/modules/submissions/submissions.module.ts
+touch src/modules/submissions/controllers/{student-exam.controller.ts,submissions.controller.ts}
+touch src/modules/submissions/services/{submissions.service.ts,exam-download.service.ts,exam-submission.service.ts,auto-grading.service.ts}
+touch src/modules/submissions/dto/{start-attempt.dto.ts,submit-answer.dto.ts,submit-exam.dto.ts,upload-media.dto.ts}
+touch src/modules/submissions/interfaces/{exam-package.interface.ts,grading-result.interface.ts}
 
 # Grading
 mkdir -p src/modules/grading/{controllers,services,dto}
@@ -111,27 +111,15 @@ touch src/modules/grading/controllers/grading.controller.ts
 touch src/modules/grading/services/{grading.service.ts,manual-grading.service.ts}
 touch src/modules/grading/dto/{grade-answer.dto.ts,complete-grading.dto.ts,publish-result.dto.ts}
 
-# Activity Logs
-mkdir -p src/modules/activity-logs/{controllers,services,dto}
-touch src/modules/activity-logs/activity-logs.module.ts
-touch src/modules/activity-logs/controllers/activity-logs.controller.ts
-touch src/modules/activity-logs/services/activity-logs.service.ts
-touch src/modules/activity-logs/dto/create-activity-log.dto.ts
+# Sync (CRITICAL — Offline Sync)
+mkdir -p src/modules/sync/{controllers,services,processors,dto}
+touch src/modules/sync/sync.module.ts
+touch src/modules/sync/controllers/sync.controller.ts
+touch src/modules/sync/services/{sync.service.ts,sync-processor.service.ts,chunked-upload.service.ts}
+touch src/modules/sync/processors/sync.processor.ts
+touch src/modules/sync/dto/{add-sync-item.dto.ts,retry-sync.dto.ts}
 
-# System Logs
-mkdir -p src/modules/system-logs/services
-touch src/modules/system-logs/system-logs.module.ts
-touch src/modules/system-logs/services/system-logs.service.ts
-
-# Sync Queue (CRITICAL — Offline Sync)
-mkdir -p src/modules/sync-queue/{controllers,services,processors,dto}
-touch src/modules/sync-queue/sync-queue.module.ts
-touch src/modules/sync-queue/controllers/sync-queue.controller.ts
-touch src/modules/sync-queue/services/{sync-queue.service.ts,sync-processor.service.ts,chunked-upload.service.ts}
-touch src/modules/sync-queue/processors/sync-queue.processor.ts
-touch src/modules/sync-queue/dto/{add-sync-item.dto.ts,retry-sync.dto.ts}
-
-# Monitoring
+# Monitoring (real-time via Socket.IO)
 mkdir -p src/modules/monitoring/{controllers,services,gateways}
 touch src/modules/monitoring/monitoring.module.ts
 touch src/modules/monitoring/controllers/monitoring.controller.ts
@@ -142,8 +130,16 @@ touch src/modules/monitoring/gateways/monitoring.gateway.ts
 mkdir -p src/modules/analytics/{controllers,services,dto}
 touch src/modules/analytics/analytics.module.ts
 touch src/modules/analytics/controllers/analytics.controller.ts
-touch src/modules/analytics/services/{analytics.service.ts,dashboard.service.ts,reports.service.ts}
-touch src/modules/analytics/dto/{analytics-filter.dto.ts,export-report.dto.ts}
+touch src/modules/analytics/services/{analytics.service.ts,dashboard.service.ts}
+touch src/modules/analytics/dto/analytics-filter.dto.ts
+
+# Reports
+mkdir -p src/modules/reports/{controllers,services,dto,processors}
+touch src/modules/reports/reports.module.ts
+touch src/modules/reports/controllers/reports.controller.ts
+touch src/modules/reports/services/{excel-export.service.ts,pdf-export.service.ts}
+touch src/modules/reports/dto/export-filter.dto.ts
+touch src/modules/reports/processors/report-queue.processor.ts
 
 # Media
 mkdir -p src/modules/media/{controllers,services,dto}
@@ -152,26 +148,25 @@ touch src/modules/media/controllers/media.controller.ts
 touch src/modules/media/services/{media.service.ts,media-upload.service.ts,media-compression.service.ts}
 touch src/modules/media/dto/{upload-media.dto.ts,delete-media.dto.ts}
 
-# Import/Export
-mkdir -p src/modules/import-export/{controllers,services,dto,processors}
-touch src/modules/import-export/import-export.module.ts
-touch src/modules/import-export/controllers/import-export.controller.ts
-touch src/modules/import-export/services/{excel-import.service.ts,excel-export.service.ts,pdf-export.service.ts}
-touch src/modules/import-export/dto/{import-file.dto.ts,export-filter.dto.ts}
-touch src/modules/import-export/processors/import-queue.processor.ts
-
-# Notifications
-mkdir -p src/modules/notifications/{controllers,services,dto}
-touch src/modules/notifications/notifications.module.ts
-touch src/modules/notifications/controllers/notifications.controller.ts
-touch src/modules/notifications/services/{notifications.service.ts,email.service.ts}
-touch src/modules/notifications/dto/{create-notification.dto.ts,mark-read.dto.ts}
+# Activity Logs
+mkdir -p src/modules/activity-logs/{controllers,services,dto}
+touch src/modules/activity-logs/activity-logs.module.ts
+touch src/modules/activity-logs/controllers/activity-logs.controller.ts
+touch src/modules/activity-logs/services/activity-logs.service.ts
+touch src/modules/activity-logs/dto/create-activity-log.dto.ts
 
 # Audit Logs
 mkdir -p src/modules/audit-logs/{services,decorators}
 touch src/modules/audit-logs/audit-logs.module.ts
 touch src/modules/audit-logs/services/audit-logs.service.ts
 touch src/modules/audit-logs/decorators/audit.decorator.ts
+
+# Notifications
+mkdir -p src/modules/notifications/{controllers,services,dto}
+touch src/modules/notifications/notifications.module.ts
+touch src/modules/notifications/controllers/notifications.controller.ts
+touch src/modules/notifications/services/notifications.service.ts
+touch src/modules/notifications/dto/{create-notification.dto.ts,mark-read.dto.ts}
 
 # Health
 mkdir -p src/modules/health/controllers
@@ -186,7 +181,7 @@ echo "Creating common utilities..."
 
 touch src/common/decorators/{current-user.decorator.ts,tenant-id.decorator.ts,roles.decorator.ts,public.decorator.ts,idempotency.decorator.ts}
 touch src/common/dto/{pagination.dto.ts,base-query.dto.ts,base-response.dto.ts}
-touch src/common/enums/{user-role.enum.ts,exam-type.enum.ts,exam-status.enum.ts,question-type.enum.ts,sync-status.enum.ts,log-level.enum.ts}
+touch src/common/enums/{user-role.enum.ts,exam-status.enum.ts,question-type.enum.ts,sync-status.enum.ts,grading-status.enum.ts}
 touch src/common/exceptions/{tenant-not-found.exception.ts,device-locked.exception.ts,exam-not-available.exception.ts,idempotency-conflict.exception.ts}
 touch src/common/filters/{http-exception.filter.ts,all-exceptions.filter.ts}
 touch src/common/guards/{tenant.guard.ts,throttler.guard.ts}
@@ -194,7 +189,7 @@ touch src/common/interceptors/{tenant.interceptor.ts,logging.interceptor.ts,tran
 touch src/common/middleware/{logger.middleware.ts,performance.middleware.ts,subdomain.middleware.ts}
 touch src/common/pipes/{validation.pipe.ts,parse-int.pipe.ts}
 touch src/common/utils/{encryption.util.ts,checksum.util.ts,device-fingerprint.util.ts,time-validation.util.ts,randomizer.util.ts,similarity.util.ts,file.util.ts,presigned-url.util.ts}
-touch src/common/validators/{is-school-exists.validator.ts,is-unique.validator.ts}
+touch src/common/validators/{is-tenant-exists.validator.ts,is-unique.validator.ts}
 
 # ============================================
 # CONFIG
@@ -210,11 +205,11 @@ touch src/config/{database.config.ts,jwt.config.ts,redis.config.ts,multer.config
 
 echo "Creating Prisma structure..."
 
-touch src/prisma/seeds/{01-schools.seed.ts,02-users.seed.ts,03-subjects.seed.ts,index.ts}
-touch src/prisma/factories/{user.factory.ts,question.factory.ts,exam.factory.ts}
+touch src/prisma/seeds/{01-tenants.seed.ts,02-users.seed.ts,03-subjects.seed.ts,index.ts}
+touch src/prisma/factories/{user.factory.ts,question.factory.ts,exam-package.factory.ts}
 
 # ============================================
-# ROOT FILES
+# ROOT SRC FILES
 # ============================================
 
 touch src/{main.ts,app.module.ts,app.controller.ts,app.service.ts}
@@ -226,13 +221,13 @@ touch src/{main.ts,app.module.ts,app.controller.ts,app.service.ts}
 echo "Creating test structure..."
 
 mkdir -p test/{unit,integration,e2e,load}
-mkdir -p test/unit/{auth,questions,exams,grading,sync}
+mkdir -p test/unit/{auth,questions,exam-packages,grading,sync}
 
 touch test/unit/auth/auth.service.spec.ts
 touch test/unit/questions/questions.service.spec.ts
-touch test/unit/exams/exams.service.spec.ts
+touch test/unit/exam-packages/exam-packages.service.spec.ts
 touch test/unit/grading/auto-grading.service.spec.ts
-touch test/unit/sync/sync-queue.service.spec.ts
+touch test/unit/sync/sync.service.spec.ts
 touch test/integration/{database.spec.ts,redis.spec.ts,minio.spec.ts}
 touch test/e2e/{auth.e2e-spec.ts,student-exam-flow.e2e-spec.ts,grading.e2e-spec.ts,offline-sync.e2e-spec.ts}
 touch test/load/{exam-download.k6.js,concurrent-submission.k6.js,sync-stress.k6.js}
@@ -241,11 +236,8 @@ touch test/load/{exam-download.k6.js,concurrent-submission.k6.js,sync-stress.k6.
 # LOGS & UPLOADS
 # ============================================
 
-mkdir -p logs
-touch logs/.gitkeep
-
-mkdir -p uploads/{questions,answers,media,temp}
-touch uploads/.gitkeep
+mkdir -p logs uploads/{questions,answers,media,temp}
+touch logs/.gitkeep uploads/.gitkeep
 
 # ============================================
 # DOCS
@@ -274,8 +266,7 @@ cat > package.json << 'EOF'
 {
   "name": "exam-backend",
   "version": "1.0.0",
-  "description": "Exam/Assessment System API - Offline-First Multi-Tenant",
-  "author": "Your Team",
+  "description": "Exam System API — Offline-First Multi-Tenant",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -464,23 +455,23 @@ datasource db {
 // MULTI-TENANT ROOT
 // ============================================
 
-model School {
-  id          String   @id @default(cuid())
-  name        String
-  code        String   @unique
-  subdomain   String   @unique
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  subdomain String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users       User[]
-  subjects    Subject[]
-  questions   Question[]
-  exams       Exam[]
-  sessions    ExamSession[]
-  auditLogs   AuditLog[]
+  users        User[]
+  subjects     Subject[]
+  questions    Question[]
+  examPackages ExamPackage[]
+  sessions     ExamSession[]
+  auditLogs    AuditLog[]
 
-  @@map("schools")
+  @@map("tenants")
 }
 
 // ============================================
@@ -488,37 +479,37 @@ model School {
 // ============================================
 
 model User {
-  id           String    @id @default(cuid())
-  schoolId     String
+  id           String   @id @default(cuid())
+  tenantId     String
   email        String
   username     String
   passwordHash String
   role         UserRole
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  school         School          @relation(fields: [schoolId], references: [id])
-  refreshTokens  RefreshToken[]
-  devices        UserDevice[]
-  attempts       ExamAttempt[]
-  activityLogs   ExamActivityLog[]
-  gradedAnswers  ExamAnswer[]    @relation("GradedBy")
-  auditLogs      AuditLog[]
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  refreshTokens RefreshToken[]
+  devices       UserDevice[]
+  attempts      ExamAttempt[]
+  activityLogs  ExamActivityLog[]
+  gradedAnswers ExamAnswer[]      @relation("GradedBy")
+  auditLogs     AuditLog[]
 
-  @@unique([schoolId, email])
-  @@unique([schoolId, username])
-  @@index([schoolId])
+  @@unique([tenantId, email])
+  @@unique([tenantId, username])
+  @@index([tenantId])
   @@map("users")
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  token     String   @unique
+  token     String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -549,54 +540,53 @@ model UserDevice {
 
 model Subject {
   id        String   @id @default(cuid())
-  schoolId  String
+  tenantId  String
   name      String
   code      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school    School     @relation(fields: [schoolId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
   questions Question[]
 
-  @@unique([schoolId, code])
-  @@index([schoolId])
+  @@unique([tenantId, code])
+  @@index([tenantId])
   @@map("subjects")
 }
 
 model QuestionTag {
-  id        String   @id @default(cuid())
-  schoolId  String
-  name      String
-  createdAt DateTime @default(now())
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
 
   questions QuestionTagMapping[]
 
-  @@unique([schoolId, name])
+  @@unique([tenantId, name])
   @@map("question_tags")
 }
 
 model Question {
-  id           String       @id @default(cuid())
-  schoolId     String
-  subjectId    String
-  type         QuestionType
-  content      Json         // { text, images, audio, video }
-  options      Json?        // untuk tipe pilihan ganda & menjodohkan
-  correctAnswer Json        // terenkripsi di level aplikasi
-  points       Int          @default(1)
-  difficulty   Int          @default(1) // 1-5
-  status       String       @default("draft") // draft | review | approved
-  createdById  String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id            String       @id @default(cuid())
+  tenantId      String
+  subjectId     String
+  type          QuestionType
+  content       Json         // { text, images, audio, video }
+  options       Json?        // untuk tipe pilihan ganda & menjodohkan
+  correctAnswer Json         // terenkripsi di level aplikasi
+  points        Int          @default(1)
+  difficulty    Int          @default(1) // 1–5
+  status        String       @default("draft") // draft | review | approved
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  school       School               @relation(fields: [schoolId], references: [id])
-  subject      Subject              @relation(fields: [subjectId], references: [id])
-  tags         QuestionTagMapping[]
-  examQuestions ExamQuestion[]
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
+  subject          Subject              @relation(fields: [subjectId], references: [id])
+  tags             QuestionTagMapping[]
+  examPackageItems ExamPackageQuestion[]
 
-  @@index([schoolId])
-  @@index([schoolId, subjectId])
+  @@index([tenantId])
+  @@index([tenantId, subjectId])
   @@map("questions")
 }
 
@@ -612,43 +602,43 @@ model QuestionTagMapping {
 }
 
 // ============================================
-// EXAMS
+// EXAM PACKAGES
 // ============================================
 
-model Exam {
-  id          String     @id @default(cuid())
-  schoolId    String
+model ExamPackage {
+  id          String            @id @default(cuid())
+  tenantId    String
   title       String
   description String?
   subjectId   String?
-  settings    Json       // { duration, shuffleQuestions, shuffleOptions, showResult, maxAttempts, ... }
-  status      ExamStatus @default(DRAFT)
+  settings    Json              // { duration, shuffleQuestions, shuffleOptions, showResult, maxAttempts }
+  status      ExamPackageStatus @default(DRAFT)
   publishedAt DateTime?
   createdById String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
-  school    School          @relation(fields: [schoolId], references: [id])
-  questions ExamQuestion[]
+  tenant    Tenant               @relation(fields: [tenantId], references: [id])
+  questions ExamPackageQuestion[]
   sessions  ExamSession[]
 
-  @@index([schoolId])
-  @@map("exams")
+  @@index([tenantId])
+  @@map("exam_packages")
 }
 
-model ExamQuestion {
-  id         String @id @default(cuid())
-  examId     String
-  questionId String
-  order      Int
-  points     Int?   // override points dari question
+model ExamPackageQuestion {
+  id            String @id @default(cuid())
+  examPackageId String
+  questionId    String
+  order         Int
+  points        Int?   // override points dari question
 
-  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id])
+  examPackage ExamPackage @relation(fields: [examPackageId], references: [id], onDelete: Cascade)
+  question    Question    @relation(fields: [questionId], references: [id])
 
-  @@unique([examId, questionId])
-  @@unique([examId, order])
-  @@map("exam_questions")
+  @@unique([examPackageId, questionId])
+  @@unique([examPackageId, order])
+  @@map("exam_package_questions")
 }
 
 // ============================================
@@ -656,46 +646,45 @@ model ExamQuestion {
 // ============================================
 
 model ExamRoom {
-  id        String   @id @default(cuid())
-  schoolId  String
-  name      String
-  capacity  Int?
-  createdAt DateTime @default(now())
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
+  capacity Int?
 
   sessions ExamSession[]
 
-  @@index([schoolId])
+  @@index([tenantId])
   @@map("exam_rooms")
 }
 
 model ExamSession {
-  id          String        @id @default(cuid())
-  schoolId    String
-  examId      String
-  roomId      String?
-  title       String
-  startTime   DateTime
-  endTime     DateTime
-  status      SessionStatus @default(SCHEDULED)
-  createdById String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  tenantId      String
+  examPackageId String
+  roomId        String?
+  title         String
+  startTime     DateTime
+  endTime       DateTime
+  status        SessionStatus @default(SCHEDULED)
+  createdById   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  school   School        @relation(fields: [schoolId], references: [id])
-  exam     Exam          @relation(fields: [examId], references: [id])
-  room     ExamRoom?     @relation(fields: [roomId], references: [id])
-  students SessionStudent[]
-  attempts ExamAttempt[]
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  examPackage ExamPackage     @relation(fields: [examPackageId], references: [id])
+  room        ExamRoom?       @relation(fields: [roomId], references: [id])
+  students    SessionStudent[]
+  attempts    ExamAttempt[]
 
-  @@index([schoolId])
-  @@index([schoolId, examId])
+  @@index([tenantId])
+  @@index([tenantId, examPackageId])
   @@map("exam_sessions")
 }
 
 model SessionStudent {
   sessionId String
   userId    String
-  tokenCode String  @unique // token unik per peserta per sesi
+  tokenCode String   @unique
   addedAt   DateTime @default(now())
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -709,23 +698,23 @@ model SessionStudent {
 // ============================================
 
 model ExamAttempt {
-  id              String        @id @default(cuid())
-  sessionId       String
-  userId          String
-  idempotencyKey  String        @unique // prevent duplicate submission
+  id                String        @id @default(cuid())
+  sessionId         String
+  userId            String
+  idempotencyKey    String        @unique
   deviceFingerprint String?
-  startedAt       DateTime      @default(now())
-  submittedAt     DateTime?
-  status          AttemptStatus @default(IN_PROGRESS)
-  packageHash     String?       // checksum paket soal yang diunduh
-  totalScore      Float?
-  maxScore        Float?
-  gradingStatus   GradingStatus @default(PENDING)
+  startedAt         DateTime      @default(now())
+  submittedAt       DateTime?
+  status            AttemptStatus @default(IN_PROGRESS)
+  packageHash       String?
+  totalScore        Float?
+  maxScore          Float?
+  gradingStatus     GradingStatus @default(PENDING)
   gradingCompletedAt DateTime?
 
-  session  ExamSession  @relation(fields: [sessionId], references: [id])
-  user     User         @relation(fields: [userId], references: [id])
-  answers  ExamAnswer[]
+  session      ExamSession       @relation(fields: [sessionId], references: [id])
+  user         User              @relation(fields: [userId], references: [id])
+  answers      ExamAnswer[]
   activityLogs ExamActivityLog[]
   syncItems    SyncQueue[]
 
@@ -736,20 +725,20 @@ model ExamAttempt {
 }
 
 model ExamAnswer {
-  id              String   @id @default(cuid())
-  attemptId       String
-  questionId      String
-  idempotencyKey  String   @unique
-  answer          Json     // jawaban terenkripsi
-  mediaUrls       String[] // presigned MinIO paths
-  score           Float?
-  maxScore        Float?
-  feedback        String?
-  isAutoGraded    Boolean  @default(false)
-  gradedById      String?
-  gradedAt        DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  attemptId      String
+  questionId     String
+  idempotencyKey String   @unique
+  answer         Json
+  mediaUrls      String[]
+  score          Float?
+  maxScore       Float?
+  feedback       String?
+  isAutoGraded   Boolean  @default(false)
+  gradedById     String?
+  gradedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   gradedBy User?       @relation("GradedBy", fields: [gradedById], references: [id])
@@ -805,7 +794,7 @@ model ExamActivityLog {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  schoolId   String
+  tenantId   String
   userId     String?
   action     String   // START_EXAM | SUBMIT_EXAM | CHANGE_SCORE | ADMIN_ACCESS | ...
   entityType String
@@ -816,11 +805,11 @@ model AuditLog {
   userAgent  String?
   createdAt  DateTime @default(now())
 
-  school School @relation(fields: [schoolId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
   user   User?  @relation(fields: [userId], references: [id])
 
-  @@index([schoolId])
-  @@index([schoolId, action])
+  @@index([tenantId])
+  @@index([tenantId, action])
   @@map("audit_logs")
 }
 
@@ -864,7 +853,7 @@ enum QuestionType {
   ESSAY
 }
 
-enum ExamStatus {
+enum ExamPackageStatus {
   DRAFT
   REVIEW
   PUBLISHED
@@ -925,7 +914,7 @@ APP_URL=http://localhost:3000
 DATABASE_URL=postgresql://exam_user:password@pgbouncer:5432/exam_db
 DATABASE_DIRECT_URL=postgresql://exam_user:password@postgres:5432/exam_db
 
-# Redis (ioredis — gunakan Sentinel di production)
+# Redis
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
@@ -951,7 +940,7 @@ MINIO_PRESIGNED_TTL=3600
 # BullMQ
 BULLMQ_CONCURRENCY=10
 
-# Rate Limiting (@nestjs/throttler)
+# Rate Limiting
 THROTTLE_TTL=60
 THROTTLE_LIMIT=100
 
@@ -1169,20 +1158,17 @@ EOF
 
 echo ""
 echo "=========================================="
-echo "Backend structure created successfully!"
+echo "exam-backend structure created!"
 echo "=========================================="
 echo ""
-echo "Next steps:"
 echo "  cd $PROJECT_NAME"
 echo "  npm install"
 echo "  cp .env.example .env"
-echo "  # Edit .env sesuai konfigurasi lokal"
 echo "  docker-compose up -d postgres redis minio"
 echo "  npm run db:migrate:dev"
 echo "  npm run db:seed"
 echo "  npm run start:dev"
 echo ""
-echo "API Docs : http://localhost:3000/api/docs"
-echo "Health   : http://localhost:3000/api/health"
-echo "MinIO    : http://localhost:9001"
-echo ""
+echo "Swagger : http://localhost:3000/api/docs"
+echo "Health  : http://localhost:3000/api/health"
+echo "MinIO   : http://localhost:9001"

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script untuk membuat struktur project exam-frontend (Next.js)
-# Sistem Asesmen Sekolah/Madrasah - Offline-First Multi-Tenant
-# Stack: Next.js 15 (App Router) + TypeScript + Tailwind + DaisyUI
+# Setup exam-frontend — Next.js 15 App Router (PWA)
+# Sistem Ujian Offline-First Multi-Tenant
+# Stack: Next.js 15 + TypeScript + Tailwind + DaisyUI
 #        Zustand + Dexie + PowerSync + ky + Zod + Web Crypto API
 
-set -e
+set -euo pipefail
 
 PROJECT_NAME="exam-frontend"
 
@@ -14,8 +14,8 @@ echo "Creating $PROJECT_NAME Next.js project"
 echo "Offline-First Exam System Frontend"
 echo "=========================================="
 
-mkdir -p $PROJECT_NAME
-cd $PROJECT_NAME
+mkdir -p "$PROJECT_NAME"
+cd "$PROJECT_NAME"
 
 # ============================================
 # APP ROUTER — ROUTE GROUPS
@@ -23,19 +23,17 @@ cd $PROJECT_NAME
 
 echo "Creating App Router structure..."
 
-# Root layout & global pages
 mkdir -p src/app
-touch src/app/{layout.tsx,page.tsx,not-found.tsx,loading.tsx}
-touch src/app/global.css
+touch src/app/{layout.tsx,page.tsx,not-found.tsx,loading.tsx,global.css}
 
-# Route group: (auth)
+# (auth)
 mkdir -p src/app/\(auth\)/login
 touch src/app/\(auth\)/layout.tsx
 touch src/app/\(auth\)/login/page.tsx
 
-# Route group: (siswa)
+# (siswa)
 mkdir -p src/app/\(siswa\)/{dashboard,profile}
-mkdir -p src/app/\(siswa\)/ujian/{download,result}
+mkdir -p src/app/\(siswa\)/ujian/{download}
 mkdir -p "src/app/(siswa)/ujian/[sessionId]"
 mkdir -p "src/app/(siswa)/ujian/[sessionId]/review"
 mkdir -p "src/app/(siswa)/ujian/[sessionId]/result"
@@ -48,7 +46,7 @@ touch "src/app/(siswa)/ujian/[sessionId]/page.tsx"
 touch "src/app/(siswa)/ujian/[sessionId]/review/page.tsx"
 touch "src/app/(siswa)/ujian/[sessionId]/result/page.tsx"
 
-# Route group: (guru)
+# (guru)
 mkdir -p src/app/\(guru\)/{dashboard,hasil}
 mkdir -p src/app/\(guru\)/soal/{create,import}
 mkdir -p "src/app/(guru)/soal/[id]/edit"
@@ -72,7 +70,7 @@ touch "src/app/(guru)/ujian/[id]/statistics/page.tsx"
 touch src/app/\(guru\)/grading/page.tsx
 touch "src/app/(guru)/grading/[attemptId]/page.tsx"
 
-# Route group: (pengawas)
+# (pengawas)
 mkdir -p src/app/\(pengawas\)/dashboard
 mkdir -p src/app/\(pengawas\)/monitoring/live
 mkdir -p "src/app/(pengawas)/monitoring/[sessionId]"
@@ -81,7 +79,7 @@ touch src/app/\(pengawas\)/dashboard/page.tsx
 touch src/app/\(pengawas\)/monitoring/live/page.tsx
 touch "src/app/(pengawas)/monitoring/[sessionId]/page.tsx"
 
-# Route group: (operator)
+# (operator)
 mkdir -p src/app/\(operator\)/{dashboard,laporan}
 mkdir -p src/app/\(operator\)/sesi/create
 mkdir -p "src/app/(operator)/sesi/[id]/edit"
@@ -100,7 +98,7 @@ touch "src/app/(operator)/ruang/[id]/edit/page.tsx"
 touch src/app/\(operator\)/peserta/page.tsx
 touch src/app/\(operator\)/peserta/import/page.tsx
 
-# Route group: (superadmin)
+# (superadmin)
 mkdir -p src/app/\(superadmin\)/{dashboard,users,settings,audit-logs}
 mkdir -p src/app/\(superadmin\)/schools/create
 mkdir -p "src/app/(superadmin)/schools/[id]/edit"
@@ -113,9 +111,9 @@ touch src/app/\(superadmin\)/schools/page.tsx
 touch src/app/\(superadmin\)/schools/create/page.tsx
 touch "src/app/(superadmin)/schools/[id]/edit/page.tsx"
 
-# API Routes (Route Handlers)
-mkdir -p src/app/api/{health,sync,download,media}
+# API Route Handlers
 mkdir -p src/app/api/auth/{login,logout,refresh}
+mkdir -p src/app/api/{health,sync,download,media}
 touch src/app/api/health/route.ts
 touch src/app/api/auth/login/route.ts
 touch src/app/api/auth/logout/route.ts
@@ -132,38 +130,19 @@ echo "Creating components..."
 
 mkdir -p src/components/{layout,auth,exam,sync,monitoring,grading,questions,analytics,ui,madrasah}
 
-# Layout
 touch src/components/layout/{Header,Sidebar,Footer,MainLayout}.tsx
-
-# Auth
 touch src/components/auth/{LoginForm,DeviceLockWarning}.tsx
 
-# Exam — Question Types
 mkdir -p src/components/exam/question-types
 touch src/components/exam/question-types/{MultipleChoice,MultipleChoiceComplex,TrueFalse,Matching,ShortAnswer,Essay}.tsx
-
-# Exam — Core
 touch src/components/exam/{MediaPlayer,MediaRecorder,QuestionNavigation,ExamTimer,AutoSaveIndicator,ProgressBar,ExamInstructions,ActivityLogger}.tsx
 
-# Sync
 touch src/components/sync/{DownloadProgress,SyncStatus,UploadQueue,ChecksumValidator}.tsx
-
-# Monitoring
 touch src/components/monitoring/{LiveMonitor,StudentProgressCard,ActivityLogViewer}.tsx
-
-# Grading
 touch src/components/grading/{ManualGradingCard,GradingRubric,EssaySimilarityBadge}.tsx
-
-# Questions
 touch src/components/questions/{QuestionEditor,MediaUpload,OptionsEditor,MatchingEditor,TagSelector}.tsx
-
-# Analytics
 touch src/components/analytics/{DashboardStats,ExamStatistics,ItemAnalysisChart,StudentProgress}.tsx
-
-# UI (base components — reusable)
 touch src/components/ui/{Button,Input,Select,Modal,Alert,Toast,Card,Table,Tabs,Loading,Spinner,Badge,Tooltip,Confirm}.tsx
-
-# Madrasah
 touch src/components/madrasah/{QuranDisplay,TajwidMarker,ArabicKeyboard,HafalanRecorder}.tsx
 
 # ============================================
@@ -173,85 +152,41 @@ touch src/components/madrasah/{QuranDisplay,TajwidMarker,ArabicKeyboard,HafalanR
 echo "Creating Zustand stores..."
 
 mkdir -p src/stores
-# Setiap store adalah slice terpisah, digabung via index
-touch src/stores/{auth.store.ts,exam.store.ts,answer.store.ts,sync.store.ts,timer.store.ts,ui.store.ts,activity.store.ts}
-touch src/stores/index.ts  # barrel export semua store
+touch src/stores/{auth.store.ts,exam.store.ts,answer.store.ts,sync.store.ts,timer.store.ts,ui.store.ts,activity.store.ts,index.ts}
 
 # ============================================
-# LIB — API
+# LIB
 # ============================================
 
-echo "Creating lib/api..."
+echo "Creating lib..."
 
+# API (ky client + per-domain functions)
 mkdir -p src/lib/api
-touch src/lib/api/{client.ts,auth.api.ts,exam.api.ts,question.api.ts,sync.api.ts,grading.api.ts,monitoring.api.ts,analytics.api.ts,media.api.ts}
-# client.ts: instance ky dengan base URL, interceptor token, retry
+touch src/lib/api/{client.ts,auth.api.ts,exam-packages.api.ts,questions.api.ts,sessions.api.ts,submissions.api.ts,sync.api.ts,grading.api.ts,monitoring.api.ts,analytics.api.ts,media.api.ts}
 
-# ============================================
-# LIB — DATABASE (IndexedDB via Dexie)
-# ============================================
-
-echo "Creating lib/db..."
-
+# Database (IndexedDB via Dexie)
 mkdir -p src/lib/db
 touch src/lib/db/{schema.ts,db.ts,queries.ts,migrations.ts}
-# db.ts     : inisialisasi Dexie instance (singleton)
-# schema.ts : definisi tabel & versi
-# queries.ts: helper query per tabel (DRY — tidak inline di komponen)
 
-# ============================================
-# LIB — OFFLINE
-# ============================================
-
-echo "Creating lib/offline..."
-
+# Offline orchestration
 mkdir -p src/lib/offline
 touch src/lib/offline/{download.ts,sync.ts,queue.ts,checksum.ts,cache.ts}
-# PowerSync menangani SW; lib ini mengatur orchestration di atas PowerSync
 
-# ============================================
-# LIB — EXAM
-# ============================================
-
-echo "Creating lib/exam..."
-
+# Exam state machine & utilities
 mkdir -p src/lib/exam
 touch src/lib/exam/{controller.ts,randomizer.ts,validator.ts,auto-save.ts,timer.ts,navigation.ts,activity-logger.ts,package-decoder.ts}
-# package-decoder.ts: dekripsi paket soal via Web Crypto API (AES-GCM)
-# auto-save.ts: debounce save ke Dexie, bukan interval mentah
 
-# ============================================
-# LIB — CRYPTO (Web Crypto API wrapper)
-# ============================================
-
-echo "Creating lib/crypto..."
-
+# Web Crypto API wrapper
 mkdir -p src/lib/crypto
 touch src/lib/crypto/{aes-gcm.ts,key-manager.ts,checksum.ts}
-# aes-gcm.ts   : encrypt/decrypt menggunakan native Web Crypto API
-# key-manager.ts: key hanya di memori (sessionStorage-free), rotasi otomatis
-# checksum.ts  : SHA-256 checksum untuk validasi paket soal
 
-# ============================================
-# LIB — MEDIA
-# ============================================
-
-echo "Creating lib/media..."
-
+# Media
 mkdir -p src/lib/media
 touch src/lib/media/{recorder.ts,player.ts,upload.ts,compress.ts,chunked-upload.ts}
-# chunked-upload.ts: split blob besar menjadi chunk sebelum upload ke backend
 
-# ============================================
-# LIB — UTILS
-# ============================================
-
-echo "Creating lib/utils..."
-
+# Utilities
 mkdir -p src/lib/utils
 touch src/lib/utils/{network.ts,device.ts,time.ts,format.ts,error.ts,logger.ts,compression.ts}
-# compression.ts: wrapper CompressionStream native (menggantikan pako)
-# device.ts    : fingerprinting perangkat
 
 # ============================================
 # HOOKS
@@ -263,40 +198,28 @@ mkdir -p src/hooks
 touch src/hooks/{use-exam.ts,use-timer.ts,use-auto-save.ts,use-media-recorder.ts,use-online-status.ts,use-device-warnings.ts,use-auth.ts,use-toast.ts,use-sync-status.ts,use-powersync.ts}
 
 # ============================================
-# TYPES
+# TYPES & SCHEMAS
 # ============================================
 
-echo "Creating types..."
+echo "Creating types and schemas..."
 
 mkdir -p src/types
-touch src/types/{exam.ts,question.ts,answer.ts,user.ts,sync.ts,api.ts,media.ts,activity.ts,common.ts}
-touch src/types/index.ts  # barrel export
-
-# ============================================
-# SCHEMAS (ZOD)
-# ============================================
-
-echo "Creating Zod schemas..."
+touch src/types/{exam.ts,question.ts,answer.ts,user.ts,sync.ts,api.ts,media.ts,activity.ts,common.ts,index.ts}
 
 mkdir -p src/schemas
 touch src/schemas/{auth.schema.ts,exam.schema.ts,question.schema.ts,answer.schema.ts,sync.schema.ts,user.schema.ts}
-# Digunakan di form validation dan response parsing
 
 # ============================================
-# MIDDLEWARE (Next.js)
+# MIDDLEWARE
 # ============================================
 
-echo "Creating middleware..."
-
-touch src/middleware.ts  # Next.js root middleware
+touch src/middleware.ts
 mkdir -p src/lib/middleware
 touch src/lib/middleware/{auth.middleware.ts,tenant.middleware.ts,role.middleware.ts}
 
 # ============================================
 # STYLES
 # ============================================
-
-echo "Creating styles..."
 
 mkdir -p src/styles
 touch src/styles/{arabic.css,print.css,animations.css}
@@ -305,11 +228,25 @@ touch src/styles/{arabic.css,print.css,animations.css}
 # PUBLIC ASSETS
 # ============================================
 
-echo "Creating public assets..."
-
 mkdir -p public/{fonts,icons,images}
 touch public/{manifest.json,robots.txt}
-# Tidak ada service-worker.js manual — PowerSync mengelola SW-nya sendiri
+
+# ============================================
+# TESTS
+# ============================================
+
+echo "Creating test structure..."
+
+mkdir -p src/tests/{unit,integration}
+mkdir -p src/tests/unit/{stores,hooks,lib}
+touch src/tests/unit/stores/{auth.store.spec.ts,exam.store.spec.ts,answer.store.spec.ts}
+touch src/tests/unit/hooks/{use-timer.spec.ts,use-auto-save.spec.ts,use-online-status.spec.ts}
+touch src/tests/unit/lib/{aes-gcm.spec.ts,checksum.spec.ts,compression.spec.ts,auto-save.spec.ts}
+touch src/tests/integration/{dexie.spec.ts,sync.spec.ts}
+touch src/tests/setup.ts
+
+mkdir -p tests/e2e
+touch tests/e2e/{auth.spec.ts,exam-flow.spec.ts,offline-sync.spec.ts,grading.spec.ts,media-recording.spec.ts}
 
 # ============================================
 # PACKAGE.JSON
@@ -321,7 +258,7 @@ cat > package.json << 'EOF'
 {
   "name": "exam-frontend",
   "version": "1.0.0",
-  "description": "Offline-First Exam System Frontend - Multi-Tenant",
+  "description": "Offline-First Exam System Frontend — Multi-Tenant",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -386,13 +323,7 @@ cat > next.config.ts << 'EOF'
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  // Aktifkan strict mode React
   reactStrictMode: true,
-
-  // Ekspor header CSP via next-safe dikonfigurasi di middleware
-  // sehingga bisa bersifat dinamis per-tenant
-
-  // Konfigurasi image untuk MinIO
   images: {
     remotePatterns: [
       {
@@ -402,8 +333,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
-  // Webpack: aktifkan Web Crypto API polyfill di SSR jika perlu
   webpack(config) {
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -411,11 +340,6 @@ const nextConfig: NextConfig = {
     }
     return config
   },
-
-  // Bundle analyzer (aktifkan saat profiling)
-  // bundlePagesRouterDependencies: true,
-
-  // Experimental: optimasi untuk PWA
   experimental: {
     optimizePackageImports: ['chart.js', 'dexie'],
   },
@@ -615,7 +539,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: false, // ujian memerlukan sequential state
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
@@ -625,9 +549,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
-    // Desktop
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    // Android (simulasi)
     { name: 'android-chrome', use: { ...devices['Pixel 5'] } },
     { name: 'android-tablet', use: { ...devices['Galaxy Tab S4'] } },
   ],
@@ -643,11 +565,9 @@ EOF
 # TEST SETUP
 # ============================================
 
-mkdir -p src/tests
 cat > src/tests/setup.ts << 'EOF'
 import '@testing-library/jest-dom'
 
-// Mock Web Crypto API untuk unit test
 Object.defineProperty(globalThis, 'crypto', {
   value: {
     subtle: {
@@ -665,7 +585,6 @@ Object.defineProperty(globalThis, 'crypto', {
   },
 })
 
-// Mock IndexedDB untuk unit test
 vi.mock('dexie', () => ({
   default: vi.fn().mockImplementation(() => ({
     version: vi.fn().mockReturnThis(),
@@ -674,7 +593,6 @@ vi.mock('dexie', () => ({
   })),
 }))
 
-// Mock PowerSync
 vi.mock('@powersync/react', () => ({
   usePowerSync: vi.fn(),
   PowerSyncContext: { Provider: ({ children }: { children: React.ReactNode }) => children },
@@ -682,47 +600,21 @@ vi.mock('@powersync/react', () => ({
 EOF
 
 # ============================================
-# TEST STRUCTURE
-# ============================================
-
-mkdir -p src/tests/{unit,integration}
-mkdir -p src/tests/unit/{stores,hooks,lib}
-touch src/tests/unit/stores/{auth.store.spec.ts,exam.store.spec.ts,answer.store.spec.ts}
-touch src/tests/unit/hooks/{use-timer.spec.ts,use-auto-save.spec.ts,use-online-status.spec.ts}
-touch src/tests/unit/lib/{aes-gcm.spec.ts,checksum.spec.ts,compression.spec.ts,auto-save.spec.ts}
-touch src/tests/integration/{dexie.spec.ts,sync.spec.ts}
-
-mkdir -p tests/e2e
-touch tests/e2e/{auth.spec.ts,exam-flow.spec.ts,offline-sync.spec.ts,grading.spec.ts,media-recording.spec.ts}
-
-# ============================================
-# ENV EXAMPLE
+# ENV FILES
 # ============================================
 
 cat > .env.example << 'EOF'
-# App
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
-
-# PowerSync
 NEXT_PUBLIC_POWERSYNC_URL=https://sync.example.com
-
-# MinIO
 NEXT_PUBLIC_MINIO_ENDPOINT=minio.example.com
-NEXT_PUBLIC_MINIO_PRESIGNED_TTL=3600
-
-# Tenant
 NEXT_PUBLIC_TENANT_DOMAIN=exam.example.com
 
-# Feature Flags
 NEXT_PUBLIC_ENABLE_RECORDING=true
-NEXT_PUBLIC_AUTOSAVE_INTERVAL=30000  # ms — digunakan sebagai debounce delay
-NEXT_PUBLIC_MAX_RECORDING_DURATION=300  # detik
-NEXT_PUBLIC_MAX_RECORDING_SIZE=1073741824  # bytes (1 GB)
+NEXT_PUBLIC_AUTOSAVE_INTERVAL=30000
+NEXT_PUBLIC_MAX_RECORDING_DURATION=300
+NEXT_PUBLIC_MAX_RECORDING_SIZE=1073741824
 NEXT_PUBLIC_MIN_STORAGE_MB=2048
-
-# Development
-NODE_ENV=development
 EOF
 
 cat > .env.local << 'EOF'
@@ -790,30 +682,24 @@ node_modules/
 out/
 dist/
 .env
-.env.local
 .env.production
 coverage/
-.nyc_output/
 *.log
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-*.tmp
-.cache/
 playwright-report/
 test-results/
 EOF
 
 echo ""
 echo "=========================================="
-echo "Frontend structure created successfully!"
+echo "exam-frontend structure created!"
 echo "=========================================="
 echo ""
-echo "Next steps:"
 echo "  cd $PROJECT_NAME"
 echo "  npm install"
-echo "  # Edit .env.local sesuai konfigurasi lokal"
 echo "  npm run dev"
 echo ""
 echo "App  : http://localhost:3000"
@@ -821,11 +707,10 @@ echo "API  : http://localhost:3001/api (backend)"
 echo "MinIO: http://localhost:9001"
 echo ""
 echo "Critical files to implement first:"
-echo "  1. src/app/(siswa)/ujian/[sessionId]/page.tsx  — halaman ujian utama"
-echo "  2. src/lib/exam/controller.ts                  — state machine ujian"
-echo "  3. src/lib/exam/package-decoder.ts             — dekripsi paket soal"
-echo "  4. src/lib/db/schema.ts                        — skema IndexedDB"
-echo "  5. src/lib/offline/download.ts                 — download manager"
-echo "  6. src/lib/offline/sync.ts                     — sync orchestrator"
-echo "  7. src/lib/crypto/aes-gcm.ts                   — enkripsi/dekripsi"
-echo ""
+echo "  1. src/app/(siswa)/ujian/[sessionId]/page.tsx — halaman ujian utama"
+echo "  2. src/lib/exam/controller.ts                 — state machine ujian"
+echo "  3. src/lib/exam/package-decoder.ts            — dekripsi paket soal"
+echo "  4. src/lib/db/schema.ts                       — skema IndexedDB"
+echo "  5. src/lib/offline/download.ts                — download manager"
+echo "  6. src/lib/offline/sync.ts                    — sync orchestrator"
+echo "  7. src/lib/crypto/aes-gcm.ts                  — enkripsi/dekripsi"
