@@ -114,9 +114,12 @@ touch src/app/\(superadmin\)/schools/create/page.tsx
 touch "src/app/(superadmin)/schools/[id]/edit/page.tsx"
 
 # API Routes (Route Handlers)
-mkdir -p src/app/api/{auth,health,sync,download,media}
+mkdir -p src/app/api/{health,sync,download,media}
+mkdir -p src/app/api/auth/{login,logout,refresh}
 touch src/app/api/health/route.ts
-touch src/app/api/auth/{login,logout,refresh}/route.ts
+touch src/app/api/auth/login/route.ts
+touch src/app/api/auth/logout/route.ts
+touch src/app/api/auth/refresh/route.ts
 touch src/app/api/sync/route.ts
 touch src/app/api/download/route.ts
 touch src/app/api/media/route.ts
