@@ -1,226 +1,315 @@
 #!/bin/bash
-# generate.sh - Generator Blueprint Otomatis untuk Astro Project
+# generate.sh - Generator Blueprint Otomatis
+# Menghasilkan DRAFT_FE.md (Next.js frontend) dan DRAFT_BE.md (NestJS backend)
 set -euo pipefail
 
-OUT="draft.md"
-ROOT="."
+# ============================================
+# KONFIGURASI
+# ============================================
 
-# Pola eksklusi disesuaikan dengan struktur Astro project
-EXCLUDE_PATTERNS=( 
-  "./.git/*" 
-  "./.astro/*" 
-  "./.yarn/*" 
-  "./.json/*" 
-  "./.vscode/*" 
-  "./README.md" 
-  "./.gitignore"
-  "./.env"
-  "./todo.md"
-  "./.gitattributes"
-  "./.yarnrc.yml"
-  "./.DS_Store"
-  "./node_modules/*" 
-  "./dist/*"
-  "./public/images/*"
-  "./public/videos/*"
-  "./public/icons/*"
-  "./public/api/lib/*"
-  "./package-lock.json" 
-  "./pnpm-lock.yaml"
-  "./.prettierrc"
-  "./.markdownlint.json"
-  "./LICENSE"
-  "./install.sh"
-  "./feedback.sh"
-  "./survey.sh"
-  "./dummy.sh"
-  "./generate.sh"
-  "./todo-frontend.md"
-  "./todo-backend.md"
-  "./$OUT" 
-  "./config/nginx/*"
-  # Eksklusi file media
+OUT_FE="DRAFT_FE.md"
+OUT_BE="DRAFT_BE.md"
+ROOT_FE="${1:-../exam-frontend}"   # path ke repo frontend, override via arg 1
+ROOT_BE="${2:-../exam-backend}"    # path ke repo backend, override via arg 2
+
+# ============================================
+# POLA EKSKLUSI GLOBAL (berlaku di FE & BE)
+# ============================================
+
+EXCLUDE_GLOBAL=(
+  ".git/*"
+  ".gitignore"
+  ".gitattributes"
+  ".DS_Store"
+  ".vscode/*"
+  ".idea/*"
+  ".env"
+  ".env.local"
+  ".env.production"
+  ".env.development"
+  "node_modules/*"
+  "dist/*"
+  ".next/*"
+  "build/*"
+  "coverage/*"
+  "*.log"
+  "*.lock"
+  "package-lock.json"
+  "pnpm-lock.yaml"
+  "yarn.lock"
+  "README.md"
+  "SKILLS.md"
+  "todo.md"
+  "todo-frontend.md"
+  "todo-backend.md"
+  "generate.sh"
+  "DRAFT_FE.md"
+  "DRAFT_BE.md"
+  "draft.md"
+  # Media & binary
   "*.png" "*.jpg" "*.jpeg" "*.webp" "*.ico" "*.gif" "*.svg" "*.avif"
   "*.woff" "*.woff2" "*.ttf" "*.otf" "*.eot"
-  "*.mp3" "*.mp4" "*.wav" "*.avi"
-  "*.db" "*.csv" "*.htaccess" "*.txt" "*.mdx" "*.lock"
+  "*.mp3" "*.mp4" "*.wav" "*.avi" "*.webm"
+  "*.db" "*.sqlite"
+  "*.csv"
+  "*.pdf"
+  "*.zip" "*.tar" "*.gz"
+  # Next.js / build artifacts
+  ".astro/*"
+  "*.tsbuildinfo"
+  "next-env.d.ts"
 )
 
-# Fungsi untuk menentukan bahasa berdasarkan ekstensi file
+# ============================================
+# POLA EKSKLUSI TAMBAHAN — FRONTEND
+# ============================================
+
+EXCLUDE_FE=(
+  "public/images/*"
+  "public/videos/*"
+  "public/icons/*"
+  "public/fonts/*"
+  "playwright-report/*"
+  "test-results/*"
+)
+
+# ============================================
+# POLA EKSKLUSI TAMBAHAN — BACKEND
+# ============================================
+
+EXCLUDE_BE=(
+  "logs/*"
+  "uploads/*"
+  "dist/*"
+  "prisma/migrations/*"   # migration files biasanya terlalu verbose
+  "docs/api/*"
+  "scripts/backup.sh"
+  "scripts/restore.sh"
+)
+
+# ============================================
+# URUTAN DIREKTORI PRIORITAS
+# ============================================
+
+PRIORITY_FE=("src" "prisma" "public" "tests" "ROOT")
+PRIORITY_BE=("src" "prisma" "test" "scripts" "ROOT")
+
+# ============================================
+# HELPER: DETEKSI BAHASA DARI EKSTENSI
+# ============================================
+
 lang_for_ext() {
   case "$1" in
-    astro)      printf "astro" ;;
-    tsx)        printf "tsx" ;;
-    ts)         printf "typescript" ;;
-    mjs)        printf "javascript" ;;
-    cjs)        printf "javascript" ;;
-    js)         printf "javascript" ;;
-    jsx)        printf "jsx" ;;
-    json)       printf "json" ;;
-    md)         printf "markdown" ;;
-    mdx)        printf "markdown" ;;
-    html)       printf "html" ;;
-    css)        printf "css" ;;
-    scss)       printf "scss" ;;
-    txt)        printf "text" ;;
-    yml|yaml)   printf "yaml" ;;
-    sh)         printf "bash" ;;
-    conf)       printf "nginx" ;;
-    Dockerfile) printf "dockerfile" ;;
-    Makefile)   printf "makefile" ;;
-    *)          printf "" ;;
+    ts|tsx)       printf "typescript" ;;
+    js|mjs|cjs)   printf "javascript" ;;
+    jsx)          printf "jsx" ;;
+    json)         printf "json" ;;
+    css|scss)     printf "css" ;;
+    html)         printf "html" ;;
+    yml|yaml)     printf "yaml" ;;
+    sh)           printf "bash" ;;
+    sql)          printf "sql" ;;
+    prisma)       printf "prisma" ;;
+    Dockerfile)   printf "dockerfile" ;;
+    conf)         printf "nginx" ;;
+    md)           printf "markdown" ;;
+    *)            printf "" ;;
   esac
 }
 
-# Fungsi untuk menghitung jumlah backticks maksimal dalam file
-count_max_backticks() {
+# ============================================
+# HELPER: HITUNG PANJANG FENCE BACKTICK
+# Mencegah konflik jika file berisi code block
+# ============================================
+
+backtick_fence_for() {
   local file="$1"
   local max=3
-  
+  local count
+
   while IFS= read -r line; do
     if [[ "$line" =~ ^[[:space:]]*(\`+) ]]; then
-      local count=${#BASH_REMATCH[1]}
-      if [ "$count" -ge "$max" ]; then
-        max=$((count + 1))
-      fi
+      count=${#BASH_REMATCH[1]}
+      (( count >= max )) && max=$(( count + 1 ))
     fi
   done < "$file"
-  
-  echo "$max"
+
+  printf '%0.s`' $(seq 1 "$max")
 }
 
-# Inisialisasi file output
-: > "$OUT"
+# ============================================
+# HELPER: CEK APAKAH FILE PERLU DIEKSKLUSI
+# ============================================
 
-# Kumpulkan semua file
-files=()
-while IFS= read -r -d '' f; do
-  skip=false
-  for pat in "${EXCLUDE_PATTERNS[@]}"; do
-    if [[ "$f" == $pat ]]; then
-      skip=true
-      break
+should_exclude() {
+  local file="$1"
+  shift
+  local patterns=("$@")
+
+  for pat in "${patterns[@]}"; do
+    # Match absolute path dari root
+    if [[ "$file" == $pat ]] || [[ "$file" == */$pat ]] || [[ "$file" == ./$pat ]]; then
+      return 0
+    fi
+    # Match wildcard sederhana
+    # shellcheck disable=SC2053
+    if [[ "$file" == $pat ]]; then
+      return 0
     fi
   done
-  $skip && continue
-  files+=("$f")
-done < <(find "$ROOT" -type f -print0)
+  return 1
+}
 
-if [ "${#files[@]}" -eq 0 ]; then
-  echo "Tidak ada file ditemukan untuk diproses."
-  exit 0
-fi
+# ============================================
+# CORE: GENERATE SATU DRAFT FILE
+# ============================================
 
-# Kelompokkan file berdasarkan direktori utama
-declare -A groups
-for f in "${files[@]}"; do
-  p="${f#./}"
-  if [[ "$p" == */* ]]; then
-    top="${p%%/*}"
-  else
-    top="ROOT"
+generate_draft() {
+  local root="$1"
+  local out="$2"
+  shift 2
+  local priority_dirs=("$@")
+
+  if [ ! -d "$root" ]; then
+    echo "SKIP: Direktori '$root' tidak ditemukan."
+    return 1
   fi
-  rel="./${p}"
-  if [ -z "${groups[$top]:-}" ]; then
-    groups[$top]="$rel"
-  else
-    groups[$top]="${groups[$top]}"$'\n'"$rel"
+
+  : > "$out"
+
+  echo "Memproses: $root → $out"
+
+  # Kumpulkan semua file
+  local files=()
+  while IFS= read -r -d '' f; do
+    # Normalisasi: strip root prefix, gunakan path relatif
+    local rel="${f#$root/}"
+
+    # Cek eksklusi global
+    if should_exclude "$rel" "${EXCLUDE_GLOBAL[@]}"; then
+      continue
+    fi
+
+    # Cek eksklusi spesifik (diteruskan via variabel global FE/BE)
+    local extra_exclude_var="$EXTRA_EXCLUDE"
+    if [ -n "${extra_exclude_var:-}" ]; then
+      local extra=($extra_exclude_var)
+      if should_exclude "$rel" "${extra[@]}"; then
+        continue
+      fi
+    fi
+
+    files+=("$rel")
+  done < <(find "$root" -type f -print0 | sort -z)
+
+  if [ "${#files[@]}" -eq 0 ]; then
+    echo "  Tidak ada file ditemukan di '$root'."
+    return 0
   fi
-done
 
-# Urutan prioritas direktori untuk Astro project
-priority_dirs=("src" "public" "config" "scripts" "ROOT")
-processed_dirs=()
+  # Kelompokkan file berdasarkan direktori level pertama
+  declare -A groups
+  for f in "${files[@]}"; do
+    local top
+    if [[ "$f" == */* ]]; then
+      top="${f%%/*}"
+    else
+      top="ROOT"
+    fi
 
-# Proses direktori berdasarkan prioritas
-for priority in "${priority_dirs[@]}"; do
-  if [ -n "${groups[$priority]:-}" ]; then
-    printf "## Direktori: %s\n\n" "$priority" >> "$OUT"
-    
-    mapfile -t flist < <(printf '%s\n' "${groups[$priority]}" | sort -V)
-    
-    for file in "${flist[@]}"; do
-      case "$file" in
-        "./$OUT" | "$OUT" | "./generate.sh" | "generate.sh") continue ;;
-      esac
-      
-      filename="$(basename -- "$file")"
-      if [[ "$filename" == *.* ]]; then
-        ext="${filename##*.}"
-      else
-        ext="$filename"
-      fi
-      
-      lang="$(lang_for_ext "$ext")"
-      
-      printf "### File: \`%s\`\n\n" "$file" >> "$OUT"
-      
-      # Hitung jumlah backticks yang dibutuhkan
-      backtick_count=$(count_max_backticks "$file")
-      backticks=$(printf '`%.0s' $(seq 1 "$backtick_count"))
-      
-      if [ -n "$lang" ]; then
-        printf '%s%s\n' "$backticks" "$lang" >> "$OUT"
-      else
-        printf '%s\n' "$backticks" >> "$OUT"
-      fi
-      
-      sed 's/\r$//' "$file" >> "$OUT"
-      printf '\n%s\n\n---\n\n' "$backticks" >> "$OUT"
+    if [ -z "${groups[$top]:-}" ]; then
+      groups[$top]="$f"
+    else
+      groups[$top]+=$'\n'"$f"
+    fi
+  done
+
+  local processed=()
+
+  # Tulis sesuai urutan prioritas
+  for dir in "${priority_dirs[@]}"; do
+    [ -z "${groups[$dir]:-}" ] && continue
+
+    printf "## Direktori: %s\n\n" "$dir" >> "$out"
+    _write_files_in_group "$root" "$out" "${groups[$dir]}"
+    processed+=("$dir")
+  done
+
+  # Tulis direktori lain yang tidak ada di daftar prioritas
+  for dir in $(printf '%s\n' "${!groups[@]}" | sort); do
+    local already=false
+    for p in "${processed[@]}"; do
+      [ "$dir" == "$p" ] && already=true && break
     done
-    
-    processed_dirs+=("$priority")
-  fi
-done
+    $already && continue
 
-# Proses direktori lainnya yang tidak ada dalam prioritas
-IFS=$'\n'
-for top in $(printf '%s\n' "${!groups[@]}" | sort -V); do
-  # Skip jika sudah diproses
-  skip=false
-  for pd in "${processed_dirs[@]}"; do
-    if [ "$top" == "$pd" ]; then
-      skip=true
-      break
-    fi
+    printf "## Direktori: %s\n\n" "$dir" >> "$out"
+    _write_files_in_group "$root" "$out" "${groups[$dir]}"
   done
-  $skip && continue
-  
-  printf "## Direktori: %s\n\n" "$top" >> "$OUT"
-  
-  mapfile -t flist < <(printf '%s\n' "${groups[$top]}" | sort -V)
-  
-  for file in "${flist[@]}"; do
-    case "$file" in
-      "./$OUT" | "$OUT" | "./generate.sh" | "generate.sh") continue ;;
-    esac
-    
-    filename="$(basename -- "$file")"
-    if [[ "$filename" == *.* ]]; then
-      ext="${filename##*.}"
-    else
-      ext="$filename"
-    fi
-    
+
+  local total="${#files[@]}"
+  echo "  Selesai: $total file → $out"
+}
+
+# ============================================
+# HELPER INTERNAL: TULIS FILE DALAM SATU GRUP
+# ============================================
+
+_write_files_in_group() {
+  local root="$1"
+  local out="$2"
+  local group_str="$3"
+
+  mapfile -t flist < <(printf '%s\n' "$group_str" | sort -V)
+
+  for rel in "${flist[@]}"; do
+    local full="$root/$rel"
+    [ -f "$full" ] || continue
+
+    local ext="${rel##*.}"
+    [ "$ext" == "$rel" ] && ext="$(basename "$rel")" # file tanpa ekstensi (Dockerfile dll)
+
+    local lang
     lang="$(lang_for_ext "$ext")"
-    
-    printf "### File: \`%s\`\n\n" "$file" >> "$OUT"
-    
-    # Hitung jumlah backticks yang dibutuhkan
-    backtick_count=$(count_max_backticks "$file")
-    backticks=$(printf '`%.0s' $(seq 1 "$backtick_count"))
-    
-    if [ -n "$lang" ]; then
-      printf '%s%s\n' "$backticks" "$lang" >> "$OUT"
-    else
-      printf '%s\n' "$backticks" >> "$OUT"
-    fi
-    
-    sed 's/\r$//' "$file" >> "$OUT"
-    printf '\n%s\n\n---\n\n' "$backticks" >> "$OUT"
-  done
-done
 
-echo "Selesai! File '$OUT' telah dibuat (Mode: Astro Project)"
-echo "Direktori yang diproses: ${#groups[@]}"
-echo "Total file: ${#files[@]}"
+    local fence
+    fence="$(backtick_fence_for "$full")"
+
+    printf "### File: \`%s\`\n\n" "$rel" >> "$out"
+
+    if [ -n "$lang" ]; then
+      printf '%s%s\n' "$fence" "$lang" >> "$out"
+    else
+      printf '%s\n' "$fence" >> "$out"
+    fi
+
+    sed 's/\r$//' "$full" >> "$out"
+    printf '\n%s\n\n---\n\n' "$fence" >> "$out"
+  done
+}
+
+# ============================================
+# MAIN
+# ============================================
+
+echo "=========================================="
+echo "Blueprint Generator — exam project"
+echo "=========================================="
+echo ""
+
+# Generate frontend
+EXTRA_EXCLUDE="${EXCLUDE_FE[*]}"
+generate_draft "$ROOT_FE" "$OUT_FE" "${PRIORITY_FE[@]}"
+
+echo ""
+
+# Generate backend
+EXTRA_EXCLUDE="${EXCLUDE_BE[*]}"
+generate_draft "$ROOT_BE" "$OUT_BE" "${PRIORITY_BE[@]}"
+
+echo ""
+echo "=========================================="
+echo "Selesai!"
+echo "  Frontend : $OUT_FE"
+echo "  Backend  : $OUT_BE"
+echo "=========================================="

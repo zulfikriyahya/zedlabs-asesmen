@@ -1,464 +1,491 @@
 #!/bin/bash
 
-# Script untuk membuat struktur project exam-frontend (Enhanced & Complete)
+# Script untuk membuat struktur project exam-frontend (Next.js)
 # Sistem Asesmen Sekolah/Madrasah - Offline-First Multi-Tenant
-# Author: Auto-generated  
-# Date: $(date +%Y-%m-%d)
+# Stack: Next.js 15 (App Router) + TypeScript + Tailwind + DaisyUI
+#        Zustand + Dexie + PowerSync + ky + Zod + Web Crypto API
+
+set -e
 
 PROJECT_NAME="exam-frontend"
 
 echo "=========================================="
-echo "Creating $PROJECT_NAME Astro project"
+echo "Creating $PROJECT_NAME Next.js project"
 echo "Offline-First Exam System Frontend"
 echo "=========================================="
 
-# Buat direktori root project
 mkdir -p $PROJECT_NAME
 cd $PROJECT_NAME
 
 # ============================================
-# COMPONENTS STRUCTURE
+# APP ROUTER — ROUTE GROUPS
 # ============================================
 
-echo "📦 Creating components structure..."
-mkdir -p src/components/{layout,auth,exam/QuestionTypes,sync,monitoring,grading,questions,analytics,ui,madrasah}
+echo "Creating App Router structure..."
 
-# Layout components
-touch src/components/layout/{Header,Sidebar,Footer,MainLayout}.astro
+# Root layout & global pages
+mkdir -p src/app
+touch src/app/{layout.tsx,page.tsx,not-found.tsx,loading.tsx}
+touch src/app/global.css
 
-# Auth components
-touch src/components/auth/{LoginForm,DeviceLockWarning}.astro
+# Route group: (auth)
+mkdir -p src/app/\(auth\)/login
+touch src/app/\(auth\)/layout.tsx
+touch src/app/\(auth\)/login/page.tsx
 
-# Exam components - Question Types
-touch src/components/exam/QuestionTypes/{MultipleChoice,MultipleChoiceComplex,TrueFalse,Matching,ShortAnswer,Essay}.astro
+# Route group: (siswa)
+mkdir -p src/app/\(siswa\)/{dashboard,profile}
+mkdir -p src/app/\(siswa\)/ujian/{download,result}
+mkdir -p "src/app/(siswa)/ujian/[sessionId]"
+touch src/app/\(siswa\)/layout.tsx
+touch src/app/\(siswa\)/dashboard/page.tsx
+touch src/app/\(siswa\)/profile/page.tsx
+touch src/app/\(siswa\)/ujian/page.tsx
+touch src/app/\(siswa\)/ujian/download/page.tsx
+touch "src/app/(siswa)/ujian/[sessionId]/page.tsx"        # halaman ujian utama
+touch "src/app/(siswa)/ujian/[sessionId]/review/page.tsx" # review sebelum submit
+touch "src/app/(siswa)/ujian/[sessionId]/result/page.tsx" # hasil ujian
 
-# Exam components - Other
-touch src/components/exam/{MediaPlayer,MediaRecorder,QuestionNavigation,ExamTimer,AutoSaveIndicator,ProgressBar,ExamInstructions}.astro
+# Route group: (guru)
+mkdir -p src/app/\(guru\)/{dashboard,hasil}
+mkdir -p src/app/\(guru\)/soal/{create,import}
+mkdir -p "src/app/(guru)/soal/[id]/edit"
+mkdir -p src/app/\(guru\)/ujian/create
+mkdir -p "src/app/(guru)/ujian/[id]"/{edit,preview,statistics}
+mkdir -p "src/app/(guru)/grading/[attemptId]"
+touch src/app/\(guru\)/layout.tsx
+touch src/app/\(guru\)/dashboard/page.tsx
+touch src/app/\(guru\)/hasil/page.tsx
+touch src/app/\(guru\)/soal/page.tsx
+touch src/app/\(guru\)/soal/create/page.tsx
+touch src/app/\(guru\)/soal/import/page.tsx
+touch "src/app/(guru)/soal/[id]/edit/page.tsx"
+touch src/app/\(guru\)/ujian/page.tsx
+touch src/app/\(guru\)/ujian/create/page.tsx
+touch "src/app/(guru)/ujian/[id]/edit/page.tsx"
+touch "src/app/(guru)/ujian/[id]/preview/page.tsx"
+touch "src/app/(guru)/ujian/[id]/statistics/page.tsx"
+touch src/app/\(guru\)/grading/page.tsx
+touch "src/app/(guru)/grading/[attemptId]/page.tsx"
 
-# Sync components
-touch src/components/sync/{DownloadProgress,SyncStatus,UploadQueue,ChecksumValidator}.astro
+# Route group: (pengawas)
+mkdir -p src/app/\(pengawas\)/dashboard
+mkdir -p src/app/\(pengawas\)/monitoring/live
+mkdir -p "src/app/(pengawas)/monitoring/[sessionId]"
+touch src/app/\(pengawas\)/layout.tsx
+touch src/app/\(pengawas\)/dashboard/page.tsx
+touch src/app/\(pengawas\)/monitoring/live/page.tsx
+touch "src/app/(pengawas)/monitoring/[sessionId]/page.tsx"
 
-# Monitoring components
-touch src/components/monitoring/{LiveMonitor,StudentProgressCard,ActivityLogViewer}.astro
+# Route group: (operator)
+mkdir -p src/app/\(operator\)/{dashboard,laporan}
+mkdir -p src/app/\(operator\)/sesi/create
+mkdir -p "src/app/(operator)/sesi/[id]/edit"
+mkdir -p src/app/\(operator\)/ruang/create
+mkdir -p "src/app/(operator)/ruang/[id]/edit"
+mkdir -p src/app/\(operator\)/peserta/import
+touch src/app/\(operator\)/layout.tsx
+touch src/app/\(operator\)/dashboard/page.tsx
+touch src/app/\(operator\)/laporan/page.tsx
+touch src/app/\(operator\)/sesi/page.tsx
+touch src/app/\(operator\)/sesi/create/page.tsx
+touch "src/app/(operator)/sesi/[id]/edit/page.tsx"
+touch src/app/\(operator\)/ruang/page.tsx
+touch src/app/\(operator\)/ruang/create/page.tsx
+touch "src/app/(operator)/ruang/[id]/edit/page.tsx"
+touch src/app/\(operator\)/peserta/page.tsx
+touch src/app/\(operator\)/peserta/import/page.tsx
 
-# Grading components
-touch src/components/grading/{ManualGradingCard,AudioPlayer,GradingRubric}.astro
+# Route group: (superadmin)
+mkdir -p src/app/\(superadmin\)/{dashboard,users,settings,audit-logs}
+mkdir -p src/app/\(superadmin\)/schools/create
+mkdir -p "src/app/(superadmin)/schools/[id]/edit"
+touch src/app/\(superadmin\)/layout.tsx
+touch src/app/\(superadmin\)/dashboard/page.tsx
+touch src/app/\(superadmin\)/users/page.tsx
+touch src/app/\(superadmin\)/settings/page.tsx
+touch src/app/\(superadmin\)/audit-logs/page.tsx
+touch src/app/\(superadmin\)/schools/page.tsx
+touch src/app/\(superadmin\)/schools/create/page.tsx
+touch "src/app/(superadmin)/schools/[id]/edit/page.tsx"
 
-# Questions components
-touch src/components/questions/{QuestionEditor,MediaUpload,OptionsEditor,MatchingEditor,TagSelector}.astro
-
-# Analytics components
-touch src/components/analytics/{DashboardStats,ExamStatistics,ItemAnalysisChart,StudentProgress}.astro
-
-# UI components
-touch src/components/ui/{Button,Input,Select,Modal,Alert,Toast,Card,Table,Tabs,Loading,Spinner,Badge,Tooltip}.astro
-
-# Madrasah components
-touch src/components/madrasah/{QuranDisplay,TajwidMarker,ArabicKeyboard,HafalanRecorder}.astro
-
-# ============================================
-# PAGES STRUCTURE
-# ============================================
-
-echo "📄 Creating pages structure..."
-mkdir -p src/pages/{siswa/ujian,guru/{soal,ujian,grading},pengawas/monitoring,operator/{sesi,ruang,peserta},superadmin/schools}
-
-# Root pages
-touch src/pages/{index,login,offline}.astro
-
-# Siswa pages
-touch src/pages/siswa/{dashboard,profile}.astro
-touch src/pages/siswa/ujian/{index,download,result}.astro
-touch "src/pages/siswa/ujian/[id].astro"
-
-# Guru pages - Soal
-touch src/pages/guru/dashboard.astro
-touch src/pages/guru/soal/{index,create,import}.astro
-mkdir -p "src/pages/guru/soal/[id]"
-touch "src/pages/guru/soal/[id]/edit.astro"
-
-# Guru pages - Ujian
-touch src/pages/guru/ujian/{index,create}.astro
-mkdir -p "src/pages/guru/ujian/[id]"
-touch "src/pages/guru/ujian/[id]/{edit,preview,statistics}.astro"
-
-# Guru pages - Grading
-touch src/pages/guru/grading/index.astro
-touch "src/pages/guru/grading/[attemptId].astro"
-touch src/pages/guru/hasil.astro
-
-# Pengawas pages
-touch src/pages/pengawas/dashboard.astro
-touch src/pages/pengawas/monitoring/live.astro
-mkdir -p "src/pages/pengawas/monitoring/session"
-touch "src/pages/pengawas/monitoring/session/[id].astro"
-
-# Operator pages - Sesi
-touch src/pages/operator/dashboard.astro
-touch src/pages/operator/sesi/{index,create}.astro
-mkdir -p "src/pages/operator/sesi/[id]"
-touch "src/pages/operator/sesi/[id]/edit.astro"
-
-# Operator pages - Ruang
-touch src/pages/operator/ruang/{index,create}.astro
-mkdir -p "src/pages/operator/ruang/[id]"
-touch "src/pages/operator/ruang/[id]/edit.astro"
-
-# Operator pages - Peserta
-touch src/pages/operator/peserta/{index,import}.astro
-touch src/pages/operator/laporan.astro
-
-# Superadmin pages
-touch src/pages/superadmin/{dashboard,users,settings,audit-logs}.astro
-touch src/pages/superadmin/schools/{index,create}.astro
-mkdir -p "src/pages/superadmin/schools/[id]"
-touch "src/pages/superadmin/schools/[id]/edit.astro"
-
-# API Routes (for SSR)
-mkdir -p src/pages/api/{auth,exam,sync,download}
-touch src/pages/api/health.ts
+# API Routes (Route Handlers)
+mkdir -p src/app/api/{auth,health,sync,download,media}
+touch src/app/api/health/route.ts
+touch src/app/api/auth/{login,logout,refresh}/route.ts
+touch src/app/api/sync/route.ts
+touch src/app/api/download/route.ts
+touch src/app/api/media/route.ts
 
 # ============================================
-# STORES (NANOSTORES)
+# COMPONENTS
 # ============================================
 
-echo "🗄️ Creating state management stores..."
+echo "Creating components..."
+
+mkdir -p src/components/{layout,auth,exam,sync,monitoring,grading,questions,analytics,ui,madrasah}
+
+# Layout
+touch src/components/layout/{Header,Sidebar,Footer,MainLayout}.tsx
+
+# Auth
+touch src/components/auth/{LoginForm,DeviceLockWarning}.tsx
+
+# Exam — Question Types
+mkdir -p src/components/exam/question-types
+touch src/components/exam/question-types/{MultipleChoice,MultipleChoiceComplex,TrueFalse,Matching,ShortAnswer,Essay}.tsx
+
+# Exam — Core
+touch src/components/exam/{MediaPlayer,MediaRecorder,QuestionNavigation,ExamTimer,AutoSaveIndicator,ProgressBar,ExamInstructions,ActivityLogger}.tsx
+
+# Sync
+touch src/components/sync/{DownloadProgress,SyncStatus,UploadQueue,ChecksumValidator}.tsx
+
+# Monitoring
+touch src/components/monitoring/{LiveMonitor,StudentProgressCard,ActivityLogViewer}.tsx
+
+# Grading
+touch src/components/grading/{ManualGradingCard,GradingRubric,EssaySimilarityBadge}.tsx
+
+# Questions
+touch src/components/questions/{QuestionEditor,MediaUpload,OptionsEditor,MatchingEditor,TagSelector}.tsx
+
+# Analytics
+touch src/components/analytics/{DashboardStats,ExamStatistics,ItemAnalysisChart,StudentProgress}.tsx
+
+# UI (base components — reusable)
+touch src/components/ui/{Button,Input,Select,Modal,Alert,Toast,Card,Table,Tabs,Loading,Spinner,Badge,Tooltip,Confirm}.tsx
+
+# Madrasah
+touch src/components/madrasah/{QuranDisplay,TajwidMarker,ArabicKeyboard,HafalanRecorder}.tsx
+
+# ============================================
+# STORES (ZUSTAND)
+# ============================================
+
+echo "Creating Zustand stores..."
+
 mkdir -p src/stores
-touch src/stores/{auth,exam,answers,sync,offline,timer,ui,activity,toast}.ts
+# Setiap store adalah slice terpisah, digabung via index
+touch src/stores/{auth.store.ts,exam.store.ts,answer.store.ts,sync.store.ts,timer.store.ts,ui.store.ts,activity.store.ts}
+touch src/stores/index.ts  # barrel export semua store
 
 # ============================================
-# LIB - API
+# LIB — API
 # ============================================
 
-echo "🔌 Creating lib/api structure..."
+echo "Creating lib/api..."
+
 mkdir -p src/lib/api
-touch src/lib/api/{client,auth,exam,question,sync,grading,student,monitoring,analytics,media}.ts
+touch src/lib/api/{client.ts,auth.api.ts,exam.api.ts,question.api.ts,sync.api.ts,grading.api.ts,monitoring.api.ts,analytics.api.ts,media.api.ts}
+# client.ts: instance ky dengan base URL, interceptor token, retry
 
 # ============================================
-# LIB - DATABASE (IndexedDB)
+# LIB — DATABASE (IndexedDB via Dexie)
 # ============================================
 
-echo "💾 Creating lib/db structure..."
+echo "Creating lib/db..."
+
 mkdir -p src/lib/db
-touch src/lib/db/{indexedDB,schema,encryption,migrations,queries}.ts
+touch src/lib/db/{schema.ts,db.ts,queries.ts,migrations.ts}
+# db.ts     : inisialisasi Dexie instance (singleton)
+# schema.ts : definisi tabel & versi
+# queries.ts: helper query per tabel (DRY — tidak inline di komponen)
 
 # ============================================
-# LIB - OFFLINE
+# LIB — OFFLINE
 # ============================================
 
-echo "📥 Creating lib/offline structure..."
+echo "Creating lib/offline..."
+
 mkdir -p src/lib/offline
-touch src/lib/offline/{download,sync,queue,compress,checksum,cache}.ts
+touch src/lib/offline/{download.ts,sync.ts,queue.ts,checksum.ts,cache.ts}
+# PowerSync menangani SW; lib ini mengatur orchestration di atas PowerSync
 
 # ============================================
-# LIB - EXAM
+# LIB — EXAM
 # ============================================
 
-echo "📝 Creating lib/exam structure..."
+echo "Creating lib/exam..."
+
 mkdir -p src/lib/exam
-touch src/lib/exam/{controller,randomizer,validator,autoSave,timer,navigation,activityLogger,stateManager}.ts
+touch src/lib/exam/{controller.ts,randomizer.ts,validator.ts,auto-save.ts,timer.ts,navigation.ts,activity-logger.ts,package-decoder.ts}
+# package-decoder.ts: dekripsi paket soal via Web Crypto API (AES-GCM)
+# auto-save.ts: debounce save ke Dexie, bukan interval mentah
 
 # ============================================
-# LIB - MEDIA
+# LIB — CRYPTO (Web Crypto API wrapper)
 # ============================================
 
-echo "🎥 Creating lib/media structure..."
+echo "Creating lib/crypto..."
+
+mkdir -p src/lib/crypto
+touch src/lib/crypto/{aes-gcm.ts,key-manager.ts,checksum.ts}
+# aes-gcm.ts   : encrypt/decrypt menggunakan native Web Crypto API
+# key-manager.ts: key hanya di memori (sessionStorage-free), rotasi otomatis
+# checksum.ts  : SHA-256 checksum untuk validasi paket soal
+
+# ============================================
+# LIB — MEDIA
+# ============================================
+
+echo "Creating lib/media..."
+
 mkdir -p src/lib/media
-touch src/lib/media/{recorder,player,upload,compress,stream,download}.ts
+touch src/lib/media/{recorder.ts,player.ts,upload.ts,compress.ts,chunked-upload.ts}
+# chunked-upload.ts: split blob besar menjadi chunk sebelum upload ke backend
 
 # ============================================
-# LIB - UTILS
+# LIB — UTILS
 # ============================================
 
-echo "🛠️ Creating lib/utils structure..."
+echo "Creating lib/utils..."
+
 mkdir -p src/lib/utils
-touch src/lib/utils/{network,device,time,storage,validation,format,crypto,error,logger}.ts
+touch src/lib/utils/{network.ts,device.ts,time.ts,format.ts,error.ts,logger.ts,compression.ts}
+# compression.ts: wrapper CompressionStream native (menggantikan pako)
+# device.ts    : fingerprinting perangkat
 
 # ============================================
-# LIB - HOOKS
+# HOOKS
 # ============================================
 
-echo "🪝 Creating lib/hooks structure..."
-mkdir -p src/lib/hooks
-touch src/lib/hooks/{useExam,useTimer,useAutoSave,useMediaRecorder,useOnlineStatus,useDeviceWarnings,useAuth,useToast,useLocalStorage}.ts
+echo "Creating hooks..."
 
-# ============================================
-# LIB - CONSTANTS & CONFIG
-# ============================================
-
-echo "⚙️ Creating lib/constants..."
-mkdir -p src/lib/{constants,config}
-touch src/lib/constants/{api,exam,storage,media,validation}.ts
-touch src/lib/config/{app,theme}.ts
+mkdir -p src/hooks
+touch src/hooks/{use-exam.ts,use-timer.ts,use-auto-save.ts,use-media-recorder.ts,use-online-status.ts,use-device-warnings.ts,use-auth.ts,use-toast.ts,use-sync-status.ts,use-powersync.ts}
 
 # ============================================
 # TYPES
 # ============================================
 
-echo "📐 Creating types..."
+echo "Creating types..."
+
 mkdir -p src/types
-touch src/types/{exam,question,answer,user,sync,api,media,activity,common}.ts
+touch src/types/{exam.ts,question.ts,answer.ts,user.ts,sync.ts,api.ts,media.ts,activity.ts,common.ts}
+touch src/types/index.ts  # barrel export
+
+# ============================================
+# SCHEMAS (ZOD)
+# ============================================
+
+echo "Creating Zod schemas..."
+
+mkdir -p src/schemas
+touch src/schemas/{auth.schema.ts,exam.schema.ts,question.schema.ts,answer.schema.ts,sync.schema.ts,user.schema.ts}
+# Digunakan di form validation dan response parsing
+
+# ============================================
+# MIDDLEWARE (Next.js)
+# ============================================
+
+echo "Creating middleware..."
+
+touch src/middleware.ts  # Next.js root middleware
+mkdir -p src/lib/middleware
+touch src/lib/middleware/{auth.middleware.ts,tenant.middleware.ts,role.middleware.ts}
 
 # ============================================
 # STYLES
 # ============================================
 
-echo "🎨 Creating styles..."
+echo "Creating styles..."
+
 mkdir -p src/styles
-touch src/styles/{global,arabic,print,themes,animations}.css
-
-# ============================================
-# MIDDLEWARE
-# ============================================
-
-echo "🚪 Creating middleware..."
-mkdir -p src/middleware
-touch src/middleware/{auth,role,tenant}.ts
-
-# ============================================
-# LAYOUTS
-# ============================================
-
-echo "📐 Creating layouts..."
-mkdir -p src/layouts
-touch src/layouts/{Base,Auth,Dashboard,Exam}.astro
+touch src/styles/{arabic.css,print.css,animations.css}
 
 # ============================================
 # PUBLIC ASSETS
 # ============================================
 
-echo "📦 Creating public assets..."
-mkdir -p public/{fonts,icons,images,audio}
-touch public/{service-worker.js,manifest.json,robots.txt}
+echo "Creating public assets..."
+
+mkdir -p public/{fonts,icons,images}
+touch public/{manifest.json,robots.txt}
+# Tidak ada service-worker.js manual — PowerSync mengelola SW-nya sendiri
 
 # ============================================
-# ROOT CONFIGURATION FILES
+# PACKAGE.JSON
 # ============================================
 
-echo "⚙️ Creating configuration files..."
+echo "Creating package.json..."
 
-# Package.json - Comprehensive dependencies
 cat > package.json << 'EOF'
 {
   "name": "exam-frontend",
   "version": "1.0.0",
   "description": "Offline-First Exam System Frontend - Multi-Tenant",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro",
-    "check": "astro check",
-    "lint": "eslint src --ext .ts,.astro",
-    "lint:fix": "eslint src --ext .ts,.astro --fix",
-    "format": "prettier --write \"src/**/*.{ts,astro,css}\"",
-    "type-check": "tsc --noEmit"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "type-check": "tsc --noEmit",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:cov": "vitest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
-    "astro": "^4.0.0",
-    "@astrojs/tailwind": "^5.0.0",
-    "@astrojs/node": "^8.0.0",
+    "next": "^15.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.3.3",
     "tailwindcss": "^3.4.0",
     "daisyui": "^4.6.0",
-    "nanostores": "^0.10.0",
-    "@nanostores/persistent": "^0.10.0",
-    "@nanostores/router": "^0.15.0",
+    "zustand": "^4.5.0",
     "dexie": "^3.2.4",
-    "axios": "^1.6.5",
-    "chart.js": "^4.4.1",
-    "date-fns": "^3.2.0",
-    "crypto-js": "^4.2.0",
+    "dexie-react-hooks": "^1.1.7",
+    "@powersync/react": "^1.0.0",
+    "@powersync/web": "^1.0.0",
+    "ky": "^1.2.0",
     "zod": "^3.22.4",
+    "chart.js": "^4.4.1",
+    "react-chartjs-2": "^5.2.0",
+    "date-fns": "^3.2.0",
     "clsx": "^2.1.0",
-    "pako": "^2.1.0"
+    "next-safe": "^3.4.1"
   },
   "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "@types/node": "^20.11.5",
-    "@types/crypto-js": "^4.2.2",
-    "@types/pako": "^2.0.3",
-    "typescript": "^5.3.3",
+    "postcss": "^8.4.33",
+    "autoprefixer": "^10.4.17",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
-    "eslint-plugin-astro": "^0.31.3",
+    "eslint-config-next": "^15.0.0",
     "prettier": "^3.2.4",
-    "prettier-plugin-astro": "^0.13.0",
-    "prettier-plugin-tailwindcss": "^0.5.11"
+    "prettier-plugin-tailwindcss": "^0.5.11",
+    "vitest": "^1.2.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "@testing-library/react": "^14.2.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@playwright/test": "^1.41.0"
   }
 }
 EOF
 
-# Astro config - Hybrid mode for SSR + SSG
-cat > astro.config.mjs << 'EOF'
-import { defineConfig } from 'astro/config';
-import tailwind from '@astrojs/tailwind';
-import node from '@astrojs/node';
+# ============================================
+# NEXT.CONFIG
+# ============================================
 
-export default defineConfig({
-  integrations: [
-    tailwind({
-      applyBaseStyles: false,
-    }),
-  ],
-  
-  output: 'hybrid', // SSR for dynamic pages, SSG for static
-  
-  adapter: node({
-    mode: 'standalone',
-  }),
+cat > next.config.ts << 'EOF'
+import type { NextConfig } from 'next'
 
-  vite: {
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            // Code splitting for better performance
-            'exam-engine': [
-              './src/lib/exam/controller',
-              './src/lib/exam/autoSave',
-              './src/lib/exam/timer',
-            ],
-            'media': [
-              './src/lib/media/recorder',
-              './src/lib/media/player',
-              './src/lib/media/upload',
-            ],
-            'offline': [
-              './src/lib/offline/download',
-              './src/lib/offline/sync',
-              './src/lib/db/indexedDB',
-            ],
-            'charts': ['chart.js'],
-          },
-        },
+const nextConfig: NextConfig = {
+  // Aktifkan strict mode React
+  reactStrictMode: true,
+
+  // Ekspor header CSP via next-safe dikonfigurasi di middleware
+  // sehingga bisa bersifat dinamis per-tenant
+
+  // Konfigurasi image untuk MinIO
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: process.env.NEXT_PUBLIC_MINIO_ENDPOINT ?? '',
+        pathname: '/exam-assets/**',
       },
-      // Optimize for mobile
-      cssCodeSplit: true,
-      minify: 'terser',
-      terserOptions: {
-        compress: {
-          drop_console: true,
-          drop_debugger: true,
-        },
-      },
-    },
-    optimizeDeps: {
-      include: ['dexie', 'axios', 'chart.js'],
-    },
+    ],
   },
 
-  server: {
-    port: 3000,
-    host: true,
+  // Webpack: aktifkan Web Crypto API polyfill di SSR jika perlu
+  webpack(config) {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      crypto: false, // gunakan native Web Crypto, bukan Node crypto
+    }
+    return config
   },
 
-  compressHTML: true,
-});
+  // Bundle analyzer (aktifkan saat profiling)
+  // bundlePagesRouterDependencies: true,
+
+  // Experimental: optimasi untuk PWA
+  experimental: {
+    optimizePackageImports: ['chart.js', 'dexie'],
+  },
+}
+
+export default nextConfig
 EOF
 
-# TypeScript config
+# ============================================
+# TSCONFIG
+# ============================================
+
 cat > tsconfig.json << 'EOF'
 {
-  "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
       "@components/*": ["src/components/*"],
-      "@layouts/*": ["src/layouts/*"],
-      "@lib/*": ["src/lib/*"],
+      "@hooks/*": ["src/hooks/*"],
       "@stores/*": ["src/stores/*"],
+      "@lib/*": ["src/lib/*"],
       "@types/*": ["src/types/*"],
-      "@utils/*": ["src/lib/utils/*"],
-      "@api/*": ["src/lib/api/*"],
-      "@db/*": ["src/lib/db/*"]
+      "@schemas/*": ["src/schemas/*"]
     },
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-    "types": ["astro/client"]
+    "plugins": [{ "name": "next" }]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next", "dist"]
 }
 EOF
 
-# Tailwind config - Complete with DaisyUI
-cat > tailwind.config.cjs << 'EOF'
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ['./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}'],
-  
+# ============================================
+# TAILWIND CONFIG
+# ============================================
+
+cat > tailwind.config.ts << 'EOF'
+import type { Config } from 'tailwindcss'
+import daisyui from 'daisyui'
+
+const config: Config = {
+  content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         arabic: ['Amiri', 'Traditional Arabic', 'serif'],
-        quran: ['Scheherazade', 'Amiri', 'serif'],
+        quran: ['Scheherazade New', 'Amiri', 'serif'],
       },
-      
-      fontSize: {
-        // Support for font size adjustment
-        'xs': ['0.75rem', { lineHeight: '1rem' }],
-        'sm': ['0.875rem', { lineHeight: '1.25rem' }],
-        'base': ['1rem', { lineHeight: '1.5rem' }],
-        'lg': ['1.125rem', { lineHeight: '1.75rem' }],
-        'xl': ['1.25rem', { lineHeight: '1.75rem' }],
-        '2xl': ['1.5rem', { lineHeight: '2rem' }],
-        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],
-        '4xl': ['2.25rem', { lineHeight: '2.5rem' }],
-        '5xl': ['3rem', { lineHeight: '1' }],
-      },
-
-      colors: {
-        // Custom color palette
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
-        },
-      },
-
       animation: {
         'spin-slow': 'spin 3s linear infinite',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'bounce-slow': 'bounce 2s infinite',
-      },
-
-      keyframes: {
-        'slide-in': {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(0)' },
-        },
-        'slide-out': {
-          '0%': { transform: 'translateX(0)' },
-          '100%': { transform: 'translateX(100%)' },
-        },
-        'fade-in': {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
       },
     },
   },
-
-  plugins: [
-    require('daisyui'),
-  ],
-
+  plugins: [daisyui],
   daisyui: {
     themes: [
       {
         light: {
-          ...require('daisyui/src/theming/themes')['light'],
           primary: '#3b82f6',
           secondary: '#8b5cf6',
           accent: '#10b981',
@@ -470,7 +497,6 @@ module.exports = {
           error: '#f87272',
         },
         dark: {
-          ...require('daisyui/src/theming/themes')['dark'],
           primary: '#3b82f6',
           secondary: '#8b5cf6',
           accent: '#10b981',
@@ -484,161 +510,231 @@ module.exports = {
       },
     ],
     darkTheme: 'dark',
-    base: true,
-    styled: true,
-    utils: true,
     logs: false,
     rtl: false,
   },
-};
+}
+
+export default config
 EOF
 
-# ESLint config
-cat > .eslintrc.cjs << 'EOF'
+# ============================================
+# POSTCSS
+# ============================================
+
+cat > postcss.config.js << 'EOF'
 module.exports = {
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2022,
-    sourceType: 'module',
-    project: './tsconfig.json',
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
   },
-  extends: [
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'plugin:astro/recommended',
-  ],
-  plugins: ['@typescript-eslint'],
-  rules: {
-    '@typescript-eslint/no-explicit-any': 'warn',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-    'no-console': ['warn', { allow: ['warn', 'error'] }],
-  },
-  overrides: [
-    {
-      files: ['*.astro'],
-      parser: 'astro-eslint-parser',
-      parserOptions: {
-        parser: '@typescript-eslint/parser',
-        extraFileExtensions: ['.astro'],
-      },
-    },
-  ],
-  ignorePatterns: ['node_modules', 'dist', '.astro'],
-};
+}
 EOF
 
-# Prettier config
+# ============================================
+# ESLINT
+# ============================================
+
+cat > .eslintrc.json << 'EOF'
+{
+  "extends": [
+    "next/core-web-vitals",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "./tsconfig.json"
+  },
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-floating-promises": "error",
+    "no-console": ["warn", { "allow": ["warn", "error"] }]
+  }
+}
+EOF
+
+# ============================================
+# PRETTIER
+# ============================================
+
 cat > .prettierrc << 'EOF'
 {
   "semi": true,
   "singleQuote": true,
   "tabWidth": 2,
-  "useTabs": false,
-  "trailingComma": "es5",
+  "trailingComma": "all",
   "printWidth": 100,
-  "arrowParens": "always",
-  "plugins": ["prettier-plugin-astro", "prettier-plugin-tailwindcss"],
-  "overrides": [
-    {
-      "files": "*.astro",
-      "options": {
-        "parser": "astro"
-      }
-    }
-  ]
+  "plugins": ["prettier-plugin-tailwindcss"]
 }
 EOF
 
-# .gitignore
-cat > .gitignore << 'EOF'
-# Dependencies
-node_modules/
-.npm/
-.yarn/
-.pnpm-debug.log
+# ============================================
+# VITEST CONFIG
+# ============================================
 
-# Build outputs
-dist/
-.astro/
-.output/
+cat > vitest.config.ts << 'EOF'
+import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
+import { resolve } from 'path'
 
-# Environment files
-.env
-.env.local
-.env.production
-.env.development
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# OS
-Thumbs.db
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Testing
-coverage/
-.nyc_output/
-
-# Temporary files
-*.tmp
-.cache/
-temp/
-
-# Local data
-*.db
-*.sqlite
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/tests/setup.ts'],
+  },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+      '@components': resolve(__dirname, './src/components'),
+      '@hooks': resolve(__dirname, './src/hooks'),
+      '@stores': resolve(__dirname, './src/stores'),
+      '@lib': resolve(__dirname, './src/lib'),
+      '@types': resolve(__dirname, './src/types'),
+      '@schemas': resolve(__dirname, './src/schemas'),
+    },
+  },
+})
 EOF
 
-# Environment variables example
+# ============================================
+# PLAYWRIGHT CONFIG
+# ============================================
+
+cat > playwright.config.ts << 'EOF'
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  fullyParallel: false, // ujian memerlukan sequential state
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'on-first-retry',
+  },
+  projects: [
+    // Desktop
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Android (simulasi)
+    { name: 'android-chrome', use: { ...devices['Pixel 5'] } },
+    { name: 'android-tablet', use: { ...devices['Galaxy Tab S4'] } },
+  ],
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+  },
+})
+EOF
+
+# ============================================
+# TEST SETUP
+# ============================================
+
+mkdir -p src/tests
+cat > src/tests/setup.ts << 'EOF'
+import '@testing-library/jest-dom'
+
+// Mock Web Crypto API untuk unit test
+Object.defineProperty(globalThis, 'crypto', {
+  value: {
+    subtle: {
+      generateKey: vi.fn(),
+      encrypt: vi.fn(),
+      decrypt: vi.fn(),
+      digest: vi.fn(),
+      importKey: vi.fn(),
+      exportKey: vi.fn(),
+    },
+    getRandomValues: (arr: Uint8Array) => {
+      for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256)
+      return arr
+    },
+  },
+})
+
+// Mock IndexedDB untuk unit test
+vi.mock('dexie', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    version: vi.fn().mockReturnThis(),
+    stores: vi.fn().mockReturnThis(),
+    open: vi.fn(),
+  })),
+}))
+
+// Mock PowerSync
+vi.mock('@powersync/react', () => ({
+  usePowerSync: vi.fn(),
+  PowerSyncContext: { Provider: ({ children }: { children: React.ReactNode }) => children },
+}))
+EOF
+
+# ============================================
+# TEST STRUCTURE
+# ============================================
+
+mkdir -p src/tests/{unit,integration}
+mkdir -p src/tests/unit/{stores,hooks,lib}
+touch src/tests/unit/stores/{auth.store.spec.ts,exam.store.spec.ts,answer.store.spec.ts}
+touch src/tests/unit/hooks/{use-timer.spec.ts,use-auto-save.spec.ts,use-online-status.spec.ts}
+touch src/tests/unit/lib/{aes-gcm.spec.ts,checksum.spec.ts,compression.spec.ts,auto-save.spec.ts}
+touch src/tests/integration/{dexie.spec.ts,sync.spec.ts}
+
+mkdir -p tests/e2e
+touch tests/e2e/{auth.spec.ts,exam-flow.spec.ts,offline-sync.spec.ts,grading.spec.ts,media-recording.spec.ts}
+
+# ============================================
+# ENV EXAMPLE
+# ============================================
+
 cat > .env.example << 'EOF'
-# API Configuration
-PUBLIC_API_URL=http://localhost:3001/api
-PUBLIC_WS_URL=ws://localhost:3001
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:3001/api
 
-# School Configuration (Multi-tenant)
-PUBLIC_SCHOOL_SUBDOMAIN=your-school
-PUBLIC_SCHOOL_NAME=Your School Name
+# PowerSync
+NEXT_PUBLIC_POWERSYNC_URL=https://sync.example.com
 
-# App Configuration
-PUBLIC_APP_VERSION=1.0.0
-PUBLIC_APP_NAME=Exam System
+# MinIO
+NEXT_PUBLIC_MINIO_ENDPOINT=minio.example.com
+NEXT_PUBLIC_MINIO_PRESIGNED_TTL=3600
+
+# Tenant
+NEXT_PUBLIC_TENANT_DOMAIN=exam.example.com
 
 # Feature Flags
-PUBLIC_ENABLE_OFFLINE=true
-PUBLIC_ENABLE_RECORDING=true
-PUBLIC_ENABLE_MONITORING=true
-
-# Media Configuration
-PUBLIC_MAX_RECORDING_DURATION=300
-PUBLIC_MAX_FILE_SIZE=1073741824
-PUBLIC_ALLOWED_VIDEO_TYPES=video/mp4,video/webm
-PUBLIC_ALLOWED_AUDIO_TYPES=audio/mp3,audio/webm
-
-# Storage Configuration
-PUBLIC_CACHE_EXPIRY_DAYS=7
-PUBLIC_MIN_STORAGE_GB=2
+NEXT_PUBLIC_ENABLE_RECORDING=true
+NEXT_PUBLIC_AUTOSAVE_INTERVAL=30000  # ms — digunakan sebagai debounce delay
+NEXT_PUBLIC_MAX_RECORDING_DURATION=300  # detik
+NEXT_PUBLIC_MAX_RECORDING_SIZE=1073741824  # bytes (1 GB)
+NEXT_PUBLIC_MIN_STORAGE_MB=2048
 
 # Development
 NODE_ENV=development
 EOF
 
-# PWA Manifest
+cat > .env.local << 'EOF'
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:3001/api
+NEXT_PUBLIC_POWERSYNC_URL=http://localhost:6006
+NEXT_PUBLIC_MINIO_ENDPOINT=localhost:9000
+NEXT_PUBLIC_TENANT_DOMAIN=localhost:3000
+EOF
+
+# ============================================
+# PWA MANIFEST
+# ============================================
+
 cat > public/manifest.json << 'EOF'
 {
-  "name": "Exam System",
-  "short_name": "ExamApp",
-  "description": "Offline-First Examination System for Schools",
+  "name": "Sistem Ujian",
+  "short_name": "Ujian",
+  "description": "Sistem Ujian Offline-First untuk Sekolah dan Madrasah",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -658,452 +754,71 @@ cat > public/manifest.json << 'EOF'
       "purpose": "any maskable"
     }
   ],
-  "categories": ["education"],
-  "screenshots": []
+  "categories": ["education"]
 }
 EOF
 
-# Service Worker (Basic structure)
-cat > public/service-worker.js << 'EOF'
-const CACHE_NAME = 'exam-app-v1';
-const OFFLINE_CACHE = 'exam-offline-v1';
+# ============================================
+# ROBOTS.TXT
+# ============================================
 
-const STATIC_ASSETS = [
-  '/',
-  '/login',
-  '/offline',
-  '/manifest.json',
-];
-
-// Install event
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
-  self.skipWaiting();
-});
-
-// Activate event
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== OFFLINE_CACHE)
-          .map((name) => caches.delete(name))
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-// Fetch event
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // API calls - network first, fallback to cache
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(OFFLINE_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request);
-        })
-    );
-    return;
-  }
-
-  // Static assets - cache first
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(request).then((response) => {
-        if (response.ok) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
-        }
-        return response;
-      });
-    })
-  );
-});
-EOF
-
-# Robots.txt
 cat > public/robots.txt << 'EOF'
 User-agent: *
 Disallow: /api/
-Disallow: /siswa/
-Disallow: /guru/
-Disallow: /pengawas/
-Disallow: /operator/
-Disallow: /superadmin/
+Disallow: /(siswa)/
+Disallow: /(guru)/
+Disallow: /(pengawas)/
+Disallow: /(operator)/
+Disallow: /(superadmin)/
 Allow: /
 EOF
 
-# README.md - Comprehensive documentation
-cat > README.md << 'EOF'
-# 📝 Exam Frontend - Offline-First Examination System
-
-Web-based examination system frontend built with **Astro** for schools and madrasahs with complete offline capabilities.
-
-## 🌟 Features
-
-- ✅ **Offline-First Architecture** - Download exams, take offline, sync later
-- ✅ **Multi-Tenant System** - Subdomain-based school routing
-- ✅ **6 Question Types** - Multiple choice, complex MC, true/false, matching, short answer, essay
-- ✅ **Multimedia Support** - Images, audio, video in questions and answers
-- ✅ **Media Recording** - Audio/video answer recording (max 5 min, max 1GB)
-- ✅ **Real-time Auto-save** - Saves answers every 30 seconds
-- ✅ **Smart Timer** - Per-user duration tracking with warnings
-- ✅ **Activity Logging** - Tracks all user activities during exam
-- ✅ **Responsive Design** - Mobile-first, optimized for Android
-- ✅ **Accessibility** - Font size control, dark mode, keyboard navigation
-- ✅ **Arabic/Islamic Features** - Quran display, tajwid marking, Arabic keyboard
-- ✅ **PWA Ready** - Installable as native app
-
-## 🏗️ Project Structure
-
-```
-exam-frontend/
-├── src/
-│   ├── components/      # Reusable UI components
-│   │   ├── layout/      # Header, Sidebar, Footer
-│   │   ├── auth/        # Login, Device Lock
-│   │   ├── exam/        # Question types, Timer, Navigation
-│   │   ├── sync/        # Download, Upload, Sync status
-│   │   ├── monitoring/  # Live monitoring for proctors
-│   │   ├── grading/     # Manual grading interface
-│   │   ├── questions/   # Question editor & management
-│   │   ├── analytics/   # Charts and statistics
-│   │   ├── ui/          # Base UI components
-│   │   └── madrasah/    # Quran, Tajwid, Hafalan
-│   │
-│   ├── pages/           # Route pages
-│   │   ├── siswa/       # Student pages
-│   │   ├── guru/        # Teacher pages
-│   │   ├── pengawas/    # Proctor pages
-│   │   ├── operator/    # Operator pages
-│   │   └── superadmin/  # Superadmin pages
-│   │
-│   ├── lib/             # Core functionality
-│   │   ├── api/         # API client & endpoints
-│   │   ├── db/          # IndexedDB (Dexie)
-│   │   ├── offline/     # Download & sync managers
-│   │   ├── exam/        # Exam controller & logic
-│   │   ├── media/       # Media recorder & player
-│   │   └── utils/       # Utility functions
-│   │
-│   ├── stores/          # State management (Nanostores)
-│   ├── types/           # TypeScript type definitions
-│   ├── styles/          # Global styles
-│   ├── layouts/         # Page layouts
-│   └── middleware/      # Auth & role middleware
-│
-├── public/              # Static assets
-│   ├── service-worker.js
-│   ├── manifest.json
-│   ├── fonts/
-│   └── icons/
-│
-└── [config files]
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js >= 18.x
-- npm or yarn or pnpm
-
-### Installation
-
-```bash
-# Install dependencies
-npm install
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your configuration
-nano .env
-
-# Run development server
-npm run dev
-```
-
-The app will be available at `http://localhost:3000`
-
-### Build for Production
-
-```bash
-# Build
-npm run build
-
-# Preview production build
-npm run preview
-
-# Type check
-npm run type-check
-
-# Lint
-npm run lint
-
-# Format code
-npm run format
-```
-
-## 📱 Deployment
-
-### Static Hosting (Netlify, Vercel)
-
-```bash
-npm run build
-# Deploy the /dist folder
-```
-
-### Node.js Server
-
-```bash
-npm run build
-node dist/server/entry.mjs
-```
-
-### Android WebView
-
-The app is optimized for Android WebView. Key considerations:
-- Enable JavaScript and DOM storage
-- Grant camera/microphone permissions
-- Enable geolocation if needed
-- Set proper User-Agent
-
-Example MainActivity.java code included in documentation.
-
-## 🧪 Testing Checklist
-
-- [ ] Test on various Android devices (5", 7", 10")
-- [ ] Test offline mode (airplane mode)
-- [ ] Test with slow network (3G)
-- [ ] Test with limited storage (<2GB)
-- [ ] Test battery drain during exam
-- [ ] Test app kill & resume
-- [ ] Test media recording quality
-- [ ] Test chunked upload for large files
-- [ ] Test sync retry mechanism
-- [ ] Test time validation
-- [ ] Test device lock (single device)
-- [ ] Test all question types
-- [ ] Test dark mode
-- [ ] Test font size adjustment
-- [ ] Test Arabic/Quran display
-
-## 🔐 Security Features
-
-- JWT-based authentication
-- Device fingerprinting & locking
-- AES-256 encryption for exam data
-- Checksum validation for downloads
-- Time validation against server
-- Activity logging
-- Prevented copy/paste during exam
-- Disabled right-click during exam
-
-## 🎯 Key Pages
-
-### Most Critical Pages
-
-1. **`/siswa/ujian/[id]`** - The exam page (MOST IMPORTANT!)
-   - Renders questions dynamically
-   - Auto-saves every 30 seconds
-   - Logs all activities
-   - Handles offline/online sync
-   - Media recording support
-
-2. **`/siswa/ujian/download`** - Exam download
-   - Downloads exam package
-   - Downloads all media files
-   - Validates checksums
-   - Stores encrypted data
-
-3. **`/login`** - Authentication
-   - Device fingerprinting
-   - Single device enforcement
-   - JWT token management
-
-## 📊 Tech Stack
-
-- **Framework**: Astro 4.0 (SSR + SSG)
-- **Styling**: TailwindCSS + DaisyUI
-- **State**: Nanostores (with persistence)
-- **Database**: IndexedDB (Dexie.js)
-- **API**: Axios
-- **Charts**: Chart.js
-- **PWA**: Service Worker
-- **Recording**: MediaRecorder API
-- **Encryption**: crypto-js
-- **Compression**: pako
-
-## 🌙 Features
-
-### Dark Mode
-Toggle in settings or auto-detect system preference.
-
-### Font Size Adjustment
-Small, Medium, Large options for accessibility.
-
-### Offline Support
-- Download exams with all media
-- Work completely offline
-- Auto-sync when online
-- Retry failed uploads
-- Queue management
-
-### Arabic/Quran Support
-- Beautiful Quran text rendering
-- Tajwid color coding
-- Arabic virtual keyboard
-- Transliteration support
-- Murattal audio player
-
-## 🔧 Configuration
-
-### Environment Variables
-
-See `.env.example` for all available options.
-
-### Multi-Tenant
-
-Each school has its own subdomain:
-- `school1.exam.app`
-- `school2.exam.app`
-
-Configure via `PUBLIC_SCHOOL_SUBDOMAIN`.
-
-## 📈 Performance
-
-- **Initial Load**: < 3s on 3G
-- **Bundle Size**: < 1MB (initial)
-- **Time to Interactive**: < 5s
-- **Offline First**: Works 100% offline after download
-
-## 🐛 Troubleshooting
-
-### "Exam not downloaded"
-Ensure you've clicked "Download" before starting the exam.
-
-### "Storage full"
-Clear old exams or free up device storage. Minimum 2GB required.
-
-### "Recording failed"
-Grant microphone/camera permissions in browser settings.
-
-### "Sync failed"
-Check internet connection. Failed items will retry automatically.
-
-## 👥 User Roles
-
-1. **Siswa** (Student) - Take exams, view results
-2. **Guru** (Teacher) - Create questions, manage exams, grading
-3. **Pengawas** (Proctor) - Monitor exam sessions in real-time
-4. **Operator** - Manage sessions, rooms, participants
-5. **Superadmin** - System administration
-
-## 📝 License
-
-Proprietary - All rights reserved
-
-## 🆘 Support
-
-For issues or questions:
-- Create an issue in the repository
-- Contact: support@exam.app
-
----
-
-Built with ❤️ using Astro, TailwindCSS & IndexedDB
-EOF
-
-# Create sample env file
-cat > .env << 'EOF'
-PUBLIC_API_URL=http://localhost:3001/api
-PUBLIC_WS_URL=ws://localhost:3001
-PUBLIC_SCHOOL_SUBDOMAIN=demo
-PUBLIC_APP_VERSION=1.0.0
-PUBLIC_ENABLE_OFFLINE=true
+# ============================================
+# GITIGNORE
+# ============================================
+
+cat > .gitignore << 'EOF'
+node_modules/
+.next/
+out/
+dist/
+.env
+.env.local
+.env.production
+coverage/
+.nyc_output/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp
+.cache/
+playwright-report/
+test-results/
 EOF
 
 echo ""
 echo "=========================================="
-echo "✅ Frontend structure created successfully!"
+echo "Frontend structure created successfully!"
 echo "=========================================="
 echo ""
-echo "📦 Project: $PROJECT_NAME"
-echo "📍 Location: $(pwd)"
+echo "Next steps:"
+echo "  cd $PROJECT_NAME"
+echo "  npm install"
+echo "  # Edit .env.local sesuai konfigurasi lokal"
+echo "  npm run dev"
 echo ""
-echo "🚀 Next Steps:"
-echo "   1. cd $PROJECT_NAME"
-echo "   2. npm install"
-echo "   3. cp .env.example .env (edit as needed)"
-echo "   4. npm run dev"
+echo "App  : http://localhost:3000"
+echo "API  : http://localhost:3001/api (backend)"
+echo "MinIO: http://localhost:9001"
 echo ""
-echo "🌐 Development server will run on:"
-echo "   http://localhost:3000"
+echo "Critical files to implement first:"
+echo "  1. src/app/(siswa)/ujian/[sessionId]/page.tsx  — halaman ujian utama"
+echo "  2. src/lib/exam/controller.ts                  — state machine ujian"
+echo "  3. src/lib/exam/package-decoder.ts             — dekripsi paket soal"
+echo "  4. src/lib/db/schema.ts                        — skema IndexedDB"
+echo "  5. src/lib/offline/download.ts                 — download manager"
+echo "  6. src/lib/offline/sync.ts                     — sync orchestrator"
+echo "  7. src/lib/crypto/aes-gcm.ts                   — enkripsi/dekripsi"
 echo ""
-echo "📚 Key Features Created:"
-echo "   ✓ Complete component structure"
-echo "   ✓ All page routes (Student, Teacher, Proctor, Operator, Admin)"
-echo "   ✓ State management with Nanostores"
-echo "   ✓ IndexedDB setup with Dexie"
-echo "   ✓ Offline-first architecture"
-echo "   ✓ Media recording support"
-echo "   ✓ Auto-save mechanism"
-echo "   ✓ Sync queue system"
-echo "   ✓ PWA ready (Service Worker + Manifest)"
-echo "   ✓ Dark mode & accessibility"
-echo "   ✓ Arabic/Quran support"
-echo "   ✓ Complete TypeScript setup"
-echo "   ✓ ESLint + Prettier configured"
-echo ""
-echo "🎯 Most Critical Files to Implement:"
-echo "   1. src/pages/siswa/ujian/[id].astro (THE EXAM PAGE)"
-echo "   2. src/lib/exam/controller.ts (Exam logic)"
-echo "   3. src/lib/offline/download.ts (Download manager)"
-echo "   4. src/lib/offline/sync.ts (Sync manager)"
-echo "   5. src/lib/db/schema.ts (IndexedDB schema)"
-echo "   6. src/components/exam/MediaRecorder.astro"
-echo ""
-echo "📖 Documentation:"
-echo "   • README.md - Complete project documentation"
-echo "   • .env.example - All environment variables"
-echo "   • Full TypeScript support with path aliases"
-echo ""
-echo "🎨 UI Framework:"
-echo "   • TailwindCSS for styling"
-echo "   • DaisyUI for components"
-echo "   • Responsive & mobile-first"
-echo ""
-echo "Happy coding! 🚀"
-echo "=========================================="
-echo ""
-
-# Show tree if available
-if command -v tree &> /dev/null; then
-    echo "📂 Project Structure:"
-    tree -L 3 -I 'node_modules' -F
-fi

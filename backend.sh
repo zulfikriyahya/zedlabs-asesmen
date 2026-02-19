@@ -2,8 +2,9 @@
 
 # Script untuk membuat struktur project exam-backend (NestJS)
 # Sistem Asesmen Sekolah/Madrasah - Offline-First Multi-Tenant
-# Author: Auto-generated
-# Date: $(date +%Y-%m-%d)
+# Stack: NestJS + Prisma + PostgreSQL + BullMQ + Redis + MinIO
+
+set -e
 
 PROJECT_NAME="exam-backend"
 
@@ -11,156 +12,171 @@ echo "=========================================="
 echo "Creating $PROJECT_NAME NestJS API structure"
 echo "=========================================="
 
-# Buat direktori root project
 mkdir -p $PROJECT_NAME
 cd $PROJECT_NAME
-
-echo "Creating NestJS project structure..."
 
 # ============================================
 # SRC - MAIN APPLICATION
 # ============================================
 
-# Core folders
-mkdir -p src/{common,config,database,modules}
-
-# Common utilities
+mkdir -p src/{common,config,prisma,modules}
 mkdir -p src/common/{decorators,dto,entities,enums,exceptions,filters,guards,interceptors,middleware,pipes,utils,validators}
-
-# Config
-mkdir -p src/config
-
-# Database
-mkdir -p src/database/{migrations,seeds,factories}
+mkdir -p src/prisma/{migrations,seeds,factories}
 
 # ============================================
-# MODULES STRUCTURE
+# MODULES
 # ============================================
 
-echo "Creating modules structure..."
+echo "Creating modules..."
 
-# Auth module
+# Auth
 mkdir -p src/modules/auth/{controllers,services,strategies,dto,guards}
-touch src/modules/auth/{auth.module.ts,controllers/auth.controller.ts,services/auth.service.ts}
+touch src/modules/auth/auth.module.ts
+touch src/modules/auth/controllers/auth.controller.ts
+touch src/modules/auth/services/auth.service.ts
 touch src/modules/auth/strategies/{jwt.strategy.ts,jwt-refresh.strategy.ts,local.strategy.ts}
 touch src/modules/auth/dto/{login.dto.ts,register.dto.ts,refresh-token.dto.ts,change-password.dto.ts}
 touch src/modules/auth/guards/{jwt-auth.guard.ts,local-auth.guard.ts,roles.guard.ts,device.guard.ts}
 
-# Schools module (Multi-tenant)
-mkdir -p src/modules/schools/{controllers,services,dto,entities}
-touch src/modules/schools/{schools.module.ts,controllers/schools.controller.ts,services/schools.service.ts}
+# Schools (multi-tenant root)
+mkdir -p src/modules/schools/{controllers,services,dto}
+touch src/modules/schools/schools.module.ts
+touch src/modules/schools/controllers/schools.controller.ts
+touch src/modules/schools/services/schools.service.ts
 touch src/modules/schools/dto/{create-school.dto.ts,update-school.dto.ts}
-touch src/modules/schools/entities/school.entity.ts
 
-# Users module
-mkdir -p src/modules/users/{controllers,services,dto,entities}
-touch src/modules/users/{users.module.ts,controllers/users.controller.ts,services/users.service.ts}
+# Users
+mkdir -p src/modules/users/{controllers,services,dto}
+touch src/modules/users/users.module.ts
+touch src/modules/users/controllers/users.controller.ts
+touch src/modules/users/services/users.service.ts
 touch src/modules/users/dto/{create-user.dto.ts,update-user.dto.ts,import-users.dto.ts}
-touch src/modules/users/entities/{user.entity.ts,refresh-token.entity.ts}
 
-# Subjects module
-mkdir -p src/modules/subjects/{controllers,services,dto,entities}
-touch src/modules/subjects/{subjects.module.ts,controllers/subjects.controller.ts,services/subjects.service.ts}
+# Subjects
+mkdir -p src/modules/subjects/{controllers,services,dto}
+touch src/modules/subjects/subjects.module.ts
+touch src/modules/subjects/controllers/subjects.controller.ts
+touch src/modules/subjects/services/subjects.service.ts
 touch src/modules/subjects/dto/{create-subject.dto.ts,update-subject.dto.ts}
-touch src/modules/subjects/entities/subject.entity.ts
 
-# Question Tags module
-mkdir -p src/modules/question-tags/{controllers,services,dto,entities}
-touch src/modules/question-tags/{question-tags.module.ts,controllers/question-tags.controller.ts,services/question-tags.service.ts}
+# Question Tags
+mkdir -p src/modules/question-tags/{controllers,services,dto}
+touch src/modules/question-tags/question-tags.module.ts
+touch src/modules/question-tags/controllers/question-tags.controller.ts
+touch src/modules/question-tags/services/question-tags.service.ts
 touch src/modules/question-tags/dto/{create-tag.dto.ts,update-tag.dto.ts}
-touch src/modules/question-tags/entities/{question-tag.entity.ts,question-tag-mapping.entity.ts}
 
-# Questions module (Question Bank)
-mkdir -p src/modules/questions/{controllers,services,dto,entities,interfaces}
-touch src/modules/questions/{questions.module.ts,controllers/questions.controller.ts,services/{questions.service.ts,question-import.service.ts,question-statistics.service.ts}}
+# Questions (Question Bank)
+mkdir -p src/modules/questions/{controllers,services,dto,interfaces}
+touch src/modules/questions/questions.module.ts
+touch src/modules/questions/controllers/questions.controller.ts
+touch src/modules/questions/services/{questions.service.ts,question-import.service.ts,question-statistics.service.ts}
 touch src/modules/questions/dto/{create-question.dto.ts,update-question.dto.ts,import-questions.dto.ts,approve-question.dto.ts}
-touch src/modules/questions/entities/question.entity.ts
 touch src/modules/questions/interfaces/{question-options.interface.ts,correct-answer.interface.ts}
 
-# Exams module
-mkdir -p src/modules/exams/{controllers,services,dto,entities,interfaces}
-touch src/modules/exams/{exams.module.ts,controllers/exams.controller.ts,services/{exams.service.ts,exam-statistics.service.ts,item-analysis.service.ts}}
+# Exams
+mkdir -p src/modules/exams/{controllers,services,dto,interfaces}
+touch src/modules/exams/exams.module.ts
+touch src/modules/exams/controllers/exams.controller.ts
+touch src/modules/exams/services/{exams.service.ts,exam-statistics.service.ts,item-analysis.service.ts}
 touch src/modules/exams/dto/{create-exam.dto.ts,update-exam.dto.ts,publish-exam.dto.ts,add-questions.dto.ts}
-touch src/modules/exams/entities/{exam.entity.ts,exam-question.entity.ts}
 touch src/modules/exams/interfaces/exam-settings.interface.ts
 
-# Exam Rooms module
-mkdir -p src/modules/exam-rooms/{controllers,services,dto,entities}
-touch src/modules/exam-rooms/{exam-rooms.module.ts,controllers/exam-rooms.controller.ts,services/exam-rooms.service.ts}
+# Exam Rooms
+mkdir -p src/modules/exam-rooms/{controllers,services,dto}
+touch src/modules/exam-rooms/exam-rooms.module.ts
+touch src/modules/exam-rooms/controllers/exam-rooms.controller.ts
+touch src/modules/exam-rooms/services/exam-rooms.service.ts
 touch src/modules/exam-rooms/dto/{create-room.dto.ts,update-room.dto.ts}
-touch src/modules/exam-rooms/entities/exam-room.entity.ts
 
-# Exam Sessions module
-mkdir -p src/modules/exam-sessions/{controllers,services,dto,entities}
-touch src/modules/exam-sessions/{exam-sessions.module.ts,controllers/exam-sessions.controller.ts,services/{exam-sessions.service.ts,session-monitoring.service.ts}}
+# Exam Sessions
+mkdir -p src/modules/exam-sessions/{controllers,services,dto}
+touch src/modules/exam-sessions/exam-sessions.module.ts
+touch src/modules/exam-sessions/controllers/exam-sessions.controller.ts
+touch src/modules/exam-sessions/services/{exam-sessions.service.ts,session-monitoring.service.ts}
 touch src/modules/exam-sessions/dto/{create-session.dto.ts,update-session.dto.ts,assign-students.dto.ts}
-touch src/modules/exam-sessions/entities/{exam-session.entity.ts,exam-session-student.entity.ts}
 
-# Exam Attempts module (CRITICAL - Student Exam Flow)
-mkdir -p src/modules/exam-attempts/{controllers,services,dto,entities,interfaces}
-touch src/modules/exam-attempts/{exam-attempts.module.ts,controllers/{student-exam.controller.ts,exam-attempts.controller.ts},services/{exam-attempts.service.ts,exam-download.service.ts,exam-submission.service.ts,auto-grading.service.ts}}
+# Exam Attempts (CRITICAL — Student Exam Flow)
+mkdir -p src/modules/exam-attempts/{controllers,services,dto,interfaces}
+touch src/modules/exam-attempts/exam-attempts.module.ts
+touch src/modules/exam-attempts/controllers/{student-exam.controller.ts,exam-attempts.controller.ts}
+touch src/modules/exam-attempts/services/{exam-attempts.service.ts,exam-download.service.ts,exam-submission.service.ts,auto-grading.service.ts}
 touch src/modules/exam-attempts/dto/{start-attempt.dto.ts,submit-answer.dto.ts,submit-exam.dto.ts,upload-media.dto.ts}
-touch src/modules/exam-attempts/entities/{exam-attempt.entity.ts,exam-answer.entity.ts}
 touch src/modules/exam-attempts/interfaces/{exam-package.interface.ts,grading-result.interface.ts}
 
-# Grading module
+# Grading
 mkdir -p src/modules/grading/{controllers,services,dto}
-touch src/modules/grading/{grading.module.ts,controllers/grading.controller.ts,services/{grading.service.ts,manual-grading.service.ts}}
+touch src/modules/grading/grading.module.ts
+touch src/modules/grading/controllers/grading.controller.ts
+touch src/modules/grading/services/{grading.service.ts,manual-grading.service.ts}
 touch src/modules/grading/dto/{grade-answer.dto.ts,complete-grading.dto.ts,publish-result.dto.ts}
 
-# Activity Logs module
-mkdir -p src/modules/activity-logs/{controllers,services,dto,entities}
-touch src/modules/activity-logs/{activity-logs.module.ts,controllers/activity-logs.controller.ts,services/activity-logs.service.ts}
+# Activity Logs
+mkdir -p src/modules/activity-logs/{controllers,services,dto}
+touch src/modules/activity-logs/activity-logs.module.ts
+touch src/modules/activity-logs/controllers/activity-logs.controller.ts
+touch src/modules/activity-logs/services/activity-logs.service.ts
 touch src/modules/activity-logs/dto/create-activity-log.dto.ts
-touch src/modules/activity-logs/entities/exam-activity-log.entity.ts
 
-# System Logs module
-mkdir -p src/modules/system-logs/{services,entities}
-touch src/modules/system-logs/{system-logs.module.ts,services/system-logs.service.ts}
-touch src/modules/system-logs/entities/system-log.entity.ts
+# System Logs
+mkdir -p src/modules/system-logs/services
+touch src/modules/system-logs/system-logs.module.ts
+touch src/modules/system-logs/services/system-logs.service.ts
 
-# Sync Queue module (CRITICAL - Offline Sync)
-mkdir -p src/modules/sync-queue/{controllers,services,processors,dto,entities}
-touch src/modules/sync-queue/{sync-queue.module.ts,controllers/sync-queue.controller.ts,services/{sync-queue.service.ts,sync-processor.service.ts,chunked-upload.service.ts}}
+# Sync Queue (CRITICAL — Offline Sync)
+mkdir -p src/modules/sync-queue/{controllers,services,processors,dto}
+touch src/modules/sync-queue/sync-queue.module.ts
+touch src/modules/sync-queue/controllers/sync-queue.controller.ts
+touch src/modules/sync-queue/services/{sync-queue.service.ts,sync-processor.service.ts,chunked-upload.service.ts}
 touch src/modules/sync-queue/processors/sync-queue.processor.ts
 touch src/modules/sync-queue/dto/{add-sync-item.dto.ts,retry-sync.dto.ts}
-touch src/modules/sync-queue/entities/sync-queue.entity.ts
 
-# Monitoring module
+# Monitoring
 mkdir -p src/modules/monitoring/{controllers,services,gateways}
-touch src/modules/monitoring/{monitoring.module.ts,controllers/monitoring.controller.ts,services/monitoring.service.ts,gateways/monitoring.gateway.ts}
+touch src/modules/monitoring/monitoring.module.ts
+touch src/modules/monitoring/controllers/monitoring.controller.ts
+touch src/modules/monitoring/services/monitoring.service.ts
+touch src/modules/monitoring/gateways/monitoring.gateway.ts
 
-# Analytics module
+# Analytics
 mkdir -p src/modules/analytics/{controllers,services,dto}
-touch src/modules/analytics/{analytics.module.ts,controllers/analytics.controller.ts,services/{analytics.service.ts,dashboard.service.ts,reports.service.ts}}
+touch src/modules/analytics/analytics.module.ts
+touch src/modules/analytics/controllers/analytics.controller.ts
+touch src/modules/analytics/services/{analytics.service.ts,dashboard.service.ts,reports.service.ts}
 touch src/modules/analytics/dto/{analytics-filter.dto.ts,export-report.dto.ts}
 
-# Media module
+# Media
 mkdir -p src/modules/media/{controllers,services,dto}
-touch src/modules/media/{media.module.ts,controllers/media.controller.ts,services/{media.service.ts,media-upload.service.ts,media-compression.service.ts}}
+touch src/modules/media/media.module.ts
+touch src/modules/media/controllers/media.controller.ts
+touch src/modules/media/services/{media.service.ts,media-upload.service.ts,media-compression.service.ts}
 touch src/modules/media/dto/{upload-media.dto.ts,delete-media.dto.ts}
 
-# Import/Export module
+# Import/Export
 mkdir -p src/modules/import-export/{controllers,services,dto,processors}
-touch src/modules/import-export/{import-export.module.ts,controllers/import-export.controller.ts,services/{excel-import.service.ts,excel-export.service.ts,pdf-export.service.ts}}
+touch src/modules/import-export/import-export.module.ts
+touch src/modules/import-export/controllers/import-export.controller.ts
+touch src/modules/import-export/services/{excel-import.service.ts,excel-export.service.ts,pdf-export.service.ts}
 touch src/modules/import-export/dto/{import-file.dto.ts,export-filter.dto.ts}
 touch src/modules/import-export/processors/import-queue.processor.ts
 
-# Notifications module
-mkdir -p src/modules/notifications/{controllers,services,dto,entities}
-touch src/modules/notifications/{notifications.module.ts,controllers/notifications.controller.ts,services/{notifications.service.ts,email.service.ts}}
+# Notifications
+mkdir -p src/modules/notifications/{controllers,services,dto}
+touch src/modules/notifications/notifications.module.ts
+touch src/modules/notifications/controllers/notifications.controller.ts
+touch src/modules/notifications/services/{notifications.service.ts,email.service.ts}
 touch src/modules/notifications/dto/{create-notification.dto.ts,mark-read.dto.ts}
-touch src/modules/notifications/entities/notification.entity.ts
 
-# Audit Logs module
-mkdir -p src/modules/audit-logs/{services,entities,decorators}
-touch src/modules/audit-logs/{audit-logs.module.ts,services/audit-logs.service.ts}
-touch src/modules/audit-logs/entities/audit-log.entity.ts
+# Audit Logs
+mkdir -p src/modules/audit-logs/{services,decorators}
+touch src/modules/audit-logs/audit-logs.module.ts
+touch src/modules/audit-logs/services/audit-logs.service.ts
 touch src/modules/audit-logs/decorators/audit.decorator.ts
 
-# Health Check module
-mkdir -p src/modules/health/{controllers}
-touch src/modules/health/{health.module.ts,controllers/health.controller.ts}
+# Health
+mkdir -p src/modules/health/controllers
+touch src/modules/health/health.module.ts
+touch src/modules/health/controllers/health.controller.ts
 
 # ============================================
 # COMMON UTILITIES
@@ -168,104 +184,62 @@ touch src/modules/health/{health.module.ts,controllers/health.controller.ts}
 
 echo "Creating common utilities..."
 
-# Decorators
-touch src/common/decorators/{current-user.decorator.ts,roles.decorator.ts,public.decorator.ts,audit.decorator.ts,school-id.decorator.ts}
-
-# DTOs
+touch src/common/decorators/{current-user.decorator.ts,tenant-id.decorator.ts,roles.decorator.ts,public.decorator.ts,idempotency.decorator.ts}
 touch src/common/dto/{pagination.dto.ts,base-query.dto.ts,base-response.dto.ts}
-
-# Base Entity
-touch src/common/entities/base.entity.ts
-
-# Enums
 touch src/common/enums/{user-role.enum.ts,exam-type.enum.ts,exam-status.enum.ts,question-type.enum.ts,sync-status.enum.ts,log-level.enum.ts}
-
-# Exceptions
-touch src/common/exceptions/{tenant-not-found.exception.ts,device-locked.exception.ts,exam-not-available.exception.ts}
-
-# Filters
+touch src/common/exceptions/{tenant-not-found.exception.ts,device-locked.exception.ts,exam-not-available.exception.ts,idempotency-conflict.exception.ts}
 touch src/common/filters/{http-exception.filter.ts,all-exceptions.filter.ts}
-
-# Guards
 touch src/common/guards/{tenant.guard.ts,throttler.guard.ts}
-
-# Interceptors
-touch src/common/interceptors/{tenant.interceptor.ts,logging.interceptor.ts,transform.interceptor.ts,timeout.interceptor.ts}
-
-# Middleware
+touch src/common/interceptors/{tenant.interceptor.ts,logging.interceptor.ts,transform.interceptor.ts,timeout.interceptor.ts,idempotency.interceptor.ts}
 touch src/common/middleware/{logger.middleware.ts,performance.middleware.ts,subdomain.middleware.ts}
-
-# Pipes
 touch src/common/pipes/{validation.pipe.ts,parse-int.pipe.ts}
-
-# Utils
-touch src/common/utils/{encryption.util.ts,checksum.util.ts,device-fingerprint.util.ts,time-validation.util.ts,randomizer.util.ts,similarity.util.ts,compression.util.ts,file.util.ts}
-
-# Validators
+touch src/common/utils/{encryption.util.ts,checksum.util.ts,device-fingerprint.util.ts,time-validation.util.ts,randomizer.util.ts,similarity.util.ts,file.util.ts,presigned-url.util.ts}
 touch src/common/validators/{is-school-exists.validator.ts,is-unique.validator.ts}
 
 # ============================================
-# CONFIG FILES
+# CONFIG
 # ============================================
 
-echo "Creating configuration files..."
+echo "Creating config files..."
 
-touch src/config/{database.config.ts,jwt.config.ts,redis.config.ts,multer.config.ts,throttler.config.ts,app.config.ts}
+touch src/config/{database.config.ts,jwt.config.ts,redis.config.ts,multer.config.ts,throttler.config.ts,app.config.ts,minio.config.ts,bullmq.config.ts}
 
 # ============================================
-# DATABASE
+# PRISMA
 # ============================================
 
-echo "Creating database structure..."
+echo "Creating Prisma structure..."
 
-# Migrations
-touch src/database/migrations/.gitkeep
-
-# Seeds
-touch src/database/seeds/{01-schools.seed.ts,02-users.seed.ts,03-subjects.seed.ts}
-
-# Factories
-touch src/database/factories/{user.factory.ts,question.factory.ts,exam.factory.ts}
+touch src/prisma/seeds/{01-schools.seed.ts,02-users.seed.ts,03-subjects.seed.ts,index.ts}
+touch src/prisma/factories/{user.factory.ts,question.factory.ts,exam.factory.ts}
 
 # ============================================
 # ROOT FILES
 # ============================================
 
-echo "Creating root application files..."
-
 touch src/{main.ts,app.module.ts,app.controller.ts,app.service.ts}
 
 # ============================================
-# TEST FILES
+# TESTS
 # ============================================
 
 echo "Creating test structure..."
 
 mkdir -p test/{unit,integration,e2e,load}
-
-# Unit tests
 mkdir -p test/unit/{auth,questions,exams,grading,sync}
+
 touch test/unit/auth/auth.service.spec.ts
 touch test/unit/questions/questions.service.spec.ts
 touch test/unit/exams/exams.service.spec.ts
 touch test/unit/grading/auto-grading.service.spec.ts
 touch test/unit/sync/sync-queue.service.spec.ts
-
-# Integration tests
-touch test/integration/{database.spec.ts,redis.spec.ts}
-
-# E2E tests
-touch test/e2e/{auth.e2e-spec.ts,student-exam-flow.e2e-spec.ts,grading.e2e-spec.ts}
-
-# Load tests
-touch test/load/exam-download.k6.js
-touch test/load/concurrent-users.k6.js
+touch test/integration/{database.spec.ts,redis.spec.ts,minio.spec.ts}
+touch test/e2e/{auth.e2e-spec.ts,student-exam-flow.e2e-spec.ts,grading.e2e-spec.ts,offline-sync.e2e-spec.ts}
+touch test/load/{exam-download.k6.js,concurrent-submission.k6.js,sync-stress.k6.js}
 
 # ============================================
 # LOGS & UPLOADS
 # ============================================
-
-echo "Creating logs and uploads directories..."
 
 mkdir -p logs
 touch logs/.gitkeep
@@ -274,34 +248,28 @@ mkdir -p uploads/{questions,answers,media,temp}
 touch uploads/.gitkeep
 
 # ============================================
-# DOCUMENTATION
+# DOCS
 # ============================================
 
-echo "Creating documentation..."
-
 mkdir -p docs/{api,architecture,deployment}
-touch docs/README.md
 touch docs/api/swagger.yaml
-touch docs/architecture/system-design.md
+touch docs/architecture/{system-design.md,database-schema.md,offline-sync-flow.md,security-model.md}
 touch docs/deployment/production-checklist.md
 
 # ============================================
 # SCRIPTS
 # ============================================
 
-echo "Creating utility scripts..."
-
 mkdir -p scripts
-touch scripts/{backup.sh,restore.sh,migrate.sh,seed.sh,cleanup-media.sh}
+touch scripts/{backup.sh,restore.sh,seed.sh,cleanup-media.sh,rotate-keys.sh}
 chmod +x scripts/*.sh
 
 # ============================================
-# ROOT CONFIGURATION FILES
+# PACKAGE.JSON
 # ============================================
 
-echo "Creating root configuration files..."
+echo "Creating package.json..."
 
-# Package.json
 cat > package.json << 'EOF'
 {
   "name": "exam-backend",
@@ -322,32 +290,32 @@ cat > package.json << 'EOF'
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:load": "k6 run test/load/concurrent-users.k6.js",
-    "migration:generate": "typeorm migration:generate -d src/config/database.config.ts",
-    "migration:run": "typeorm migration:run -d src/config/database.config.ts",
-    "migration:revert": "typeorm migration:revert -d src/config/database.config.ts",
-    "seed": "ts-node src/database/seeds/index.ts"
+    "test:load": "k6 run test/load/concurrent-submission.k6.js",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "ts-node src/prisma/seeds/index.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/config": "^3.1.1",
-    "@nestjs/typeorm": "^10.0.1",
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/schedule": "^4.0.0",
-    "@nestjs/bull": "^10.0.1",
+    "@nestjs/bullmq": "^10.1.1",
     "@nestjs/websockets": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.0.0",
     "@nestjs/swagger": "^7.1.17",
     "@nestjs/throttler": "^5.1.1",
-    "typeorm": "^0.3.17",
-    "mysql2": "^3.6.5",
-    "redis": "^4.6.11",
-    "bull": "^4.12.0",
+    "@nestjs/terminus": "^10.2.3",
+    "@prisma/client": "^5.7.1",
+    "bullmq": "^5.1.1",
+    "ioredis": "^5.3.2",
+    "socket.io": "^4.6.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
@@ -356,17 +324,19 @@ cat > package.json << 'EOF'
     "class-transformer": "^0.5.1",
     "compression": "^1.7.4",
     "helmet": "^7.1.0",
+    "zod": "^3.22.4",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "@sentry/node": "^7.91.0",
+    "@sentry/node": "^8.0.0",
     "multer": "^1.4.5-lts.1",
+    "minio": "^7.1.3",
     "exceljs": "^4.4.0",
-    "pdfkit": "^0.14.0",
+    "puppeteer": "^21.7.0",
     "sharp": "^0.33.1",
-    "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.2",
+    "ffmpeg-static": "^5.2.0",
     "string-similarity": "^4.0.4",
-    "moment-timezone": "^0.5.44",
+    "date-fns-tz": "^3.1.3",
     "uuid": "^9.0.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1"
@@ -375,6 +345,7 @@ cat > package.json << 'EOF'
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "prisma": "^5.7.1",
     "@types/express": "^4.17.17",
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.1",
@@ -384,6 +355,8 @@ cat > package.json << 'EOF'
     "@types/compression": "^1.7.5",
     "@types/passport-jwt": "^4.0.0",
     "@types/passport-local": "^1.0.38",
+    "@types/fluent-ffmpeg": "^2.1.24",
+    "@types/string-similarity": "^4.0.2",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.42.0",
@@ -401,26 +374,27 @@ cat > package.json << 'EOF'
     "rimraf": "^5.0.5"
   },
   "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
+    "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "@common/(.*)": "<rootDir>/common/$1",
+      "@config/(.*)": "<rootDir>/config/$1",
+      "@modules/(.*)": "<rootDir>/modules/$1",
+      "@prisma/(.*)": "<rootDir>/prisma/$1"
+    }
   }
 }
 EOF
 
-# tsconfig.json
+# ============================================
+# TSCONFIG
+# ============================================
+
 cat > tsconfig.json << 'EOF'
 {
   "compilerOptions": {
@@ -436,22 +410,24 @@ cat > tsconfig.json << 'EOF'
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "forceConsistentCasingInFileNames": true,
     "paths": {
       "@common/*": ["src/common/*"],
       "@config/*": ["src/config/*"],
       "@modules/*": ["src/modules/*"],
-      "@database/*": ["src/database/*"]
+      "@prisma/*": ["src/prisma/*"]
     }
   }
 }
 EOF
 
-# nest-cli.json
+# ============================================
+# NEST-CLI.JSON
+# ============================================
+
 cat > nest-cli.json << 'EOF'
 {
   "$schema": "https://json.schemastore.org/nest-cli",
@@ -460,13 +436,546 @@ cat > nest-cli.json << 'EOF'
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "assets": ["**/*.sql"],
     "watchAssets": true
   }
 }
 EOF
 
-# .eslintrc.js
+# ============================================
+# PRISMA SCHEMA
+# ============================================
+
+echo "Creating Prisma schema..."
+
+mkdir -p prisma
+
+cat > prisma/schema.prisma << 'EOF'
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_DIRECT_URL")
+}
+
+// ============================================
+// MULTI-TENANT ROOT
+// ============================================
+
+model School {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  subdomain   String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  subjects    Subject[]
+  questions   Question[]
+  exams       Exam[]
+  sessions    ExamSession[]
+  auditLogs   AuditLog[]
+
+  @@map("schools")
+}
+
+// ============================================
+// USERS & AUTH
+// ============================================
+
+model User {
+  id           String    @id @default(cuid())
+  schoolId     String
+  email        String
+  username     String
+  passwordHash String
+  role         UserRole
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id])
+  refreshTokens  RefreshToken[]
+  devices        UserDevice[]
+  attempts       ExamAttempt[]
+  activityLogs   ExamActivityLog[]
+  gradedAnswers  ExamAnswer[]    @relation("GradedBy")
+  auditLogs      AuditLog[]
+
+  @@unique([schoolId, email])
+  @@unique([schoolId, username])
+  @@index([schoolId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model UserDevice {
+  id          String    @id @default(cuid())
+  userId      String
+  fingerprint String
+  label       String?
+  isLocked    Boolean   @default(false)
+  lockedAt    DateTime?
+  lastSeenAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("user_devices")
+}
+
+// ============================================
+// QUESTION BANK
+// ============================================
+
+model Subject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school    School     @relation(fields: [schoolId], references: [id])
+  questions Question[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@map("subjects")
+}
+
+model QuestionTag {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  questions QuestionTagMapping[]
+
+  @@unique([schoolId, name])
+  @@map("question_tags")
+}
+
+model Question {
+  id           String       @id @default(cuid())
+  schoolId     String
+  subjectId    String
+  type         QuestionType
+  content      Json         // { text, images, audio, video }
+  options      Json?        // untuk tipe pilihan ganda & menjodohkan
+  correctAnswer Json        // terenkripsi di level aplikasi
+  points       Int          @default(1)
+  difficulty   Int          @default(1) // 1-5
+  status       String       @default("draft") // draft | review | approved
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  school       School               @relation(fields: [schoolId], references: [id])
+  subject      Subject              @relation(fields: [subjectId], references: [id])
+  tags         QuestionTagMapping[]
+  examQuestions ExamQuestion[]
+
+  @@index([schoolId])
+  @@index([schoolId, subjectId])
+  @@map("questions")
+}
+
+model QuestionTagMapping {
+  questionId String
+  tagId      String
+
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  tag      QuestionTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, tagId])
+  @@map("question_tag_mappings")
+}
+
+// ============================================
+// EXAMS
+// ============================================
+
+model Exam {
+  id          String     @id @default(cuid())
+  schoolId    String
+  title       String
+  description String?
+  subjectId   String?
+  settings    Json       // { duration, shuffleQuestions, shuffleOptions, showResult, maxAttempts, ... }
+  status      ExamStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdById String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  school    School          @relation(fields: [schoolId], references: [id])
+  questions ExamQuestion[]
+  sessions  ExamSession[]
+
+  @@index([schoolId])
+  @@map("exams")
+}
+
+model ExamQuestion {
+  id         String @id @default(cuid())
+  examId     String
+  questionId String
+  order      Int
+  points     Int?   // override points dari question
+
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@unique([examId, questionId])
+  @@unique([examId, order])
+  @@map("exam_questions")
+}
+
+// ============================================
+// SESSIONS & ROOMS
+// ============================================
+
+model ExamRoom {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  capacity  Int?
+  createdAt DateTime @default(now())
+
+  sessions ExamSession[]
+
+  @@index([schoolId])
+  @@map("exam_rooms")
+}
+
+model ExamSession {
+  id          String        @id @default(cuid())
+  schoolId    String
+  examId      String
+  roomId      String?
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  status      SessionStatus @default(SCHEDULED)
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  school   School        @relation(fields: [schoolId], references: [id])
+  exam     Exam          @relation(fields: [examId], references: [id])
+  room     ExamRoom?     @relation(fields: [roomId], references: [id])
+  students SessionStudent[]
+  attempts ExamAttempt[]
+
+  @@index([schoolId])
+  @@index([schoolId, examId])
+  @@map("exam_sessions")
+}
+
+model SessionStudent {
+  sessionId String
+  userId    String
+  tokenCode String  @unique // token unik per peserta per sesi
+  addedAt   DateTime @default(now())
+
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, userId])
+  @@map("session_students")
+}
+
+// ============================================
+// ATTEMPTS & ANSWERS
+// ============================================
+
+model ExamAttempt {
+  id              String        @id @default(cuid())
+  sessionId       String
+  userId          String
+  idempotencyKey  String        @unique // prevent duplicate submission
+  deviceFingerprint String?
+  startedAt       DateTime      @default(now())
+  submittedAt     DateTime?
+  status          AttemptStatus @default(IN_PROGRESS)
+  packageHash     String?       // checksum paket soal yang diunduh
+  totalScore      Float?
+  maxScore        Float?
+  gradingStatus   GradingStatus @default(PENDING)
+  gradingCompletedAt DateTime?
+
+  session  ExamSession  @relation(fields: [sessionId], references: [id])
+  user     User         @relation(fields: [userId], references: [id])
+  answers  ExamAnswer[]
+  activityLogs ExamActivityLog[]
+  syncItems    SyncQueue[]
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+  @@map("exam_attempts")
+}
+
+model ExamAnswer {
+  id              String   @id @default(cuid())
+  attemptId       String
+  questionId      String
+  idempotencyKey  String   @unique
+  answer          Json     // jawaban terenkripsi
+  mediaUrls       String[] // presigned MinIO paths
+  score           Float?
+  maxScore        Float?
+  feedback        String?
+  isAutoGraded    Boolean  @default(false)
+  gradedById      String?
+  gradedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  gradedBy User?       @relation("GradedBy", fields: [gradedById], references: [id])
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@map("exam_answers")
+}
+
+// ============================================
+// SYNC QUEUE
+// ============================================
+
+model SyncQueue {
+  id             String     @id @default(cuid())
+  attemptId      String
+  idempotencyKey String     @unique
+  type           SyncType
+  payload        Json
+  status         SyncStatus @default(PENDING)
+  retryCount     Int        @default(0)
+  maxRetries     Int        @default(5)
+  lastError      String?
+  processedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id])
+
+  @@index([status, retryCount])
+  @@index([attemptId])
+  @@map("sync_queue")
+}
+
+// ============================================
+// LOGGING & AUDIT
+// ============================================
+
+model ExamActivityLog {
+  id        String   @id @default(cuid())
+  attemptId String
+  userId    String
+  type      String   // tab_blur | tab_focus | copy_paste | idle | ...
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id])
+
+  @@index([attemptId])
+  @@map("exam_activity_logs")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  schoolId   String
+  userId     String?
+  action     String   // START_EXAM | SUBMIT_EXAM | CHANGE_SCORE | ADMIN_ACCESS | ...
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([schoolId])
+  @@index([schoolId, action])
+  @@map("audit_logs")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  TEACHER
+  SUPERVISOR
+  OPERATOR
+  STUDENT
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  COMPLEX_MULTIPLE_CHOICE
+  TRUE_FALSE
+  MATCHING
+  SHORT_ANSWER
+  ESSAY
+}
+
+enum ExamStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  ABANDONED
+}
+
+enum GradingStatus {
+  PENDING
+  AUTO_GRADED
+  MANUAL_REQUIRED
+  COMPLETED
+  PUBLISHED
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+enum SyncType {
+  SUBMIT_ANSWER
+  SUBMIT_EXAM
+  UPLOAD_MEDIA
+  ACTIVITY_LOG
+}
+EOF
+
+# ============================================
+# .ENV.EXAMPLE
+# ============================================
+
+cat > .env.example << 'EOF'
+# Application
+NODE_ENV=development
+PORT=3000
+API_PREFIX=api
+APP_URL=http://localhost:3000
+
+# Database (Prisma)
+DATABASE_URL=postgresql://exam_user:password@pgbouncer:5432/exam_db
+DATABASE_DIRECT_URL=postgresql://exam_user:password@postgres:5432/exam_db
+
+# Redis (ioredis — gunakan Sentinel di production)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# JWT
+JWT_ACCESS_SECRET=change-this-access-secret-min-32-chars
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=change-this-refresh-secret-min-32-chars
+JWT_REFRESH_EXPIRES_IN=7d
+
+# Encryption (AES-256-GCM key, 32 bytes hex)
+ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+
+# MinIO (S3-compatible)
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=exam-assets
+MINIO_PRESIGNED_TTL=3600
+
+# BullMQ
+BULLMQ_CONCURRENCY=10
+
+# Rate Limiting (@nestjs/throttler)
+THROTTLE_TTL=60
+THROTTLE_LIMIT=100
+
+# File Upload
+MAX_FILE_SIZE=1073741824
+ALLOWED_IMAGE_TYPES=image/jpeg,image/png,image/webp
+ALLOWED_AUDIO_TYPES=audio/mpeg,audio/wav,audio/webm
+ALLOWED_VIDEO_TYPES=video/mp4,video/webm
+
+# Sentry
+SENTRY_DSN=
+
+# SMTP (optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=noreply@exam.app
+EOF
+
+# ============================================
+# ESLINT
+# ============================================
+
 cat > .eslintrc.js << 'EOF'
 module.exports = {
   parser: '@typescript-eslint/parser',
@@ -481,21 +990,21 @@ module.exports = {
     'plugin:prettier/recommended',
   ],
   root: true,
-  env: {
-    node: true,
-    jest: true,
-  },
+  env: { node: true, jest: true },
   ignorePatterns: ['.eslintrc.js'],
   rules: {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
-    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-explicit-any': 'warn',
   },
 };
 EOF
 
-# .prettierrc
+# ============================================
+# PRETTIER
+# ============================================
+
 cat > .prettierrc << 'EOF'
 {
   "singleQuote": true,
@@ -506,337 +1015,146 @@ cat > .prettierrc << 'EOF'
 }
 EOF
 
-# .gitignore
-cat > .gitignore << 'EOF'
-# Dependencies
-node_modules/
-.npm/
-.yarn/
+# ============================================
+# GITIGNORE
+# ============================================
 
-# Build
+cat > .gitignore << 'EOF'
+node_modules/
 dist/
 build/
-
-# Environment
 .env
 .env.local
 .env.production
 .env.development
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Uploads
+logs/*.log
 uploads/**/*
 !uploads/.gitkeep
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Testing
 coverage/
 .nyc_output/
-
-# Temporary
 *.tmp
 .cache/
-temp/
-
-# Database
-*.sqlite
-*.db
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
 EOF
 
-# .env.example
-cat > .env.example << 'EOF'
-# Application
-NODE_ENV=development
-PORT=3000
-API_PREFIX=api
-APP_URL=http://localhost:3000
+# ============================================
+# DOCKERFILE
+# ============================================
 
-# Database
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=exam_user
-DB_PASSWORD=your_password
-DB_NAME=exam_db
+cat > Dockerfile << 'EOF'
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npx prisma generate
+RUN npm run build
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# JWT
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-JWT_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this
-JWT_REFRESH_EXPIRES_IN=7d
-
-# Encryption
-ENCRYPTION_KEY=your-32-byte-encryption-key-here-change-this
-
-# File Upload
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE=1073741824
-ALLOWED_IMAGE_TYPES=image/jpeg,image/png,image/gif
-ALLOWED_AUDIO_TYPES=audio/mpeg,audio/wav
-ALLOWED_VIDEO_TYPES=video/mp4,video/webm
-
-# Rate Limiting
-RATE_LIMIT_TTL=60
-RATE_LIMIT_MAX=100
-
-# Monitoring
-SENTRY_DSN=
-
-# Email (Optional)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=noreply@exam.app
-
-# Performance
-MAX_CONCURRENT_USERS=5000
-QUERY_CACHE_TTL=60000
-
-# Logging
-LOG_LEVEL=info
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
 EOF
 
-# README.md
-cat > README.md << 'EOF'
-# Exam Backend API
+# ============================================
+# DOCKER COMPOSE
+# ============================================
 
-RESTful API untuk sistem asesmen/ujian sekolah dan madrasah dengan arsitektur offline-first dan multi-tenant.
+cat > docker-compose.yml << 'EOF'
+version: '3.9'
 
-## 🚀 Features
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - pgbouncer
+      - redis
+      - minio
+    restart: unless-stopped
 
-- ✅ Multi-tenant system with row-level security
-- ✅ Offline-first architecture (download → offline exam → sync)
-- ✅ 6 question types support
-- ✅ Multimedia support (image, audio, video)
-- ✅ Media recording (audio/video answers)
-- ✅ Auto-grading engine
-- ✅ Manual grading for essays
-- ✅ Real-time monitoring
-- ✅ Item analysis & analytics
-- ✅ Sync queue with retry mechanism
-- ✅ Device fingerprinting & locking
-- ✅ JWT authentication
-- ✅ Role-based access control (RBAC)
-- ✅ API documentation (Swagger)
-- ✅ Comprehensive logging
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: exam_db
+      POSTGRES_USER: exam_user
+      POSTGRES_PASSWORD: exam_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
 
-## 📋 Prerequisites
+  pgbouncer:
+    image: bitnami/pgbouncer:latest
+    environment:
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_DATABASE: exam_db
+      POSTGRESQL_USERNAME: exam_user
+      POSTGRESQL_PASSWORD: exam_password
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 1000
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+    ports:
+      - "6432:6432"
+    depends_on:
+      - postgres
+    restart: unless-stopped
 
-- Node.js >= 18.x
-- MySQL >= 8.0
-- Redis >= 6.x
-- FFmpeg (for media processing)
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
 
-## 🔧 Installation
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: unless-stopped
 
-```bash
-# Install dependencies
-npm install
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your configuration
-nano .env
-
-# Run database migrations
-npm run migration:run
-
-# Seed initial data
-npm run seed
-```
-
-## 🏃 Running the Application
-
-```bash
-# Development
-npm run start:dev
-
-# Production
-npm run build
-npm run start:prod
-
-# With PM2
-pm2 start ecosystem.config.js
-```
-
-## 🧪 Testing
-
-```bash
-# Unit tests
-npm run test
-
-# E2E tests
-npm run test:e2e
-
-# Test coverage
-npm run test:cov
-
-# Load testing
-npm run test:load
-```
-
-## 📚 API Documentation
-
-After starting the server, visit:
-- Swagger UI: http://localhost:3000/api/docs
-- OpenAPI JSON: http://localhost:3000/api/docs-json
-
-## 🏗️ Project Structure
-
-```
-exam-backend/
-├── src/
-│   ├── common/           # Shared utilities
-│   ├── config/           # Configuration files
-│   ├── database/         # Migrations & seeds
-│   └── modules/          # Feature modules
-│       ├── auth/         # Authentication
-│       ├── questions/    # Question bank
-│       ├── exams/        # Exam management
-│       ├── exam-attempts/ # Student exam flow
-│       ├── grading/      # Grading system
-│       ├── sync-queue/   # Offline sync
-│       └── ...
-├── test/                 # Test files
-├── logs/                 # Application logs
-├── uploads/              # File uploads
-└── docs/                 # Documentation
-```
-
-## 🔐 Security
-
-- JWT-based authentication
-- Device fingerprinting
-- AES-256 encryption for sensitive data
-- SQL injection prevention (TypeORM)
-- XSS protection (Helmet)
-- CORS configuration
-- Rate limiting
-- Input validation
-
-## 🎯 User Roles
-
-1. **Siswa** - Take exams, view results
-2. **Guru** - Create questions, manage exams, grading
-3. **Pengawas** - Monitor exam sessions
-4. **Operator** - Manage sessions, rooms, participants
-5. **Superadmin** - System administration
-
-## 📊 Performance
-
-- Supports up to 5000 concurrent users
-- Redis caching for frequently accessed data
-- Database query optimization
-- Compression middleware
-- Efficient file handling
-
-## 🔄 Offline Sync Flow
-
-1. Student downloads exam package (encrypted)
-2. Takes exam offline
-3. Submits answers (queued if offline)
-4. Background sync with retry mechanism
-5. Chunked upload for large media files
-
-## 📝 Database Schema
-
-See `docs/architecture/database-schema.sql` for complete schema.
-
-Key tables:
-- schools (multi-tenant)
-- users (with roles)
-- questions (question bank)
-- exams
-- exam_attempts
-- exam_answers
-- sync_queue
-
-## 🛠️ Maintenance
-
-```bash
-# Database backup
-./scripts/backup.sh
-
-# Database restore
-./scripts/restore.sh
-
-# Cleanup old media files
-./scripts/cleanup-media.sh
-
-# Check health
-curl http://localhost:3000/api/health
-```
-
-## 📦 Deployment
-
-See `docs/deployment/production-checklist.md` for deployment guide.
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Connection refused to MySQL:**
-- Check MySQL is running: `sudo systemctl status mysql`
-- Verify credentials in `.env`
-
-**Redis connection error:**
-- Check Redis is running: `redis-cli ping`
-- Should return `PONG`
-
-**Large file upload fails:**
-- Increase nginx `client_max_body_size`
-- Check `MAX_FILE_SIZE` in `.env`
-
-## 📞 Support
-
-For issues or questions:
-- Create an issue in the repository
-- Contact: support@exam.app
-
-## 📄 License
-
-Proprietary - All rights reserved
-
----
-
-Built with ❤️ using NestJS
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
 EOF
 
-# Ecosystem config for PM2
+# ============================================
+# PM2 ECOSYSTEM
+# ============================================
+
 cat > ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [
     {
       name: 'exam-api',
       script: './dist/main.js',
-      instances: 4,
+      instances: 'max',
       exec_mode: 'cluster',
-      env: {
-        NODE_ENV: 'production',
-      },
+      env: { NODE_ENV: 'production' },
       error_file: './logs/pm2-error.log',
       out_file: './logs/pm2-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
@@ -849,124 +1167,22 @@ module.exports = {
 };
 EOF
 
-# Docker support
-cat > Dockerfile << 'EOF'
-FROM node:18-alpine AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-FROM node:18-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/uploads ./uploads
-
-EXPOSE 3000
-
-CMD ["node", "dist/main.js"]
-EOF
-
-cat > docker-compose.yml << 'EOF'
-version: '3.8'
-
-services:
-  api:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-    depends_on:
-      - mysql
-      - redis
-
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: exam_db
-      MYSQL_USER: exam_user
-      MYSQL_PASSWORD: exam_password
-    volumes:
-      - mysql_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  mysql_data:
-  redis_data:
-EOF
-
-# SQL Schema file
-mkdir -p docs/architecture
-cat > docs/architecture/database-schema.sql << 'EOF'
--- ============================================
--- EXAM SYSTEM DATABASE SCHEMA
--- MySQL 8.0
--- Multi-Tenant with Row-Level Security
--- ============================================
-
--- See full schema in the project documentation prompt
-
--- Key Tables:
--- 1. schools - Multi-tenant root
--- 2. users - All users with roles
--- 3. questions - Question bank
--- 4. exams - Exam definitions
--- 5. exam_attempts - Student exam sessions
--- 6. exam_answers - Student answers
--- 7. sync_queue - Offline sync queue
--- 8. exam_activity_logs - Activity tracking
-
--- Note: Execute migrations using TypeORM instead of this file
--- This file is for reference only
-EOF
-
 echo ""
 echo "=========================================="
-echo "✅ Backend structure created successfully!"
+echo "Backend structure created successfully!"
 echo "=========================================="
 echo ""
 echo "Next steps:"
-echo "1. cd $PROJECT_NAME"
-echo "2. npm install"
-echo "3. cp .env.example .env"
-echo "4. Edit .env with your database credentials"
-echo "5. npm run migration:run"
-echo "6. npm run seed"
-echo "7. npm run start:dev"
+echo "  cd $PROJECT_NAME"
+echo "  npm install"
+echo "  cp .env.example .env"
+echo "  # Edit .env sesuai konfigurasi lokal"
+echo "  docker-compose up -d postgres redis minio"
+echo "  npm run db:migrate:dev"
+echo "  npm run db:seed"
+echo "  npm run start:dev"
 echo ""
-echo "Project location: $(pwd)"
-echo ""
-echo "📚 Documentation:"
-echo "   - API Docs: http://localhost:3000/api/docs"
-echo "   - Health: http://localhost:3000/api/health"
-echo ""
-echo "🎯 Key Features Ready:"
-echo "   ✓ Multi-tenant architecture"
-echo "   ✓ Offline-first sync mechanism"
-echo "   ✓ Auto-grading engine"
-echo "   ✓ Media upload & processing"
-echo "   ✓ Real-time monitoring"
-echo "   ✓ Comprehensive logging"
+echo "API Docs : http://localhost:3000/api/docs"
+echo "Health   : http://localhost:3000/api/health"
+echo "MinIO    : http://localhost:9001"
 echo ""
