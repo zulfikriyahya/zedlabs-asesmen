@@ -1,19 +1,16 @@
-// ── grading.module.ts ──────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/grading.module.ts  (standalone — fix import AutoGrading)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { GradingService } from './services/grading.service';
+import { ManualGradingService } from './services/manual-grading.service';
+import { GradingController } from './controllers/grading.controller';
+import { SubmissionsModule } from '../submissions/submissions.module';
 
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-
-// ── dto ──────────────────────────────────────────────────
-export class GradeAnswerDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
-  @IsNumber() @Min(0) score: number;
-  @IsOptional() @IsString() feedback?: string;
-}
-
-export class CompleteGradingDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-}
-
-export class PublishResultDto {
-  @IsArray() @IsString({ each: true }) attemptIds: string[];
-}
+@Module({
+  imports: [SubmissionsModule], // import AutoGradingService dari submissions
+  providers: [GradingService, ManualGradingService],
+  controllers: [GradingController],
+  exports: [GradingService],
+})
+export class GradingModule {}
