@@ -1,4 +1,6 @@
-// ── seeds/03-subjects.seed.ts ─────────────────────────────
+// ── src/prisma/seeds/03-subjects.seed.ts ─────────────────
+import { PrismaClient } from '@prisma/client';
+
 export async function seedSubjects(prisma: PrismaClient) {
   const tenant = await prisma.tenant.findFirst({ where: { code: 'SMKN1' } });
   if (!tenant) throw new Error('Tenant tidak ditemukan');
