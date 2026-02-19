@@ -1,4 +1,11 @@
-// ── services/subjects.service.ts ─────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/subjects/services/subjects.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateSubjectDto } from '../dto/create-subject.dto';
+import { UpdateSubjectDto } from '../dto/update-subject.dto';
+
 @Injectable()
 export class SubjectsService {
   constructor(private prisma: PrismaService) {}
@@ -11,7 +18,7 @@ export class SubjectsService {
     const exists = await this.prisma.subject.findUnique({
       where: { tenantId_code: { tenantId, code: dto.code } },
     });
-    if (exists) throw new ConflictException(`Kode mata pelajaran '${dto.code}' sudah ada`);
+    if (exists) throw new ConflictException(`Kode '${dto.code}' sudah ada`);
     return this.prisma.subject.create({ data: { tenantId, ...dto } });
   }
 
