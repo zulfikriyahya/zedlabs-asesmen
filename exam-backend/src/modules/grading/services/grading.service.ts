@@ -1,4 +1,14 @@
-// ── services/grading.service.ts ──────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/services/grading.service.ts  (standalone — fix import)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { QuestionType } from '../../../common/enums/question-type.enum';
+import { AutoGradingService } from '../../submissions/services/auto-grading.service';
+
 @Injectable()
 export class GradingService {
   constructor(
@@ -12,7 +22,9 @@ export class GradingService {
       include: {
         answers: true,
         session: {
-          include: { examPackage: { include: { questions: { include: { question: true } } } } },
+          include: {
+            examPackage: { include: { questions: { include: { question: true } } } },
+          },
         },
       },
     });
@@ -63,10 +75,7 @@ export class GradingService {
   }
 
   async findPendingManual(tenantId: string, q: BaseQueryDto) {
-    const where = {
-      session: { tenantId },
-      gradingStatus: GradingStatus.MANUAL_REQUIRED,
-    };
+    const where = { session: { tenantId }, gradingStatus: GradingStatus.MANUAL_REQUIRED };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.examAttempt.findMany({
         where,
@@ -75,24 +84,7 @@ export class GradingService {
         include: {
           user: { select: { username: true } },
           session: { select: { title: true } },
-          answers: {
-            where: { isAutoGraded: false, score: null },
-            include: {
-              attempt: {
-                select: {
-                  session: {
-                    select: {
-                      examPackage: {
-                        include: {
-                          questions: { include: { question: { select: { type: true } } } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          answers: { where: { isAutoGraded: false, score: null } },
         },
       }),
       this.prisma.examAttempt.count({ where }),
