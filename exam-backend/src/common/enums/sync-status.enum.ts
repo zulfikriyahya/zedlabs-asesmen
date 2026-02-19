@@ -1,0 +1,15 @@
+// ── sync-status.enum.ts ──────────────────────────────────────────────────────
+export enum SyncStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  DEAD_LETTER = 'DEAD_LETTER',
+}
+
+export enum SyncType {
+  SUBMIT_ANSWER = 'SUBMIT_ANSWER',
+  SUBMIT_EXAM = 'SUBMIT_EXAM',
+  UPLOAD_MEDIA = 'UPLOAD_MEDIA',
+  ACTIVITY_LOG = 'ACTIVITY_LOG',
+}
