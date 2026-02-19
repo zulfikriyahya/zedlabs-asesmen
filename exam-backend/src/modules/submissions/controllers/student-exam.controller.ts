@@ -1,12 +1,17 @@
-// ── controllers/student-exam.controller.ts ───────────────
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/controllers/student-exam.controller.ts  (updated)
+// — tambah endpoint GET result dengan Param
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DeviceGuard } from '../../auth/guards/device.guard';
-import {
-  CurrentUser,
-  CurrentUserPayload,
-  TenantId,
-} from '../../../common/decorators/current-user.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { ExamDownloadService } from '../services/exam-download.service';
+import { ExamSubmissionService } from '../services/exam-submission.service';
+import { StartAttemptDto } from '../dto/start-attempt.dto';
+import { SubmitAnswerDto } from '../dto/submit-answer.dto';
+import { SubmitExamDto } from '../dto/submit-exam.dto';
 
 @Controller('student')
 @UseGuards(JwtAuthGuard, DeviceGuard)
