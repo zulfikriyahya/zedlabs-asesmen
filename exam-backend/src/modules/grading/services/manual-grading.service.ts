@@ -1,4 +1,13 @@
-// ── services/manual-grading.service.ts ───────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/services/manual-grading.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { GradeAnswerDto } from '../dto/grade-answer.dto';
+import { CompleteGradingDto } from '../dto/complete-grading.dto';
+import { PublishResultDto } from '../dto/publish-result.dto';
+
 @Injectable()
 export class ManualGradingService {
   constructor(private prisma: PrismaService) {}
@@ -11,7 +20,6 @@ export class ManualGradingService {
     if (answer.score !== null && answer.isAutoGraded) {
       throw new BadRequestException('Jawaban ini sudah dinilai otomatis');
     }
-
     return this.prisma.examAnswer.update({
       where: { id: answer.id },
       data: { score: dto.score, feedback: dto.feedback, gradedById, gradedAt: new Date() },
@@ -27,7 +35,7 @@ export class ManualGradingService {
 
     const ungradedCount = attempt.answers.filter((a) => a.score === null).length;
     if (ungradedCount > 0) {
-      throw new BadRequestException(`Masih ada ${ungradedCount} jawaban yang belum dinilai`);
+      throw new BadRequestException(`Masih ada ${ungradedCount} jawaban belum dinilai`);
     }
 
     const totalScore = attempt.answers.reduce((s, a) => s + (a.score ?? 0), 0);
