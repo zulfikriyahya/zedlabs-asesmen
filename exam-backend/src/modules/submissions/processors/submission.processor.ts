@@ -1,13 +1,14 @@
 // ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/processors/submission.processor.ts
+// src/modules/submissions/processors/submission.processor.ts  (FINAL)
+// Gunakan GradingHelperService, bukan GradingService (circular dep resolved)
 // ════════════════════════════════════════════════════════════════════════════
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { GradingService } from '../../grading/services/grading.service';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
+import { GradingHelperService } from '../services/grading-helper.service';
+import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 
 export interface AutoGradeJobData {
   attemptId: string;
@@ -25,7 +26,7 @@ export class SubmissionProcessor extends WorkerHost {
   private readonly logger = new Logger(SubmissionProcessor.name);
 
   constructor(
-    private gradingSvc: GradingService,
+    private gradingHelper: GradingHelperService,
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
   ) {
@@ -33,7 +34,7 @@ export class SubmissionProcessor extends WorkerHost {
   }
 
   async process(job: Job<AutoGradeJobData | TimeoutJobData>): Promise<void> {
-    this.logger.log(`Processing job [${job.name}] id=${job.id}`);
+    this.logger.log(`[${job.name}] id=${job.id} attempt=${job.attemptsMade + 1}`);
 
     switch (job.name) {
       case 'auto-grade':
@@ -43,17 +44,34 @@ export class SubmissionProcessor extends WorkerHost {
         await this.handleTimeout(job as Job<TimeoutJobData>);
         break;
       default:
-        this.logger.warn(`Unknown job name: ${job.name}`);
+        this.logger.warn(`Unknown job: ${job.name}`);
     }
   }
 
-  // ── Auto-grade setelah submit ──────────────────────────────────────────────
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job) {
+    this.logger.log(`[${job.name}] id=${job.id} ✓`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(
+      `[${job?.name ?? '?'}] id=${job?.id ?? '?'} attempt=${job?.attemptsMade ?? '?'} ✗ ${err.message}`,
+    );
+  }
+
+  @OnWorkerEvent('stalled')
+  onStalled(jobId: string) {
+    this.logger.warn(`Job id=${jobId} stalled.`);
+  }
+
+  // ── Auto-grade ─────────────────────────────────────────────────────────────
   private async handleAutoGrade(job: Job<AutoGradeJobData>) {
     const { attemptId, tenantId } = job.data;
 
     const attempt = await this.prisma.examAttempt.findFirst({
       where: { id: attemptId },
-      select: { id: true, status: true, userId: true, sessionId: true },
+      select: { id: true, status: true, userId: true },
     });
 
     if (!attempt) {
@@ -61,31 +79,23 @@ export class SubmissionProcessor extends WorkerHost {
       return;
     }
 
-    if (attempt.status !== AttemptStatus.SUBMITTED) {
-      this.logger.warn(`Attempt ${attemptId} status=${attempt.status}, skip auto-grade.`);
+    if (attempt.status !== AttemptStatus.SUBMITTED && attempt.status !== AttemptStatus.TIMED_OUT) {
+      this.logger.warn(`Attempt ${attemptId} belum disubmit (${attempt.status}), skip.`);
       return;
     }
 
-    try {
-      await this.gradingSvc.runAutoGrade(attemptId);
+    await this.gradingHelper.runAutoGrade(attemptId);
 
-      await this.auditLogs.log({
-        tenantId,
-        userId: attempt.userId,
-        action: 'AUTO_GRADE_COMPLETED',
-        entityType: 'ExamAttempt',
-        entityId: attemptId,
-        after: { attemptId, gradedAt: new Date().toISOString() },
-      });
-
-      this.logger.log(`Auto-grade selesai untuk attempt ${attemptId}`);
-    } catch (err) {
-      this.logger.error(`Auto-grade gagal untuk attempt ${attemptId}`, (err as Error).stack);
-      throw err; // BullMQ akan retry sesuai konfigurasi
-    }
+    await this.auditLogs.log({
+      tenantId,
+      userId: attempt.userId,
+      action: 'AUTO_GRADE_COMPLETED',
+      entityType: 'ExamAttempt',
+      entityId: attemptId,
+    });
   }
 
-  // ── Timeout: paksa submit attempt yang melebihi durasi ────────────────────
+  // ── Timeout ────────────────────────────────────────────────────────────────
   private async handleTimeout(job: Job<TimeoutJobData>) {
     const { attemptId, tenantId } = job.data;
 
@@ -94,7 +104,11 @@ export class SubmissionProcessor extends WorkerHost {
       select: { id: true, userId: true },
     });
 
-    if (!attempt) return; // sudah di-submit manual, tidak perlu timeout
+    if (!attempt) {
+      // Sudah di-submit manual atau sudah timeout sebelumnya
+      this.logger.log(`Attempt ${attemptId} sudah tidak IN_PROGRESS, timeout skip.`);
+      return;
+    }
 
     await this.prisma.examAttempt.update({
       where: { id: attemptId },
@@ -109,9 +123,7 @@ export class SubmissionProcessor extends WorkerHost {
       entityId: attemptId,
     });
 
-    // Tetap jalankan auto-grade meski timeout
-    await this.gradingSvc.runAutoGrade(attemptId);
-
-    this.logger.log(`Attempt ${attemptId} di-timeout dan di-auto-grade.`);
+    // Auto-grade meski timeout — guru masih bisa review manual
+    await this.gradingHelper.runAutoGrade(attemptId);
   }
 }
