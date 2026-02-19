@@ -1,18 +1,25 @@
-// ── services/exam-download.service.ts ────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/services/exam-download.service.ts  (updated)
+// — tambah: schedule timeout setelah download berhasil
+// ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ExamPackageBuilderService } from '../../exam-packages/services/exam-package-builder.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
+import { ExamSubmissionService } from './exam-submission.service';
 import { sha256 } from '../../../common/utils/checksum.util';
 import { SessionStatus, AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { isWithinWindow } from '../../../common/utils/time-validation.util';
 import { hashFingerprint } from '../../../common/utils/device-fingerprint.util';
-import { v4 as uuid } from 'uuid';
+import type { DownloadablePackage } from '../interfaces/exam-package.interface';
 
 @Injectable()
 export class ExamDownloadService {
   constructor(
     private prisma: PrismaService,
     private builder: ExamPackageBuilderService,
+    private auditLogs: AuditLogsService,
+    private submissionSvc: ExamSubmissionService,
   ) {}
 
   async downloadPackage(
@@ -23,14 +30,14 @@ export class ExamDownloadService {
     deviceFingerprint: string,
     idempotencyKey: string,
   ): Promise<DownloadablePackage> {
-    // 1. Validasi sesi
+    // 1. Validasi sesi aktif
     const session = await this.prisma.examSession.findFirst({
       where: { id: sessionId, tenantId, status: SessionStatus.ACTIVE },
       include: { examPackage: true },
     });
     if (!session) throw new NotFoundException('Sesi tidak aktif atau tidak ditemukan');
 
-    // 2. Validasi waktu
+    // 2. Validasi window waktu
     if (!isWithinWindow(session.startTime, session.endTime)) {
       throw new BadRequestException('Ujian tidak dalam jangka waktu yang valid');
     }
@@ -53,26 +60,46 @@ export class ExamDownloadService {
         deviceFingerprint: hashFingerprint(deviceFingerprint),
         status: AttemptStatus.IN_PROGRESS,
       },
-      update: {},
+      update: {}, // sudah ada → return existing
     });
 
-    // 5. Build paket
-    const settings = session.examPackage.settings as Record<string, { shuffleQuestions?: boolean }>;
+    const isNewAttempt = attempt.startedAt.getTime() > Date.now() - 5000; // created within 5s
+
+    // 5. Build paket soal
+    const settings = session.examPackage.settings as {
+      shuffleQuestions?: boolean;
+      duration?: number;
+    };
     const pkg = await this.builder.buildForDownload(
       tenantId,
       session.examPackageId,
-      settings?.shuffleQuestions ?? false,
+      settings.shuffleQuestions ?? false,
     );
 
-    // 6. Checksum
+    // 6. Checksum integritas
     const checksum = sha256(JSON.stringify(pkg.questions));
+
+    // 7. Audit log download
+    await this.auditLogs.log({
+      tenantId,
+      userId,
+      action: 'DOWNLOAD_EXAM_PACKAGE',
+      entityType: 'ExamAttempt',
+      entityId: attempt.id,
+      after: { sessionId, packageId: session.examPackageId, checksum },
+    });
+
+    // 8. Schedule timeout hanya untuk attempt baru
+    if (isNewAttempt && settings.duration) {
+      await this.submissionSvc.scheduleTimeout(attempt.id, tenantId, sessionId, settings.duration);
+    }
 
     return {
       ...pkg,
       sessionId,
       attemptId: attempt.id,
       checksum,
-      encryptedKey: '', // enkripsi key dilakukan di layer transport/crypto
+      encryptedKey: '', // enkripsi key dilakukan di layer transport
       expiresAt: session.endTime.toISOString(),
     };
   }
