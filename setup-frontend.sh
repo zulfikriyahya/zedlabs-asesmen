@@ -37,21 +37,25 @@ touch src/app/\(auth\)/login/page.tsx
 mkdir -p src/app/\(siswa\)/{dashboard,profile}
 mkdir -p src/app/\(siswa\)/ujian/{download,result}
 mkdir -p "src/app/(siswa)/ujian/[sessionId]"
+mkdir -p "src/app/(siswa)/ujian/[sessionId]/review"
+mkdir -p "src/app/(siswa)/ujian/[sessionId]/result"
 touch src/app/\(siswa\)/layout.tsx
 touch src/app/\(siswa\)/dashboard/page.tsx
 touch src/app/\(siswa\)/profile/page.tsx
 touch src/app/\(siswa\)/ujian/page.tsx
 touch src/app/\(siswa\)/ujian/download/page.tsx
-touch "src/app/(siswa)/ujian/[sessionId]/page.tsx"        # halaman ujian utama
-touch "src/app/(siswa)/ujian/[sessionId]/review/page.tsx" # review sebelum submit
-touch "src/app/(siswa)/ujian/[sessionId]/result/page.tsx" # hasil ujian
+touch "src/app/(siswa)/ujian/[sessionId]/page.tsx"
+touch "src/app/(siswa)/ujian/[sessionId]/review/page.tsx"
+touch "src/app/(siswa)/ujian/[sessionId]/result/page.tsx"
 
 # Route group: (guru)
 mkdir -p src/app/\(guru\)/{dashboard,hasil}
 mkdir -p src/app/\(guru\)/soal/{create,import}
 mkdir -p "src/app/(guru)/soal/[id]/edit"
 mkdir -p src/app/\(guru\)/ujian/create
-mkdir -p "src/app/(guru)/ujian/[id]"/{edit,preview,statistics}
+mkdir -p "src/app/(guru)/ujian/[id]/edit"
+mkdir -p "src/app/(guru)/ujian/[id]/preview"
+mkdir -p "src/app/(guru)/ujian/[id]/statistics"
 mkdir -p "src/app/(guru)/grading/[attemptId]"
 touch src/app/\(guru\)/layout.tsx
 touch src/app/\(guru\)/dashboard/page.tsx
