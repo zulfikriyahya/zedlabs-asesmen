@@ -1,16 +1,17 @@
 // ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/grading.module.ts  (standalone — fix import AutoGrading)
+// src/modules/grading/grading.module.ts  (updated — circular dep fix)
+// GradingModule tidak lagi import SubmissionsModule untuk AutoGradingService.
+// Sebaliknya AutoGradingService di-provide ulang di sini.
 // ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
 import { GradingService } from './services/grading.service';
 import { ManualGradingService } from './services/manual-grading.service';
 import { GradingController } from './controllers/grading.controller';
-import { SubmissionsModule } from '../submissions/submissions.module';
+import { AutoGradingService } from '../submissions/services/auto-grading.service';
 
 @Module({
-  imports: [SubmissionsModule], // import AutoGradingService dari submissions
-  providers: [GradingService, ManualGradingService],
+  providers: [GradingService, ManualGradingService, AutoGradingService],
   controllers: [GradingController],
-  exports: [GradingService],
+  exports: [GradingService, AutoGradingService],
 })
 export class GradingModule {}
