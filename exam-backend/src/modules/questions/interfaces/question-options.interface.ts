@@ -1,6 +1,6 @@
 // ── interfaces/question-options.interface.ts ─────────────
 export interface McOption {
-  key: string; // a, b, c, d
+  key: string; // a, b, c, d, e
   text: string;
   imageUrl?: string;
 }
