@@ -2,14 +2,14 @@
 # generate.sh — Generator Blueprint Otomatis
 # Menghasilkan DRAFT_FE.md dan DRAFT_BE.md dari source tree masing-masing repo.
 # Usage: ./generate.sh [path-frontend] [path-backend]
-#        Default path: ../exam-frontend dan ../exam-backend
+#        Default path: exam-frontend dan exam-backend
 
 set -euo pipefail
 
 OUT_FE="DRAFT_FE.md"
 OUT_BE="DRAFT_BE.md"
-ROOT_FE="${1:-../exam-frontend}"
-ROOT_BE="${2:-../exam-backend}"
+ROOT_FE="${1:-exam-frontend}"
+ROOT_BE="${2:-exam-backend}"
 
 # ============================================
 # POLA EKSKLUSI GLOBAL
