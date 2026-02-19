@@ -22,7 +22,7 @@ EXCLUDE_GLOBAL=(
   "node_modules/*" "dist/*" ".next/*" "build/*" "coverage/*"
   "*.log" "*.lock" "package-lock.json" "pnpm-lock.yaml" "yarn.lock"
   "SKILLS.md" "README.md" "README_FE.md" "README_BE.md"
-  "DRAFT_FE.md" "DRAFT_BE.md" "generate.sh"
+  "DRAFT_FE.md" "DRAFT_BE.md" "generate.sh" "dev-setup.md"
   "setup-frontend.sh" "setup-backend.sh"
   # Binary & media
   "*.png" "*.jpg" "*.jpeg" "*.webp" "*.ico" "*.gif" "*.svg" "*.avif"
