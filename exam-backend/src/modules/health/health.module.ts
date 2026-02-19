@@ -1,27 +1,9 @@
-// ── health.module.ts ──────────────────────────────────
-import {
-  TerminusModule,
-  HealthCheckService,
-  PrismaHealthIndicator,
-  HealthCheck,
-} from '@nestjs/terminus';
-import { InjectRedis } from '@nestjs-modules/ioredis';
-import type { Redis } from 'ioredis';
-
-@Controller('health')
-export class HealthController {
-  constructor(
-    private health: HealthCheckService,
-    private prismaIndicator: PrismaHealthIndicator,
-    private prisma: PrismaService,
-  ) {}
-
-  @Get()
-  @HealthCheck()
-  check() {
-    return this.health.check([() => this.prismaIndicator.pingCheck('database', this.prisma)]);
-  }
-}
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/health/health.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { TerminusModule } from '@nestjs/terminus';
+import { HealthController } from './controllers/health.controller';
 
 @Module({
   imports: [TerminusModule],
