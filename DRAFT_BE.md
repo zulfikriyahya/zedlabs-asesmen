@@ -155,7 +155,9 @@ export class AppService {
 ### File: `src/common/decorators/current-user.decorator.ts`
 
 ```typescript
-// ── current-user.decorator.ts ────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/common/decorators/current-user.decorator.ts  (FIXED — remove @Public clash)
+// ════════════════════════════════════════════════════════════════════════════
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export interface CurrentUserPayload {
@@ -170,6 +172,9 @@ export const CurrentUser = createParamDecorator(
     ctx.switchToHttp().getRequest().user,
 );
 
+// NOTE: @Public, @Roles, @TenantId ada di file terpisah masing-masing.
+// File ini HANYA berisi CurrentUser.
+
 ```
 
 ---
@@ -177,7 +182,10 @@ export const CurrentUser = createParamDecorator(
 ### File: `src/common/decorators/idempotency.decorator.ts`
 
 ```typescript
-// ── idempotency.decorator.ts ─────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/common/decorators/idempotency.decorator.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { SetMetadata } from '@nestjs/common';
 export const IDEMPOTENCY_KEY = 'idempotency';
 export const UseIdempotency = () => SetMetadata(IDEMPOTENCY_KEY, true);
 
@@ -188,7 +196,9 @@ export const UseIdempotency = () => SetMetadata(IDEMPOTENCY_KEY, true);
 ### File: `src/common/decorators/public.decorator.ts`
 
 ```typescript
-// ── public.decorator.ts ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/common/decorators/public.decorator.ts
+// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -200,7 +210,10 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 ### File: `src/common/decorators/roles.decorator.ts`
 
 ```typescript
-// ── roles.decorator.ts ───────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/common/decorators/roles.decorator.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { SetMetadata } from '@nestjs/common';
 import { UserRole } from '../enums/user-role.enum';
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
@@ -212,7 +225,10 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 ### File: `src/common/decorators/tenant-id.decorator.ts`
 
 ```typescript
-// ── tenant-id.decorator.ts ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/common/decorators/tenant-id.decorator.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export const TenantId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string => ctx.switchToHttp().getRequest().tenantId,
 );
@@ -1274,15 +1290,86 @@ bootstrap();
 ### File: `src/modules/activity-logs/activity-logs.module.ts`
 
 ```typescript
-// ── activity-logs.module.ts ──────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/activity-logs/activity-logs.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { ActivityLogsService } from './services/activity-logs.service';
+import { ActivityLogsController } from './controllers/activity-logs.controller';
+import { MonitoringModule } from '../monitoring/monitoring.module';
+
+@Module({
+  imports: [MonitoringModule],
+  providers: [ActivityLogsService],
+  controllers: [ActivityLogsController],
+  exports: [ActivityLogsService],
+})
+export class ActivityLogsModule {}
+
+```
+
+---
+
+### File: `src/modules/activity-logs/controllers/activity-logs.controller.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/activity-logs/controllers/activity-logs.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ActivityLogsService } from '../services/activity-logs.service';
+import { CreateActivityLogDto } from '../dto/create-activity-log.dto';
+
+@Controller('activity-logs')
+@UseGuards(JwtAuthGuard)
+export class ActivityLogsController {
+  constructor(private svc: ActivityLogsService) {}
+
+  @Get(':attemptId')
+  findByAttempt(@Param('attemptId') id: string) {
+    return this.svc.findByAttempt(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateActivityLogDto) {
+    return this.svc.create(dto);
+  }
+}
+
+```
+
+---
+
+### File: `src/modules/activity-logs/dto/create-activity-log.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/activity-logs/dto/create-activity-log.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
 
 export class CreateActivityLogDto {
   @IsString() @IsNotEmpty() attemptId: string;
   @IsString() @IsNotEmpty() userId: string;
-  @IsString() @IsNotEmpty() type: string; // tab_blur | tab_focus | copy_paste | idle
+  @IsString() @IsNotEmpty() type: string;
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;
 }
+
+```
+
+---
+
+### File: `src/modules/activity-logs/services/activity-logs.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/activity-logs/services/activity-logs.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { MonitoringGateway } from '../../monitoring/gateways/monitoring.gateway';
+import { CreateActivityLogDto } from '../dto/create-activity-log.dto';
 
 @Injectable()
 export class ActivityLogsService {
@@ -1301,7 +1388,6 @@ export class ActivityLogsService {
       },
     });
 
-    // Broadcast ke pengawas
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
       select: { sessionId: true },
@@ -1319,52 +1405,6 @@ export class ActivityLogsService {
   }
 }
 
-@Controller('activity-logs')
-@UseGuards(JwtAuthGuard)
-export class ActivityLogsController {
-  constructor(private svc: ActivityLogsService) {}
-  @Get(':attemptId') findByAttempt(@Param('attemptId') id: string) {
-    return this.svc.findByAttempt(id);
-  }
-  @Post() create(@Body() dto: CreateActivityLogDto) {
-    return this.svc.create(dto);
-  }
-}
-
-import { Post, Body } from '@nestjs/common';
-
-@Module({
-  imports: [MonitoringModule],
-  providers: [ActivityLogsService],
-  controllers: [ActivityLogsController],
-  exports: [ActivityLogsService],
-})
-export class ActivityLogsModule {}
-
-```
-
----
-
-### File: `src/modules/activity-logs/controllers/activity-logs.controller.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/activity-logs/dto/create-activity-log.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/activity-logs/services/activity-logs.service.ts`
-
-```typescript
-
 ```
 
 ---
@@ -1372,8 +1412,72 @@ export class ActivityLogsModule {}
 ### File: `src/modules/analytics/analytics.module.ts`
 
 ```typescript
-// ── analytics.module.ts ──────────────────────────────────
-import { IsOptional, IsDateString } from 'class-validator';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/analytics/analytics.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { AnalyticsService } from './services/analytics.service';
+import { DashboardService } from './services/dashboard.service';
+import { AnalyticsController } from './controllers/analytics.controller';
+
+@Module({
+  providers: [AnalyticsService, DashboardService],
+  controllers: [AnalyticsController],
+  exports: [AnalyticsService],
+})
+export class AnalyticsModule {}
+
+```
+
+---
+
+### File: `src/modules/analytics/controllers/analytics.controller.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/analytics/controllers/analytics.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { AnalyticsService } from '../services/analytics.service';
+import { DashboardService } from '../services/dashboard.service';
+
+@Controller('analytics')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)
+export class AnalyticsController {
+  constructor(
+    private svc: AnalyticsService,
+    private dashSvc: DashboardService,
+  ) {}
+
+  @Get('dashboard')
+  dashboard(@TenantId() tid: string) {
+    return this.dashSvc.getSummary(tid);
+  }
+
+  @Get('session/:id')
+  session(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.getSessionAnalytics(tid, id);
+  }
+}
+
+```
+
+---
+
+### File: `src/modules/analytics/dto/analytics-filter.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/analytics/dto/analytics-filter.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsOptional, IsString, IsDateString } from 'class-validator';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 
 export class AnalyticsFilterDto extends BaseQueryDto {
   @IsOptional() @IsString() sessionId?: string;
@@ -1381,6 +1485,19 @@ export class AnalyticsFilterDto extends BaseQueryDto {
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
 }
+
+```
+
+---
+
+### File: `src/modules/analytics/services/analytics.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/analytics/services/analytics.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
 export class AnalyticsService {
@@ -1400,19 +1517,30 @@ export class AnalyticsService {
     }));
 
     const avg = scores.length ? scores.reduce((s, a) => s + a.percentage, 0) / scores.length : 0;
-    const highest = Math.max(...scores.map((s) => s.percentage), 0);
-    const lowest = Math.min(...scores.map((s) => s.percentage), 0);
 
     return {
       sessionId,
       totalStudents: scores.length,
       avg: Math.round(avg * 10) / 10,
-      highest,
-      lowest,
+      highest: scores.length ? Math.max(...scores.map((s) => s.percentage)) : 0,
+      lowest: scores.length ? Math.min(...scores.map((s) => s.percentage)) : 0,
       scores,
     };
   }
 }
+
+```
+
+---
+
+### File: `src/modules/analytics/services/dashboard.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/analytics/services/dashboard.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
 export class DashboardService {
@@ -1423,7 +1551,9 @@ export class DashboardService {
       await this.prisma.$transaction([
         this.prisma.user.count({ where: { tenantId, isActive: true } }),
         this.prisma.examSession.count({ where: { tenantId } }),
-        this.prisma.examAttempt.count({ where: { session: { tenantId }, status: 'IN_PROGRESS' } }),
+        this.prisma.examAttempt.count({
+          where: { session: { tenantId }, status: 'IN_PROGRESS' },
+        }),
         this.prisma.examAttempt.count({
           where: { session: { tenantId }, gradingStatus: 'MANUAL_REQUIRED' },
         }),
@@ -1432,62 +1562,6 @@ export class DashboardService {
   }
 }
 
-@Controller('analytics')
-@UseGuards(JwtAuthGuard)
-@Roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)
-export class AnalyticsController {
-  constructor(
-    private svc: AnalyticsService,
-    private dashSvc: DashboardService,
-  ) {}
-  @Get('dashboard') dashboard(@TenantId() tid: string) {
-    return this.dashSvc.getSummary(tid);
-  }
-  @Get('session/:id') session(@TenantId() tid: string, @Param('id') id: string) {
-    return this.svc.getSessionAnalytics(tid, id);
-  }
-}
-
-import { TenantId } from '../../common/decorators/current-user.decorator';
-@Module({
-  providers: [AnalyticsService, DashboardService],
-  controllers: [AnalyticsController],
-  exports: [AnalyticsService],
-})
-export class AnalyticsModule {}
-
-```
-
----
-
-### File: `src/modules/analytics/controllers/analytics.controller.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/analytics/dto/analytics-filter.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/analytics/services/analytics.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/analytics/services/dashboard.service.ts`
-
-```typescript
-
 ```
 
 ---
@@ -1495,12 +1569,53 @@ export class AnalyticsModule {}
 ### File: `src/modules/audit-logs/audit-logs.module.ts`
 
 ```typescript
-// ── audit-logs.module.ts ──────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/audit-logs/audit-logs.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { AuditLogsService } from './services/audit-logs.service';
+
+@Module({
+  providers: [AuditLogsService],
+  exports: [AuditLogsService],
+})
+export class AuditLogsModule {}
+
+```
+
+---
+
+### File: `src/modules/audit-logs/decorators/audit.decorator.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/audit-logs/decorators/audit.decorator.ts
+// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 
 export const AUDIT_ACTION_KEY = 'auditAction';
+
+export interface AuditActionMeta {
+  action: string;
+  entityType: string;
+}
+
 export const AuditAction = (action: string, entityType: string) =>
-  SetMetadata(AUDIT_ACTION_KEY, { action, entityType });
+  SetMetadata(AUDIT_ACTION_KEY, { action, entityType } satisfies AuditActionMeta);
+
+```
+
+---
+
+### File: `src/modules/audit-logs/services/audit-logs.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/audit-logs/services/audit-logs.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 
 @Injectable()
 export class AuditLogsService {
@@ -1544,25 +1659,6 @@ export class AuditLogsService {
     });
   }
 }
-
-@Module({ providers: [AuditLogsService], exports: [AuditLogsService] })
-export class AuditLogsModule {}
-
-```
-
----
-
-### File: `src/modules/audit-logs/decorators/audit.decorator.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/audit-logs/services/audit-logs.service.ts`
-
-```typescript
 
 ```
 
@@ -2386,6 +2482,64 @@ export class ItemAnalysisService {
 ### File: `src/modules/exam-rooms/controllers/exam-rooms.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/exam-rooms/controllers/exam-rooms.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { ExamRoomsService } from '../services/exam-rooms.service';
+import { CreateRoomDto } from '../dto/create-room.dto';
+import { UpdateRoomDto } from '../dto/update-room.dto';
+
+@Controller('exam-rooms')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class ExamRoomsController {
+  constructor(private svc: ExamRoomsService) {}
+
+  @Get()
+  findAll(@TenantId() tid: string) {
+    return this.svc.findAll(tid);
+  }
+
+  @Get(':id')
+  findOne(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.findOne(tid, id);
+  }
+
+  @Post()
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  create(@TenantId() tid: string, @Body() dto: CreateRoomDto) {
+    return this.svc.create(tid, dto);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateRoomDto) {
+    return this.svc.update(tid, id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.remove(tid, id);
+  }
+}
 
 ```
 
@@ -2394,6 +2548,15 @@ export class ItemAnalysisService {
 ### File: `src/modules/exam-rooms/dto/create-room.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/exam-rooms/dto/create-room.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
+
+export class CreateRoomDto {
+  @IsString() @IsNotEmpty() name: string;
+  @IsOptional() @IsInt() @Min(1) capacity?: number;
+}
 
 ```
 
@@ -2402,6 +2565,12 @@ export class ItemAnalysisService {
 ### File: `src/modules/exam-rooms/dto/update-room.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/exam-rooms/dto/update-room.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { PartialType } from '@nestjs/mapped-types';
+
+export class UpdateRoomDto extends PartialType(CreateRoomDto) {}
 
 ```
 
@@ -2512,6 +2681,42 @@ export class ExamRoomsModule {}
 ### File: `src/modules/exam-rooms/services/exam-rooms.service.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/exam-rooms/services/exam-rooms.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateRoomDto } from '../dto/create-room.dto';
+import { UpdateRoomDto } from '../dto/update-room.dto';
+
+@Injectable()
+export class ExamRoomsService {
+  constructor(private prisma: PrismaService) {}
+
+  findAll(tenantId: string) {
+    return this.prisma.examRoom.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
+  }
+
+  async findOne(tenantId: string, id: string) {
+    const room = await this.prisma.examRoom.findFirst({ where: { id, tenantId } });
+    if (!room) throw new NotFoundException('Ruang ujian tidak ditemukan');
+    return room;
+  }
+
+  create(tenantId: string, dto: CreateRoomDto) {
+    return this.prisma.examRoom.create({ data: { tenantId, ...dto } });
+  }
+
+  async update(tenantId: string, id: string, dto: UpdateRoomDto) {
+    await this.findOne(tenantId, id);
+    return this.prisma.examRoom.update({ where: { id }, data: dto });
+  }
+
+  async remove(tenantId: string, id: string) {
+    await this.findOne(tenantId, id);
+    return this.prisma.examRoom.delete({ where: { id } });
+  }
+}
 
 ```
 
@@ -2520,7 +2725,23 @@ export class ExamRoomsModule {}
 ### File: `src/modules/grading/controllers/grading.controller.ts`
 
 ```typescript
-// ── controllers/grading.controller.ts ───────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/controllers/grading.controller.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { GradingService } from '../services/grading.service';
+import { ManualGradingService } from '../services/manual-grading.service';
+import { GradeAnswerDto } from '../dto/grade-answer.dto';
+import { CompleteGradingDto } from '../dto/complete-grading.dto';
+import { PublishResultDto } from '../dto/publish-result.dto';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
 @Controller('grading')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.TEACHER, UserRole.ADMIN)
@@ -2530,22 +2751,96 @@ export class GradingController {
     private manualSvc: ManualGradingService,
   ) {}
 
-  @Get() findPending(@TenantId() tid: string, @Query() q: BaseQueryDto) {
+  @Get()
+  findPending(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findPendingManual(tid, q);
   }
 
-  @Patch('answer') gradeAnswer(@CurrentUser() u: CurrentUserPayload, @Body() dto: GradeAnswerDto) {
+  @Patch('answer')
+  gradeAnswer(@CurrentUser() u: CurrentUserPayload, @Body() dto: GradeAnswerDto) {
     return this.manualSvc.gradeAnswer(dto, u.sub);
   }
-  @Post('complete') complete(@Body() dto: CompleteGradingDto) {
+
+  @Post('complete')
+  complete(@Body() dto: CompleteGradingDto) {
     return this.manualSvc.completeGrading(dto);
   }
-  @Post('publish') publish(@Body() dto: PublishResultDto) {
+
+  @Post('publish')
+  publish(@Body() dto: PublishResultDto) {
     return this.manualSvc.publishResults(dto);
   }
 }
 
+```
+
+---
+
+### File: `src/modules/grading/dto/complete-grading.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/dto/complete-grading.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class CompleteGradingDto {
+  @IsString() @IsNotEmpty() attemptId: string;
+}
+
+```
+
+---
+
+### File: `src/modules/grading/dto/grade-answer.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/dto/grade-answer.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+
+export class GradeAnswerDto {
+  @IsString() @IsNotEmpty() attemptId: string;
+  @IsString() @IsNotEmpty() questionId: string;
+  @IsNumber() @Min(0) score: number;
+  @IsOptional() @IsString() feedback?: string;
+}
+
+```
+
+---
+
+### File: `src/modules/grading/dto/publish-result.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/dto/publish-result.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsArray, IsString } from 'class-validator';
+
+export class PublishResultDto {
+  @IsArray() @IsString({ each: true }) attemptIds: string[];
+}
+
+```
+
+---
+
+### File: `src/modules/grading/grading.module.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/grading.module.ts  (standalone — fix import AutoGrading)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { GradingService } from './services/grading.service';
+import { ManualGradingService } from './services/manual-grading.service';
+import { GradingController } from './controllers/grading.controller';
+import { SubmissionsModule } from '../submissions/submissions.module';
+
 @Module({
+  imports: [SubmissionsModule], // import AutoGradingService dari submissions
   providers: [GradingService, ManualGradingService],
   controllers: [GradingController],
   exports: [GradingService],
@@ -2556,61 +2851,20 @@ export class GradingModule {}
 
 ---
 
-### File: `src/modules/grading/dto/complete-grading.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/grading/dto/grade-answer.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/grading/dto/publish-result.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/grading/grading.module.ts`
-
-```typescript
-// ── grading.module.ts ──────────────────────────────────
-
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-
-// ── dto ──────────────────────────────────────────────────
-export class GradeAnswerDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
-  @IsNumber() @Min(0) score: number;
-  @IsOptional() @IsString() feedback?: string;
-}
-
-export class CompleteGradingDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-}
-
-export class PublishResultDto {
-  @IsArray() @IsString({ each: true }) attemptIds: string[];
-}
-
-```
-
----
-
 ### File: `src/modules/grading/services/grading.service.ts`
 
 ```typescript
-// ── services/grading.service.ts ──────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/services/grading.service.ts  (standalone — fix import)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { QuestionType } from '../../../common/enums/question-type.enum';
+import { AutoGradingService } from '../../submissions/services/auto-grading.service';
+
 @Injectable()
 export class GradingService {
   constructor(
@@ -2624,7 +2878,9 @@ export class GradingService {
       include: {
         answers: true,
         session: {
-          include: { examPackage: { include: { questions: { include: { question: true } } } } },
+          include: {
+            examPackage: { include: { questions: { include: { question: true } } } },
+          },
         },
       },
     });
@@ -2675,10 +2931,7 @@ export class GradingService {
   }
 
   async findPendingManual(tenantId: string, q: BaseQueryDto) {
-    const where = {
-      session: { tenantId },
-      gradingStatus: GradingStatus.MANUAL_REQUIRED,
-    };
+    const where = { session: { tenantId }, gradingStatus: GradingStatus.MANUAL_REQUIRED };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.examAttempt.findMany({
         where,
@@ -2687,24 +2940,7 @@ export class GradingService {
         include: {
           user: { select: { username: true } },
           session: { select: { title: true } },
-          answers: {
-            where: { isAutoGraded: false, score: null },
-            include: {
-              attempt: {
-                select: {
-                  session: {
-                    select: {
-                      examPackage: {
-                        include: {
-                          questions: { include: { question: { select: { type: true } } } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          answers: { where: { isAutoGraded: false, score: null } },
         },
       }),
       this.prisma.examAttempt.count({ where }),
@@ -2720,7 +2956,16 @@ export class GradingService {
 ### File: `src/modules/grading/services/manual-grading.service.ts`
 
 ```typescript
-// ── services/manual-grading.service.ts ───────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/grading/services/manual-grading.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { GradeAnswerDto } from '../dto/grade-answer.dto';
+import { CompleteGradingDto } from '../dto/complete-grading.dto';
+import { PublishResultDto } from '../dto/publish-result.dto';
+
 @Injectable()
 export class ManualGradingService {
   constructor(private prisma: PrismaService) {}
@@ -2733,7 +2978,6 @@ export class ManualGradingService {
     if (answer.score !== null && answer.isAutoGraded) {
       throw new BadRequestException('Jawaban ini sudah dinilai otomatis');
     }
-
     return this.prisma.examAnswer.update({
       where: { id: answer.id },
       data: { score: dto.score, feedback: dto.feedback, gradedById, gradedAt: new Date() },
@@ -2749,7 +2993,7 @@ export class ManualGradingService {
 
     const ungradedCount = attempt.answers.filter((a) => a.score === null).length;
     if (ungradedCount > 0) {
-      throw new BadRequestException(`Masih ada ${ungradedCount} jawaban yang belum dinilai`);
+      throw new BadRequestException(`Masih ada ${ungradedCount} jawaban belum dinilai`);
     }
 
     const totalScore = attempt.answers.reduce((s, a) => s + (a.score ?? 0), 0);
@@ -2785,23 +3029,13 @@ export class ManualGradingService {
 ### File: `src/modules/health/controllers/health.controller.ts`
 
 ```typescript
-
-```
-
----
-
-### File: `src/modules/health/health.module.ts`
-
-```typescript
-// ── health.module.ts ──────────────────────────────────
-import {
-  TerminusModule,
-  HealthCheckService,
-  PrismaHealthIndicator,
-  HealthCheck,
-} from '@nestjs/terminus';
-import { InjectRedis } from '@nestjs-modules/ioredis';
-import type { Redis } from 'ioredis';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/health/controllers/health.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get } from '@nestjs/common';
+import { HealthCheck, HealthCheckService, PrismaHealthIndicator } from '@nestjs/terminus';
+import { Public } from '../../../common/decorators/public.decorator';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Controller('health')
 export class HealthController {
@@ -2811,12 +3045,27 @@ export class HealthController {
     private prisma: PrismaService,
   ) {}
 
+  @Public()
   @Get()
   @HealthCheck()
   check() {
     return this.health.check([() => this.prismaIndicator.pingCheck('database', this.prisma)]);
   }
 }
+
+```
+
+---
+
+### File: `src/modules/health/health.module.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/health/health.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { TerminusModule } from '@nestjs/terminus';
+import { HealthController } from './controllers/health.controller';
 
 @Module({
   imports: [TerminusModule],
@@ -2831,6 +3080,60 @@ export class HealthModule {}
 ### File: `src/modules/media/controllers/media.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/controllers/media.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { MediaService } from '../services/media.service';
+import { MediaUploadService } from '../services/media-upload.service';
+import { DeleteMediaDto } from '../dto/delete-media.dto';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+
+@Controller('media')
+@UseGuards(JwtAuthGuard)
+export class MediaController {
+  constructor(
+    private mediaSvc: MediaService,
+    private uploadSvc: MediaUploadService,
+  ) {}
+
+  @Get('presigned/:key')
+  getUrl(@Param('key') key: string) {
+    return this.mediaSvc.getPresignedUrl(decodeURIComponent(key));
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async upload(
+    @UploadedFile(
+      new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 100 * 1024 * 1024 })] }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.uploadSvc.uploadAndQueue(file.buffer, file.originalname, 'image');
+  }
+
+  @Delete()
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  remove(@Body() dto: DeleteMediaDto) {
+    return this.mediaSvc.delete(dto.objectName);
+  }
+}
 
 ```
 
@@ -2839,6 +3142,14 @@ export class HealthModule {}
 ### File: `src/modules/media/dto/delete-media.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/dto/delete-media.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class DeleteMediaDto {
+  @IsString() @IsNotEmpty() objectName: string;
+}
 
 ```
 
@@ -2847,6 +3158,18 @@ export class HealthModule {}
 ### File: `src/modules/media/dto/upload-media.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/dto/upload-media.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+
+export class UploadMediaDto {
+  @IsString() @IsNotEmpty() attemptId: string;
+  @IsString() @IsNotEmpty() questionId: string;
+  @IsOptional() @IsString() chunkIndex?: string;
+  @IsOptional() @IsString() totalChunks?: string;
+  @IsOptional() @IsIn(['image', 'video', 'audio']) type?: 'image' | 'video' | 'audio';
+}
 
 ```
 
@@ -2855,11 +3178,38 @@ export class HealthModule {}
 ### File: `src/modules/media/media.module.ts`
 
 ```typescript
-// ── media.module.ts ──────────────────────────────────
-import { BullModule, InjectQueue as IQ } from '@nestjs/bullmq';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/media.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { MediaService } from './services/media.service';
+import { MediaUploadService } from './services/media-upload.service';
+import { MediaCompressionService } from './services/media-compression.service';
+import { MediaController } from './controllers/media.controller';
+
+@Module({
+  imports: [BullModule.registerQueue({ name: 'media' })],
+  providers: [MediaService, MediaUploadService, MediaCompressionService],
+  controllers: [MediaController],
+  exports: [MediaService, MediaUploadService],
+})
+export class MediaModule {}
+
+```
+
+---
+
+### File: `src/modules/media/services/media.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/services/media.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as Minio from 'minio';
-import { generateObjectName } from '../../common/utils/file.util';
+import { generateObjectName } from '../../../common/utils/file.util';
 
 @Injectable()
 export class MediaService {
@@ -2893,11 +3243,60 @@ export class MediaService {
   }
 }
 
+```
+
+---
+
+### File: `src/modules/media/services/media-compression.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/services/media-compression.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, Logger } from '@nestjs/common';
+import sharp from 'sharp';
+
+@Injectable()
+export class MediaCompressionService {
+  private readonly logger = new Logger(MediaCompressionService.name);
+
+  async compressImage(input: Buffer, quality = 80): Promise<Buffer> {
+    return sharp(input)
+      .webp({ quality })
+      .toBuffer()
+      .catch((err) => {
+        this.logger.error('Image compression failed', err);
+        return input; // fallback ke original
+      });
+  }
+
+  async resizeImage(input: Buffer, width: number, height?: number): Promise<Buffer> {
+    return sharp(input)
+      .resize(width, height, { fit: 'inside', withoutEnlargement: true })
+      .toBuffer();
+  }
+}
+
+```
+
+---
+
+### File: `src/modules/media/services/media-upload.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/media/services/media-upload.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { MediaService } from './media.service';
+
 @Injectable()
 export class MediaUploadService {
   constructor(
     private mediaSvc: MediaService,
-    @IQ('media') private mediaQueue: Queue,
+    @InjectQueue('media') private mediaQueue: Queue,
   ) {}
 
   async uploadAndQueue(buffer: Buffer, originalName: string, type: 'image' | 'video' | 'audio') {
@@ -2915,51 +3314,6 @@ export class MediaUploadService {
   }
 }
 
-@Controller('media')
-@UseGuards(JwtAuthGuard)
-export class MediaController {
-  constructor(
-    private mediaSvc: MediaService,
-    private uploadSvc: MediaUploadService,
-  ) {}
-
-  @Get('presigned/:key') getUrl(@Param('key') key: string) {
-    return this.mediaSvc.getPresignedUrl(key);
-  }
-}
-
-@Module({
-  imports: [BullModule.registerQueue({ name: 'media' })],
-  providers: [MediaService, MediaUploadService],
-  controllers: [MediaController],
-  exports: [MediaService, MediaUploadService],
-})
-export class MediaModule {}
-
-```
-
----
-
-### File: `src/modules/media/services/media.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/media/services/media-compression.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/media/services/media-upload.service.ts`
-
-```typescript
-
 ```
 
 ---
@@ -2967,6 +3321,33 @@ export class MediaModule {}
 ### File: `src/modules/monitoring/controllers/monitoring.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/monitoring/controllers/monitoring.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { MonitoringService } from '../services/monitoring.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
+@Controller('monitoring')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN)
+export class MonitoringController {
+  constructor(private svc: MonitoringService) {}
+
+  @Get(':sessionId')
+  overview(@Param('sessionId') id: string) {
+    return this.svc.getSessionOverview(id);
+  }
+
+  @Get(':sessionId/logs/:attemptId')
+  logs(@Param('attemptId') id: string, @Query() q: BaseQueryDto) {
+    return this.svc.getActivityLogs(id, q);
+  }
+}
 
 ```
 
@@ -2975,15 +3356,9 @@ export class MediaModule {}
 ### File: `src/modules/monitoring/gateways/monitoring.gateway.ts`
 
 ```typescript
-
-```
-
----
-
-### File: `src/modules/monitoring/monitoring.module.ts`
-
-```typescript
-// ── monitoring.module.ts ──────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/monitoring/gateways/monitoring.gateway.ts
+// ════════════════════════════════════════════════════════════════════════════
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -2993,59 +3368,8 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import {
-  Injectable,
-  Module,
-  Controller,
-  Get,
-  Param,
-  Query,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Roles, TenantId } from '../../common/decorators/current-user.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { PrismaService } from '../../prisma/prisma.service';
-import { BaseQueryDto } from '../../common/dto/base-query.dto';
-
-@Injectable()
-export class MonitoringService {
-  constructor(private prisma: PrismaService) {}
-
-  async getSessionOverview(sessionId: string) {
-    const [attempts, total] = await this.prisma.$transaction([
-      this.prisma.examAttempt.findMany({
-        where: { sessionId },
-        select: {
-          id: true,
-          userId: true,
-          status: true,
-          startedAt: true,
-          submittedAt: true,
-          user: { select: { username: true } },
-          _count: { select: { answers: true, activityLogs: true } },
-        },
-      }),
-      this.prisma.sessionStudent.count({ where: { sessionId } }),
-    ]);
-
-    const started = attempts.length;
-    const submitted = attempts.filter((a) => a.status === 'SUBMITTED').length;
-
-    return { total, started, submitted, inProgress: started - submitted, attempts };
-  }
-
-  async getActivityLogs(attemptId: string, q: BaseQueryDto) {
-    return this.prisma.examActivityLog.findMany({
-      where: { attemptId },
-      orderBy: { createdAt: 'desc' },
-      skip: q.skip,
-      take: q.limit,
-    });
-  }
-}
 
 @WebSocketGateway({ cors: true, namespace: '/monitoring' })
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -3075,27 +3399,25 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
   }
 }
 
-@Controller('monitoring')
-@UseGuards(JwtAuthGuard)
-@Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN)
-export class MonitoringController {
-  constructor(private svc: MonitoringService) {}
+```
 
-  @Get(':sessionId') overview(@Param('sessionId') id: string) {
-    return this.svc.getSessionOverview(id);
-  }
-  @Get(':sessionId/logs/:attemptId') logs(
-    @Param('attemptId') id: string,
-    @Query() q: BaseQueryDto,
-  ) {
-    return this.svc.getActivityLogs(id, q);
-  }
-}
+---
+
+### File: `src/modules/monitoring/monitoring.module.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/monitoring/monitoring.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { MonitoringService } from './services/monitoring.service';
+import { MonitoringGateway } from './gateways/monitoring.gateway';
+import { MonitoringController } from './controllers/monitoring.controller';
 
 @Module({
   providers: [MonitoringService, MonitoringGateway],
   controllers: [MonitoringController],
-  exports: [MonitoringGateway],
+  exports: [MonitoringGateway, MonitoringService],
 })
 export class MonitoringModule {}
 
@@ -3106,6 +3428,53 @@ export class MonitoringModule {}
 ### File: `src/modules/monitoring/services/monitoring.service.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/monitoring/services/monitoring.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
+@Injectable()
+export class MonitoringService {
+  constructor(private prisma: PrismaService) {}
+
+  async getSessionOverview(sessionId: string) {
+    const [attempts, total] = await this.prisma.$transaction([
+      this.prisma.examAttempt.findMany({
+        where: { sessionId },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          startedAt: true,
+          submittedAt: true,
+          user: { select: { username: true } },
+          _count: { select: { answers: true, activityLogs: true } },
+        },
+      }),
+      this.prisma.sessionStudent.count({ where: { sessionId } }),
+    ]);
+
+    const submitted = attempts.filter((a) => a.status === 'SUBMITTED').length;
+    return {
+      total,
+      started: attempts.length,
+      submitted,
+      inProgress: attempts.length - submitted,
+      attempts,
+    };
+  }
+
+  async getActivityLogs(attemptId: string, q: BaseQueryDto) {
+    return this.prisma.examActivityLog.findMany({
+      where: { attemptId },
+      orderBy: { createdAt: 'desc' },
+      skip: q.skip,
+      take: q.limit,
+    });
+  }
+}
 
 ```
 
@@ -3114,6 +3483,29 @@ export class MonitoringModule {}
 ### File: `src/modules/notifications/controllers/notifications.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/notifications/controllers/notifications.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Patch, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { NotificationsService } from '../services/notifications.service';
+
+@Controller('notifications')
+@UseGuards(JwtAuthGuard)
+export class NotificationsController {
+  constructor(private svc: NotificationsService) {}
+
+  @Get()
+  findAll(@CurrentUser() u: CurrentUserPayload) {
+    return this.svc.findByUser(u.sub);
+  }
+
+  @Patch(':id/read')
+  markRead(@Param('id') id: string) {
+    return this.svc.markRead(id);
+  }
+}
 
 ```
 
@@ -3122,6 +3514,18 @@ export class MonitoringModule {}
 ### File: `src/modules/notifications/dto/create-notification.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/notifications/dto/create-notification.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+
+export class CreateNotificationDto {
+  @IsString() @IsNotEmpty() userId: string;
+  @IsString() @IsNotEmpty() title: string;
+  @IsString() @IsNotEmpty() body: string;
+  @IsString() @IsNotEmpty() type: string;
+  @IsOptional() metadata?: Record<string, unknown>;
+}
 
 ```
 
@@ -3130,6 +3534,14 @@ export class MonitoringModule {}
 ### File: `src/modules/notifications/dto/mark-read.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/notifications/dto/mark-read.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class MarkReadDto {
+  @IsString() @IsNotEmpty() notificationId: string;
+}
 
 ```
 
@@ -3138,52 +3550,13 @@ export class MonitoringModule {}
 ### File: `src/modules/notifications/notifications.module.ts`
 
 ```typescript
-// ── notifications.module.ts ──────────────────────────────────
-export class CreateNotificationDto {
-  @IsString() @IsNotEmpty() userId: string;
-  @IsString() @IsNotEmpty() title: string;
-  @IsString() @IsNotEmpty() body: string;
-  @IsString() @IsNotEmpty() type: string;
-  @IsOptional() metadata?: Record<string, unknown>;
-}
-export class MarkReadDto {
-  @IsString() @IsNotEmpty() notificationId: string;
-}
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/notifications/notifications.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { NotificationsService } from './services/notifications.service';
+import { NotificationsController } from './controllers/notifications.controller';
 
-@Injectable()
-export class NotificationsService {
-  constructor(private prisma: PrismaService) {}
-
-  create(dto: CreateNotificationDto) {
-    return this.prisma.notification.create({ data: { ...dto, metadata: dto.metadata } });
-  }
-
-  findByUser(userId: string) {
-    return this.prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-  }
-
-  markRead(id: string) {
-    return this.prisma.notification.update({ where: { id }, data: { isRead: true } });
-  }
-}
-
-@Controller('notifications')
-@UseGuards(JwtAuthGuard)
-export class NotificationsController {
-  constructor(private svc: NotificationsService) {}
-  @Get() findAll(@CurrentUser() u: CurrentUserPayload) {
-    return this.svc.findByUser(u.sub);
-  }
-  @Patch(':id/read') markRead(@Param('id') id: string) {
-    return this.svc.markRead(id);
-  }
-}
-
-import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 @Module({
   providers: [NotificationsService],
   controllers: [NotificationsController],
@@ -3198,6 +3571,33 @@ export class NotificationsModule {}
 ### File: `src/modules/notifications/services/notifications.service.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/notifications/services/notifications.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateNotificationDto } from '../dto/create-notification.dto';
+
+@Injectable()
+export class NotificationsService {
+  constructor(private prisma: PrismaService) {}
+
+  create(dto: CreateNotificationDto) {
+    return this.prisma.notification.create({ data: { ...dto } });
+  }
+
+  findByUser(userId: string) {
+    return this.prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
+  markRead(id: string) {
+    return this.prisma.notification.update({ where: { id }, data: { isRead: true } });
+  }
+}
 
 ```
 
@@ -3605,6 +4005,47 @@ export class QuestionStatisticsService {
 ### File: `src/modules/question-tags/controllers/question-tags.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/question-tags/controllers/question-tags.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { QuestionTagsService } from '../services/question-tags.service';
+import { CreateTagDto } from '../dto/create-tag.dto';
+import { UpdateTagDto } from '../dto/update-tag.dto';
+
+@Controller('question-tags')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class QuestionTagsController {
+  constructor(private svc: QuestionTagsService) {}
+
+  @Get()
+  findAll(@TenantId() tid: string) {
+    return this.svc.findAll(tid);
+  }
+
+  @Post()
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  create(@TenantId() tid: string, @Body() dto: CreateTagDto) {
+    return this.svc.create(tid, dto);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateTagDto) {
+    return this.svc.update(tid, id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  remove(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.remove(tid, id);
+  }
+}
 
 ```
 
@@ -3613,6 +4054,14 @@ export class QuestionStatisticsService {
 ### File: `src/modules/question-tags/dto/create-tag.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/question-tags/dto/create-tag.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class CreateTagDto {
+  @IsString() @IsNotEmpty() name: string;
+}
 
 ```
 
@@ -3621,6 +4070,12 @@ export class QuestionStatisticsService {
 ### File: `src/modules/question-tags/dto/update-tag.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/question-tags/dto/update-tag.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { PartialType } from '@nestjs/mapped-types';
+
+export class UpdateTagDto extends PartialType(CreateTagDto) {}
 
 ```
 
@@ -3629,62 +4084,12 @@ export class QuestionStatisticsService {
 ### File: `src/modules/question-tags/question-tags.module.ts`
 
 ```typescript
-// ── question-tags.module.ts ──────────────────────────────────────
-
-export class CreateTagDto {
-  @IsString() @IsNotEmpty() name: string;
-}
-export class UpdateTagDto extends PartialType(CreateTagDto) {}
-
-@Injectable()
-export class QuestionTagsService {
-  constructor(private prisma: PrismaService) {}
-  findAll(tenantId: string) {
-    return this.prisma.questionTag.findMany({ where: { tenantId } });
-  }
-  async create(tenantId: string, dto: CreateTagDto) {
-    const exists = await this.prisma.questionTag.findUnique({
-      where: { tenantId_name: { tenantId, name: dto.name } },
-    });
-    if (exists) throw new ConflictException(`Tag '${dto.name}' sudah ada`);
-    return this.prisma.questionTag.create({ data: { tenantId, name: dto.name } });
-  }
-  async update(tenantId: string, id: string, dto: UpdateTagDto) {
-    const tag = await this.prisma.questionTag.findFirst({ where: { id, tenantId } });
-    if (!tag) throw new NotFoundException('Tag tidak ditemukan');
-    return this.prisma.questionTag.update({ where: { id }, data: dto });
-  }
-  async remove(tenantId: string, id: string) {
-    const tag = await this.prisma.questionTag.findFirst({ where: { id, tenantId } });
-    if (!tag) throw new NotFoundException('Tag tidak ditemukan');
-    return this.prisma.questionTag.delete({ where: { id } });
-  }
-}
-
-@Controller('question-tags')
-@UseGuards(JwtAuthGuard)
-export class QuestionTagsController {
-  constructor(private svc: QuestionTagsService) {}
-  @Get() findAll(@TenantId() tid: string) {
-    return this.svc.findAll(tid);
-  }
-  @Post() @Roles(UserRole.TEACHER, UserRole.ADMIN) create(
-    @TenantId() tid: string,
-    @Body() dto: CreateTagDto,
-  ) {
-    return this.svc.create(tid, dto);
-  }
-  @Patch(':id') @Roles(UserRole.TEACHER, UserRole.ADMIN) update(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateTagDto,
-  ) {
-    return this.svc.update(tid, id, dto);
-  }
-  @Delete(':id') @Roles(UserRole.ADMIN) remove(@TenantId() tid: string, @Param('id') id: string) {
-    return this.svc.remove(tid, id);
-  }
-}
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/question-tags/question-tags.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { QuestionTagsService } from './services/question-tags.service';
+import { QuestionTagsController } from './controllers/question-tags.controller';
 
 @Module({
   providers: [QuestionTagsService],
@@ -3700,6 +4105,42 @@ export class QuestionTagsModule {}
 ### File: `src/modules/question-tags/services/question-tags.service.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/question-tags/services/question-tags.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateTagDto } from '../dto/create-tag.dto';
+import { UpdateTagDto } from '../dto/update-tag.dto';
+
+@Injectable()
+export class QuestionTagsService {
+  constructor(private prisma: PrismaService) {}
+
+  findAll(tenantId: string) {
+    return this.prisma.questionTag.findMany({ where: { tenantId } });
+  }
+
+  async create(tenantId: string, dto: CreateTagDto) {
+    const exists = await this.prisma.questionTag.findUnique({
+      where: { tenantId_name: { tenantId, name: dto.name } },
+    });
+    if (exists) throw new ConflictException(`Tag '${dto.name}' sudah ada`);
+    return this.prisma.questionTag.create({ data: { tenantId, name: dto.name } });
+  }
+
+  async update(tenantId: string, id: string, dto: UpdateTagDto) {
+    const tag = await this.prisma.questionTag.findFirst({ where: { id, tenantId } });
+    if (!tag) throw new NotFoundException('Tag tidak ditemukan');
+    return this.prisma.questionTag.update({ where: { id }, data: dto });
+  }
+
+  async remove(tenantId: string, id: string) {
+    const tag = await this.prisma.questionTag.findFirst({ where: { id, tenantId } });
+    if (!tag) throw new NotFoundException('Tag tidak ditemukan');
+    return this.prisma.questionTag.delete({ where: { id } });
+  }
+}
 
 ```
 
@@ -3708,6 +4149,29 @@ export class QuestionTagsModule {}
 ### File: `src/modules/reports/controllers/reports.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/controllers/reports.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Post, Get, Param, Body, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { ReportsService } from '../services/reports.service';
+import { ExportFilterDto } from '../dto/export-filter.dto';
+
+@Controller('reports')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OPERATOR, UserRole.ADMIN)
+export class ReportsController {
+  constructor(private svc: ReportsService) {}
+
+  @Post('export')
+  export(@TenantId() tid: string, @Body() dto: ExportFilterDto) {
+    return this.svc.requestExport(tid, dto);
+  }
+}
 
 ```
 
@@ -3716,6 +4180,15 @@ export class QuestionTagsModule {}
 ### File: `src/modules/reports/dto/export-filter.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/dto/export-filter.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+
+export class ExportFilterDto {
+  @IsString() @IsNotEmpty() sessionId: string;
+  @IsOptional() @IsIn(['excel', 'pdf']) format?: 'excel' | 'pdf';
+}
 
 ```
 
@@ -3724,6 +4197,70 @@ export class QuestionTagsModule {}
 ### File: `src/modules/reports/processors/report-queue.processor.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/processors/report-queue.processor.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { MediaService } from '../../media/services/media.service';
+import { ExcelExportService } from '../services/excel-export.service';
+import { PdfExportService } from '../services/pdf-export.service';
+
+@Processor('report')
+export class ReportQueueProcessor extends WorkerHost {
+  private readonly logger = new Logger(ReportQueueProcessor.name);
+
+  constructor(
+    private excelSvc: ExcelExportService,
+    private pdfSvc: PdfExportService,
+    private mediaSvc: MediaService,
+    private prisma: PrismaService,
+  ) {
+    super();
+  }
+
+  async process(job: Job<{ sessionId: string; format: string; tenantId: string }>) {
+    this.logger.log(`Generating ${job.data.format} for session ${job.data.sessionId}`);
+
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { session: { tenantId: job.data.tenantId }, sessionId: job.data.sessionId },
+      include: { user: { select: { username: true, email: true } } },
+    });
+
+    const rows = attempts.map((a) => ({
+      username: a.user.username,
+      email: a.user.email,
+      status: a.status,
+      score: a.totalScore ?? '-',
+      maxScore: a.maxScore ?? '-',
+      submittedAt: a.submittedAt?.toISOString() ?? '-',
+    }));
+
+    let buf: Buffer;
+    let name: string;
+
+    if (job.data.format === 'pdf') {
+      const html = `<html><body><table border="1">${rows
+        .map(
+          (r) =>
+            `<tr>${Object.values(r)
+              .map((v) => `<td>${v}</td>`)
+              .join('')}</tr>`,
+        )
+        .join('')}</table></body></html>`;
+      buf = await this.pdfSvc.generate(html);
+      name = `report-${job.data.sessionId}.pdf`;
+    } else {
+      buf = await this.excelSvc.generate(rows);
+      name = `report-${job.data.sessionId}.xlsx`;
+    }
+
+    const objectName = await this.mediaSvc.upload(buf, name, 'reports');
+    return { objectName };
+  }
+}
 
 ```
 
@@ -3732,14 +4269,36 @@ export class QuestionTagsModule {}
 ### File: `src/modules/reports/reports.module.ts`
 
 ```typescript
-// ── reports.module.ts ──────────────────────────────────
-import { BullModule, Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/reports.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { MediaModule } from '../media/media.module';
+import { ExcelExportService } from './services/excel-export.service';
+import { PdfExportService } from './services/pdf-export.service';
+import { ReportsService } from './services/reports.service';
+import { ReportsController } from './controllers/reports.controller';
+import { ReportQueueProcessor } from './processors/report-queue.processor';
 
-export class ExportFilterDto {
-  @IsString() @IsNotEmpty() sessionId: string;
-  @IsOptional() @IsString() format?: 'excel' | 'pdf';
-}
+@Module({
+  imports: [BullModule.registerQueue({ name: 'report' }), MediaModule],
+  providers: [ExcelExportService, PdfExportService, ReportsService, ReportQueueProcessor],
+  controllers: [ReportsController],
+})
+export class ReportsModule {}
+
+```
+
+---
+
+### File: `src/modules/reports/services/excel-export.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/services/excel-export.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class ExcelExportService {
@@ -3755,65 +4314,50 @@ export class ExcelExportService {
   }
 }
 
+```
+
+---
+
+### File: `src/modules/reports/services/pdf-export.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/services/pdf-export.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+
 @Injectable()
 export class PdfExportService {
   async generate(html: string): Promise<Buffer> {
     const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+    const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({ format: 'A4' });
+    const pdf = await page.pdf({ format: 'A4', printBackground: true });
     await browser.close();
     return Buffer.from(pdf);
   }
 }
 
-@Processor('report')
-export class ReportQueueProcessor extends WorkerHost {
-  private readonly logger = new Logger(ReportQueueProcessor.name);
-  constructor(
-    private excelSvc: ExcelExportService,
-    private pdfSvc: PdfExportService,
-    private mediaSvc: MediaService,
-    private prisma: PrismaService,
-  ) {
-    super();
-  }
+```
 
-  async process(job: Job<{ sessionId: string; format: string; tenantId: string }>) {
-    this.logger.log(`Generating ${job.data.format} report for session ${job.data.sessionId}`);
-    const attempts = await this.prisma.examAttempt.findMany({
-      where: { session: { tenantId: job.data.tenantId }, sessionId: job.data.sessionId },
-      include: { user: { select: { username: true, email: true } } },
-    });
-    const rows = attempts.map((a) => ({
-      username: a.user.username,
-      email: a.user.email,
-      status: a.status,
-      score: a.totalScore ?? '-',
-      maxScore: a.maxScore ?? '-',
-      submittedAt: a.submittedAt?.toISOString() ?? '-',
-    }));
+---
 
-    let buf: Buffer;
-    let name: string;
-    if (job.data.format === 'pdf') {
-      const html = `<html><body><table>${rows.map((r) => `<tr><td>${Object.values(r).join('</td><td>')}</td></tr>`).join('')}</table></body></html>`;
-      buf = await this.pdfSvc.generate(html);
-      name = `report-${job.data.sessionId}.pdf`;
-    } else {
-      buf = await this.excelSvc.generate(rows);
-      name = `report-${job.data.sessionId}.xlsx`;
-    }
+### File: `src/modules/reports/services/reports.service.ts`
 
-    const objectName = await this.mediaSvc.upload(buf, name, 'reports');
-    return { objectName };
-  }
-}
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/reports/services/reports.service.ts  (baru — split dari module)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { ExportFilterDto } from '../dto/export-filter.dto';
 
 @Injectable()
 export class ReportsService {
   constructor(@InjectQueue('report') private reportQueue: Queue) {}
+
   async requestExport(tenantId: string, dto: ExportFilterDto) {
     const job = await this.reportQueue.add(
       'generate',
@@ -3824,40 +4368,6 @@ export class ReportsService {
   }
 }
 
-@Controller('reports')
-@UseGuards(JwtAuthGuard)
-@Roles(UserRole.OPERATOR, UserRole.ADMIN)
-export class ReportsController {
-  constructor(private svc: ReportsService) {}
-  @Post('export') export(@TenantId() tid: string, @Body() dto: ExportFilterDto) {
-    return this.svc.requestExport(tid, dto);
-  }
-}
-
-import { MediaService } from '../media/services/media.service';
-@Module({
-  imports: [BullModule.registerQueue({ name: 'report' }), MediaModule],
-  providers: [ExcelExportService, PdfExportService, ReportQueueProcessor, ReportsService],
-  controllers: [ReportsController],
-})
-export class ReportsModule {}
-
-```
-
----
-
-### File: `src/modules/reports/services/excel-export.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/reports/services/pdf-export.service.ts`
-
-```typescript
-
 ```
 
 ---
@@ -3865,6 +4375,75 @@ export class ReportsModule {}
 ### File: `src/modules/sessions/controllers/sessions.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/controllers/sessions.controller.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { SessionsService } from '../services/sessions.service';
+import { SessionMonitoringService } from '../services/session-monitoring.service';
+import { CreateSessionDto } from '../dto/create-session.dto';
+import { UpdateSessionDto } from '../dto/update-session.dto';
+import { AssignStudentsDto } from '../dto/assign-students.dto';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
+@Controller('sessions')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class SessionsController {
+  constructor(
+    private svc: SessionsService,
+    private monitorSvc: SessionMonitoringService,
+  ) {}
+
+  @Get()
+  findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
+    return this.svc.findAll(tid, q);
+  }
+
+  @Get(':id')
+  findOne(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.findOne(tid, id);
+  }
+
+  @Get(':id/live')
+  @Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN)
+  live(@Param('id') id: string) {
+    return this.monitorSvc.getLiveStatus(id);
+  }
+
+  @Post()
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  create(
+    @TenantId() tid: string,
+    @CurrentUser() u: CurrentUserPayload,
+    @Body() dto: CreateSessionDto,
+  ) {
+    return this.svc.create(tid, dto, u.sub);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateSessionDto) {
+    return this.svc.update(tid, id, dto);
+  }
+
+  @Post(':id/assign')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  assign(@TenantId() tid: string, @Param('id') id: string, @Body() dto: AssignStudentsDto) {
+    return this.svc.assignStudents(tid, id, dto);
+  }
+
+  @Post(':id/activate')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  activate(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.activate(tid, id);
+  }
+}
 
 ```
 
@@ -3873,6 +4452,14 @@ export class ReportsModule {}
 ### File: `src/modules/sessions/dto/assign-students.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/dto/assign-students.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsArray, IsString } from 'class-validator';
+
+export class AssignStudentsDto {
+  @IsArray() @IsString({ each: true }) userIds: string[];
+}
 
 ```
 
@@ -3881,51 +4468,13 @@ export class ReportsModule {}
 ### File: `src/modules/sessions/dto/create-session.dto.ts`
 
 ```typescript
-
-```
-
----
-
-### File: `src/modules/sessions/dto/update-session.dto.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/sessions/services/sessions.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/sessions/services/session-monitoring.service.ts`
-
-```typescript
-
-```
-
----
-
-### File: `src/modules/sessions/sessions.module.ts`
-
-```typescript
-// ── sessions.module.ts ──────────────────────────────────
-
-import { BullModule } from '@nestjs/bullmq';
-import { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { Query } from '@nestjs/common';
-import { IsEnum, IsArray, IsDateString } from 'class-validator';
-import { SessionStatus } from '../../common/enums/exam-status.enum';
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import { generateTokenCode } from '../../common/utils/randomizer.util';
-import { BaseQueryDto } from '../../common/dto/base-query.dto';
-import { PaginatedResponseDto } from '../../common/dto/base-response.dto';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/dto/create-session.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsOptional, IsDateString } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { IsEnum } from 'class-validator';
+import { SessionStatus } from '../../../common/enums/exam-status.enum';
 
 export class CreateSessionDto {
   @IsString() @IsNotEmpty() examPackageId: string;
@@ -3934,12 +4483,55 @@ export class CreateSessionDto {
   @IsDateString() startTime: string;
   @IsDateString() endTime: string;
 }
+
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {
   @IsOptional() @IsEnum(SessionStatus) status?: SessionStatus;
 }
+
 export class AssignStudentsDto {
-  @IsArray() @IsString({ each: true }) userIds: string[];
+  @IsString({ each: true }) userIds: string[];
 }
+
+```
+
+---
+
+### File: `src/modules/sessions/dto/update-session.dto.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/dto/update-session.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateSessionDto } from './create-session.dto';
+import { IsOptional, IsEnum } from 'class-validator';
+import { SessionStatus } from '../../../common/enums/exam-status.enum';
+
+export class UpdateSessionDto extends PartialType(CreateSessionDto) {
+  @IsOptional() @IsEnum(SessionStatus) status?: SessionStatus;
+}
+
+```
+
+---
+
+### File: `src/modules/sessions/services/sessions.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/services/sessions.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { SessionStatus } from '../../../common/enums/exam-status.enum';
+import { generateTokenCode } from '../../../common/utils/randomizer.util';
+import { CreateSessionDto } from '../dto/create-session.dto';
+import { UpdateSessionDto } from '../dto/update-session.dto';
+import { AssignStudentsDto } from '../dto/assign-students.dto';
 
 @Injectable()
 export class SessionsService {
@@ -4013,32 +4605,37 @@ export class SessionsService {
 
   async activate(tenantId: string, id: string) {
     const s = await this.findOne(tenantId, id);
-    if (s.status !== SessionStatus.SCHEDULED)
+    if (s.status !== SessionStatus.SCHEDULED) {
       throw new BadRequestException('Hanya sesi SCHEDULED yang bisa diaktifkan');
+    }
     const updated = await this.prisma.examSession.update({
       where: { id },
       data: { status: SessionStatus.ACTIVE },
     });
-    // broadcast via Socket.IO
     await this.notifQueue.add('session-activated', { tenantId, sessionId: id });
     return updated;
   }
-
-  async getStudentToken(sessionId: string, userId: string) {
-    const ss = await this.prisma.sessionStudent.findUnique({
-      where: { sessionId_userId: { sessionId, userId } },
-    });
-    if (!ss) throw new NotFoundException('Peserta tidak terdaftar di sesi ini');
-    return { tokenCode: ss.tokenCode };
-  }
 }
+
+```
+
+---
+
+### File: `src/modules/sessions/services/session-monitoring.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/services/session-monitoring.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
 export class SessionMonitoringService {
   constructor(private prisma: PrismaService) {}
 
   async getLiveStatus(sessionId: string) {
-    const attempts = await this.prisma.examAttempt.findMany({
+    return this.prisma.examAttempt.findMany({
       where: { sessionId },
       select: {
         id: true,
@@ -4050,58 +4647,24 @@ export class SessionMonitoringService {
         _count: { select: { answers: true } },
       },
     });
-    return attempts;
   }
 }
 
-@Controller('sessions')
-@UseGuards(JwtAuthGuard, RolesGuard)
-export class SessionsController {
-  constructor(
-    private svc: SessionsService,
-    private monitorSvc: SessionMonitoringService,
-  ) {}
+```
 
-  @Get() findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
-    return this.svc.findAll(tid, q);
-  }
-  @Get(':id') findOne(@TenantId() tid: string, @Param('id') id: string) {
-    return this.svc.findOne(tid, id);
-  }
-  @Get(':id/live') @Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN) live(
-    @Param('id') id: string,
-  ) {
-    return this.monitorSvc.getLiveStatus(id);
-  }
+---
 
-  @Post()
-  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
-  create(
-    @TenantId() tid: string,
-    @CurrentUser() u: CurrentUserPayload,
-    @Body() dto: CreateSessionDto,
-  ) {
-    return this.svc.create(tid, dto, u.sub);
-  }
+### File: `src/modules/sessions/sessions.module.ts`
 
-  @Patch(':id')
-  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
-  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateSessionDto) {
-    return this.svc.update(tid, id, dto);
-  }
-
-  @Post(':id/assign')
-  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
-  assign(@TenantId() tid: string, @Param('id') id: string, @Body() dto: AssignStudentsDto) {
-    return this.svc.assignStudents(tid, id, dto);
-  }
-
-  @Post(':id/activate')
-  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
-  activate(@TenantId() tid: string, @Param('id') id: string) {
-    return this.svc.activate(tid, id);
-  }
-}
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sessions/sessions.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { SessionsService } from './services/sessions.service';
+import { SessionMonitoringService } from './services/session-monitoring.service';
+import { SessionsController } from './controllers/sessions.controller';
 
 @Module({
   imports: [BullModule.registerQueue({ name: 'notification' })],
@@ -4118,38 +4681,47 @@ export class SessionsModule {}
 ### File: `src/modules/subjects/controllers/subjects.controller.ts`
 
 ```typescript
-// ── controllers/subjects.controller.ts ──────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/subjects/controllers/subjects.controller.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { SubjectsService } from '../services/subjects.service';
+import { CreateSubjectDto } from '../dto/create-subject.dto';
+import { UpdateSubjectDto } from '../dto/update-subject.dto';
+
 @Controller('subjects')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SubjectsController {
   constructor(private svc: SubjectsService) {}
-  @Get() findAll(@TenantId() tid: string) {
+
+  @Get()
+  findAll(@TenantId() tid: string) {
     return this.svc.findAll(tid);
   }
-  @Post() @Roles(UserRole.ADMIN, UserRole.TEACHER) create(
-    @TenantId() tid: string,
-    @Body() dto: CreateSubjectDto,
-  ) {
+
+  @Post()
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  create(@TenantId() tid: string, @Body() dto: CreateSubjectDto) {
     return this.svc.create(tid, dto);
   }
-  @Patch(':id') @Roles(UserRole.ADMIN, UserRole.TEACHER) update(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateSubjectDto,
-  ) {
+
+  @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateSubjectDto) {
     return this.svc.update(tid, id, dto);
   }
-  @Delete(':id') @Roles(UserRole.ADMIN) remove(@TenantId() tid: string, @Param('id') id: string) {
+
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  remove(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.remove(tid, id);
   }
 }
-
-@Module({
-  providers: [SubjectsService],
-  controllers: [SubjectsController],
-  exports: [SubjectsService],
-})
-export class SubjectsModule {}
 
 ```
 
@@ -4175,6 +4747,13 @@ export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 ### File: `src/modules/subjects/dto/update-subject.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/subjects/dto/update-subject.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateSubjectDto } from './create-subject.dto';
+
+export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 
 ```
 
@@ -4183,7 +4762,14 @@ export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 ### File: `src/modules/subjects/services/subjects.service.ts`
 
 ```typescript
-// ── services/subjects.service.ts ─────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/subjects/services/subjects.service.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateSubjectDto } from '../dto/create-subject.dto';
+import { UpdateSubjectDto } from '../dto/update-subject.dto';
+
 @Injectable()
 export class SubjectsService {
   constructor(private prisma: PrismaService) {}
@@ -4196,7 +4782,7 @@ export class SubjectsService {
     const exists = await this.prisma.subject.findUnique({
       where: { tenantId_code: { tenantId, code: dto.code } },
     });
-    if (exists) throw new ConflictException(`Kode mata pelajaran '${dto.code}' sudah ada`);
+    if (exists) throw new ConflictException(`Kode '${dto.code}' sudah ada`);
     return this.prisma.subject.create({ data: { tenantId, ...dto } });
   }
 
@@ -4220,6 +4806,19 @@ export class SubjectsService {
 ### File: `src/modules/subjects/subjects.module.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/subjects/subjects.module.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { SubjectsService } from './services/subjects.service';
+import { SubjectsController } from './controllers/subjects.controller';
+
+@Module({
+  providers: [SubjectsService],
+  controllers: [SubjectsController],
+  exports: [SubjectsService],
+})
+export class SubjectsModule {}
 
 ```
 
@@ -4787,30 +5386,35 @@ export class SubmissionsModule {}
 ### File: `src/modules/sync/controllers/sync.controller.ts`
 
 ```typescript
-// ── controllers/sync.controller.ts ──────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sync/controllers/sync.controller.ts  (standalone)
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { SyncService } from '../services/sync.service';
+import { AddSyncItemDto } from '../dto/add-sync-item.dto';
+import { RetrySyncDto } from '../dto/retry-sync.dto';
+
 @Controller('sync')
 @UseGuards(JwtAuthGuard)
 export class SyncController {
   constructor(private svc: SyncService) {}
 
-  @Post() add(@Body() dto: AddSyncItemDto) {
+  @Post()
+  add(@Body() dto: AddSyncItemDto) {
     return this.svc.addItem(dto);
   }
-  @Get(':attemptId/status') status(@Param('attemptId') id: string) {
+
+  @Get(':attemptId/status')
+  status(@Param('attemptId') id: string) {
     return this.svc.getStatus(id);
   }
-  @Post('retry') retry(@Body() dto: RetrySyncDto) {
+
+  @Post('retry')
+  retry(@Body() dto: RetrySyncDto) {
     return this.svc.retryFailed(dto);
   }
 }
-
-@Module({
-  imports: [BullModule.registerQueue({ name: 'sync' })],
-  providers: [SyncService, SyncProcessorService, ChunkedUploadService, SyncProcessor],
-  controllers: [SyncController],
-  exports: [SyncService],
-})
-export class SyncModule {}
 
 ```
 
@@ -4819,6 +5423,18 @@ export class SyncModule {}
 ### File: `src/modules/sync/dto/add-sync-item.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sync/dto/add-sync-item.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty, IsEnum, IsObject } from 'class-validator';
+import { SyncType } from '../../../common/enums/sync-status.enum';
+
+export class AddSyncItemDto {
+  @IsString() @IsNotEmpty() attemptId: string;
+  @IsString() @IsNotEmpty() idempotencyKey: string;
+  @IsEnum(SyncType) type: SyncType;
+  @IsObject() payload: Record<string, unknown>;
+}
 
 ```
 
@@ -4827,6 +5443,14 @@ export class SyncModule {}
 ### File: `src/modules/sync/dto/retry-sync.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sync/dto/retry-sync.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class RetrySyncDto {
+  @IsString() @IsNotEmpty() syncItemId: string;
+}
 
 ```
 
@@ -5040,19 +5664,24 @@ export class SyncProcessorService {
 ### File: `src/modules/sync/sync.module.ts`
 
 ```typescript
-// ── sync.module.ts ─────────────────────────────
-import { SyncType } from '../../common/enums/sync-status.enum';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/sync/sync.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { SyncService } from './services/sync.service';
+import { SyncProcessorService } from './services/sync-processor.service';
+import { ChunkedUploadService } from './services/chunked-upload.service';
+import { SyncProcessor } from './processors/sync.processor';
+import { SyncController } from './controllers/sync.controller';
 
-// ── dto ──────────────────────────────────────────────────
-export class AddSyncItemDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
-  type: SyncType;
-  payload: Record<string, unknown>;
-}
-export class RetrySyncDto {
-  @IsString() @IsNotEmpty() syncItemId: string;
-}
+@Module({
+  imports: [BullModule.registerQueue({ name: 'sync' })],
+  providers: [SyncService, SyncProcessorService, ChunkedUploadService, SyncProcessor],
+  controllers: [SyncController],
+  exports: [SyncService],
+})
+export class SyncModule {}
 
 ```
 
@@ -5061,6 +5690,45 @@ export class RetrySyncDto {
 ### File: `src/modules/tenants/controllers/tenants.controller.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/tenants/controllers/tenants.controller.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { TenantsService } from '../services/tenants.service';
+import { CreateTenantDto } from '../dto/create-tenant.dto';
+import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
+@Controller('tenants')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPERADMIN)
+export class TenantsController {
+  constructor(private svc: TenantsService) {}
+
+  @Get()
+  findAll(@Query() q: BaseQueryDto) {
+    return this.svc.findAll(q);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.svc.findOne(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateTenantDto) {
+    return this.svc.create(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
+    return this.svc.update(id, dto);
+  }
+}
 
 ```
 
@@ -5069,6 +5737,16 @@ export class RetrySyncDto {
 ### File: `src/modules/tenants/dto/create-tenant.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/tenants/dto/create-tenant.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class CreateTenantDto {
+  @IsString() @IsNotEmpty() name: string;
+  @IsString() @IsNotEmpty() code: string;
+  @IsString() @IsNotEmpty() subdomain: string;
+}
 
 ```
 
@@ -5077,6 +5755,15 @@ export class RetrySyncDto {
 ### File: `src/modules/tenants/dto/update-tenant.dto.ts`
 
 ```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/tenants/dto/update-tenant.dto.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { PartialType } from '@nestjs/mapped-types';
+import { IsBoolean, IsOptional } from 'class-validator';
+
+export class UpdateTenantDto extends PartialType(CreateTenantDto) {
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
 
 ```
 
@@ -5085,57 +5772,15 @@ export class RetrySyncDto {
 ### File: `src/modules/tenants/services/tenants.service.ts`
 
 ```typescript
-
-```
-
----
-
-### File: `src/modules/tenants/tenants.module.ts`
-
-```typescript
-// ── tenants.module.ts ──────────────────────────────────
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsBoolean,
-  IsEmail,
-  IsUrl,
-  PartialType,
-} from 'class-validator';
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  Module,
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { BaseQueryDto } from '../../common/dto/base-query.dto';
-import { PaginatedResponseDto } from '../../common/dto/base-response.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../../common/decorators/current-user.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
-
-export class CreateTenantDto {
-  @IsString() @IsNotEmpty() name: string;
-  @IsString() @IsNotEmpty() code: string;
-  @IsString() @IsNotEmpty() subdomain: string;
-}
-export class UpdateTenantDto extends PartialType(CreateTenantDto) {
-  @IsOptional() @IsBoolean() isActive?: boolean;
-}
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/tenants/services/tenants.service.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { CreateTenantDto } from '../dto/create-tenant.dto';
+import { UpdateTenantDto } from '../dto/update-tenant.dto';
 
 @Injectable()
 export class TenantsService {
@@ -5178,24 +5823,19 @@ export class TenantsService {
   }
 }
 
-@Controller('tenants')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SUPERADMIN)
-export class TenantsController {
-  constructor(private svc: TenantsService) {}
-  @Get() findAll(@Query() q: BaseQueryDto) {
-    return this.svc.findAll(q);
-  }
-  @Get(':id') findOne(@Param('id') id: string) {
-    return this.svc.findOne(id);
-  }
-  @Post() create(@Body() dto: CreateTenantDto) {
-    return this.svc.create(dto);
-  }
-  @Patch(':id') update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
-    return this.svc.update(id, dto);
-  }
-}
+```
+
+---
+
+### File: `src/modules/tenants/tenants.module.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/tenants/tenants.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { TenantsService } from './services/tenants.service';
+import { TenantsController } from './controllers/tenants.controller';
 
 @Module({
   providers: [TenantsService],
@@ -5418,8 +6058,12 @@ export class UsersService {
 ### File: `src/modules/users/users.module.ts`
 
 ```typescript
-// ── users.module.ts ──────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/users/users.module.ts  (clean)
+// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
+import { UsersService } from './services/users.service';
+import { UsersController } from './controllers/users.controller';
 
 @Module({
   providers: [UsersService],
@@ -7177,3 +7821,4 @@ Mendukung multi-tenant via subdomain isolation (smkn1.exam.app → tenantId `smk
 ```
 
 ---
+
