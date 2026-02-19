@@ -2831,7 +2831,7 @@ export class PublishResultDto {
 
 ```typescript
 // ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/grading.module.ts  (standalone — fix import AutoGrading)
+// src/modules/grading/grading.module.ts  (final — no circular dep)
 // ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
 import { GradingService } from './services/grading.service';
@@ -2840,10 +2840,10 @@ import { GradingController } from './controllers/grading.controller';
 import { SubmissionsModule } from '../submissions/submissions.module';
 
 @Module({
-  imports: [SubmissionsModule], // import AutoGradingService dari submissions
+  imports: [SubmissionsModule], // dapat GradingHelperService & AutoGradingService
   providers: [GradingService, ManualGradingService],
   controllers: [GradingController],
-  exports: [GradingService],
+  exports: [GradingService, ManualGradingService],
 })
 export class GradingModule {}
 
@@ -2855,83 +2855,34 @@ export class GradingModule {}
 
 ```typescript
 // ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/services/grading.service.ts  (standalone — fix import)
+// src/modules/grading/services/grading.service.ts  (updated)
+// Tidak lagi depend pada AutoGradingService langsung —
+// inject GradingHelperService dari SubmissionsModule via exports
 // ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
-import { QuestionType } from '../../../common/enums/question-type.enum';
-import { AutoGradingService } from '../../submissions/services/auto-grading.service';
+import { GradingHelperService } from '../../submissions/services/grading-helper.service';
 
 @Injectable()
 export class GradingService {
   constructor(
     private prisma: PrismaService,
-    private autoGrading: AutoGradingService,
+    private gradingHelper: GradingHelperService,
   ) {}
 
+  /** Dipanggil dari GradingController jika perlu trigger ulang auto-grade */
   async runAutoGrade(attemptId: string) {
-    const attempt = await this.prisma.examAttempt.findUnique({
-      where: { id: attemptId },
-      include: {
-        answers: true,
-        session: {
-          include: {
-            examPackage: { include: { questions: { include: { question: true } } } },
-          },
-        },
-      },
-    });
-    if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
-
-    let totalScore = 0;
-    let maxScore = 0;
-    let needsManual = false;
-
-    for (const ans of attempt.answers) {
-      const epq = attempt.session.examPackage.questions.find(
-        (q) => q.questionId === ans.questionId,
-      );
-      if (!epq) continue;
-
-      const pts = epq.points ?? epq.question.points;
-      maxScore += pts;
-
-      const result = this.autoGrading.gradeAnswer(
-        epq.question.type as QuestionType,
-        epq.question.correctAnswer as unknown as string,
-        ans.answer,
-        pts,
-      );
-
-      if (!result.requiresManual) {
-        totalScore += result.score;
-        await this.prisma.examAnswer.update({
-          where: { id: ans.id },
-          data: { score: result.score, maxScore: pts, isAutoGraded: true, gradedAt: new Date() },
-        });
-      } else {
-        await this.prisma.examAnswer.update({ where: { id: ans.id }, data: { maxScore: pts } });
-        needsManual = true;
-      }
-    }
-
-    const gradingStatus = needsManual ? GradingStatus.MANUAL_REQUIRED : GradingStatus.AUTO_GRADED;
-    await this.prisma.examAttempt.update({
-      where: { id: attemptId },
-      data: {
-        totalScore,
-        maxScore,
-        gradingStatus,
-        gradingCompletedAt: needsManual ? undefined : new Date(),
-      },
-    });
+    return this.gradingHelper.runAutoGrade(attemptId);
   }
 
   async findPendingManual(tenantId: string, q: BaseQueryDto) {
-    const where = { session: { tenantId }, gradingStatus: GradingStatus.MANUAL_REQUIRED };
+    const where = {
+      session: { tenantId },
+      gradingStatus: GradingStatus.MANUAL_REQUIRED,
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.examAttempt.findMany({
         where,
@@ -4827,15 +4778,20 @@ export class SubjectsModule {}
 ### File: `src/modules/submissions/controllers/student-exam.controller.ts`
 
 ```typescript
-// ── controllers/student-exam.controller.ts ───────────────
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/controllers/student-exam.controller.ts  (updated)
+// — tambah endpoint GET result dengan Param
+// ════════════════════════════════════════════════════════════════════════════
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DeviceGuard } from '../../auth/guards/device.guard';
-import {
-  CurrentUser,
-  CurrentUserPayload,
-  TenantId,
-} from '../../../common/decorators/current-user.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { ExamDownloadService } from '../services/exam-download.service';
+import { ExamSubmissionService } from '../services/exam-submission.service';
+import { StartAttemptDto } from '../dto/start-attempt.dto';
+import { SubmitAnswerDto } from '../dto/submit-answer.dto';
+import { SubmitExamDto } from '../dto/submit-exam.dto';
 
 @Controller('student')
 @UseGuards(JwtAuthGuard, DeviceGuard)
@@ -5019,6 +4975,184 @@ export interface GradingResult {
 
 ---
 
+### File: `src/modules/submissions/processors/submission.processor.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/processors/submission.processor.ts  (FINAL)
+// Gunakan GradingHelperService, bukan GradingService (circular dep resolved)
+// ════════════════════════════════════════════════════════════════════════════
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
+import { GradingHelperService } from '../services/grading-helper.service';
+import { AttemptStatus } from '../../../common/enums/exam-status.enum';
+
+export interface AutoGradeJobData {
+  attemptId: string;
+  tenantId: string;
+}
+
+export interface TimeoutJobData {
+  attemptId: string;
+  tenantId: string;
+  sessionId: string;
+}
+
+@Processor('submission')
+export class SubmissionProcessor extends WorkerHost {
+  private readonly logger = new Logger(SubmissionProcessor.name);
+
+  constructor(
+    private gradingHelper: GradingHelperService,
+    private prisma: PrismaService,
+    private auditLogs: AuditLogsService,
+  ) {
+    super();
+  }
+
+  async process(job: Job<AutoGradeJobData | TimeoutJobData>): Promise<void> {
+    this.logger.log(`[${job.name}] id=${job.id} attempt=${job.attemptsMade + 1}`);
+
+    switch (job.name) {
+      case 'auto-grade':
+        await this.handleAutoGrade(job as Job<AutoGradeJobData>);
+        break;
+      case 'timeout-attempt':
+        await this.handleTimeout(job as Job<TimeoutJobData>);
+        break;
+      default:
+        this.logger.warn(`Unknown job: ${job.name}`);
+    }
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job) {
+    this.logger.log(`[${job.name}] id=${job.id} ✓`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(
+      `[${job?.name ?? '?'}] id=${job?.id ?? '?'} attempt=${job?.attemptsMade ?? '?'} ✗ ${err.message}`,
+    );
+  }
+
+  @OnWorkerEvent('stalled')
+  onStalled(jobId: string) {
+    this.logger.warn(`Job id=${jobId} stalled.`);
+  }
+
+  // ── Auto-grade ─────────────────────────────────────────────────────────────
+  private async handleAutoGrade(job: Job<AutoGradeJobData>) {
+    const { attemptId, tenantId } = job.data;
+
+    const attempt = await this.prisma.examAttempt.findFirst({
+      where: { id: attemptId },
+      select: { id: true, status: true, userId: true },
+    });
+
+    if (!attempt) {
+      this.logger.warn(`Attempt ${attemptId} tidak ditemukan, skip.`);
+      return;
+    }
+
+    if (attempt.status !== AttemptStatus.SUBMITTED && attempt.status !== AttemptStatus.TIMED_OUT) {
+      this.logger.warn(`Attempt ${attemptId} belum disubmit (${attempt.status}), skip.`);
+      return;
+    }
+
+    await this.gradingHelper.runAutoGrade(attemptId);
+
+    await this.auditLogs.log({
+      tenantId,
+      userId: attempt.userId,
+      action: 'AUTO_GRADE_COMPLETED',
+      entityType: 'ExamAttempt',
+      entityId: attemptId,
+    });
+  }
+
+  // ── Timeout ────────────────────────────────────────────────────────────────
+  private async handleTimeout(job: Job<TimeoutJobData>) {
+    const { attemptId, tenantId } = job.data;
+
+    const attempt = await this.prisma.examAttempt.findFirst({
+      where: { id: attemptId, status: AttemptStatus.IN_PROGRESS },
+      select: { id: true, userId: true },
+    });
+
+    if (!attempt) {
+      // Sudah di-submit manual atau sudah timeout sebelumnya
+      this.logger.log(`Attempt ${attemptId} sudah tidak IN_PROGRESS, timeout skip.`);
+      return;
+    }
+
+    await this.prisma.examAttempt.update({
+      where: { id: attemptId },
+      data: { status: AttemptStatus.TIMED_OUT, submittedAt: new Date() },
+    });
+
+    await this.auditLogs.log({
+      tenantId,
+      userId: attempt.userId,
+      action: 'ATTEMPT_TIMED_OUT',
+      entityType: 'ExamAttempt',
+      entityId: attemptId,
+    });
+
+    // Auto-grade meski timeout — guru masih bisa review manual
+    await this.gradingHelper.runAutoGrade(attemptId);
+  }
+}
+
+```
+
+---
+
+### File: `src/modules/submissions/processors/submission-events.listener.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/processors/submission-events.listener.ts
+// ════════════════════════════════════════════════════════════════════════════
+// Menangani completed/failed events dari BullMQ untuk logging & notifikasi
+import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
+import { Injectable, Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+
+@Injectable()
+export class SubmissionEventsListener {
+  private readonly logger = new Logger(SubmissionEventsListener.name);
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job) {
+    this.logger.log(`Job [${job.name}] id=${job.id} selesai.`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    const id = job?.id ?? 'unknown';
+    const name = job?.name ?? 'unknown';
+    const attempts = job?.attemptsMade ?? 0;
+    this.logger.error(
+      `Job [${name}] id=${id} gagal (attempt ${attempts}): ${err.message}`,
+      err.stack,
+    );
+  }
+
+  @OnWorkerEvent('stalled')
+  onStalled(jobId: string) {
+    this.logger.warn(`Job id=${jobId} stalled — akan di-retry otomatis.`);
+  }
+}
+
+```
+
+---
+
 ### File: `src/modules/submissions/services/auto-grading.service.ts`
 
 ```typescript
@@ -5149,21 +5283,28 @@ export class AutoGradingService {
 ### File: `src/modules/submissions/services/exam-download.service.ts`
 
 ```typescript
-// ── services/exam-download.service.ts ────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/services/exam-download.service.ts  (updated)
+// — tambah: schedule timeout setelah download berhasil
+// ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ExamPackageBuilderService } from '../../exam-packages/services/exam-package-builder.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
+import { ExamSubmissionService } from './exam-submission.service';
 import { sha256 } from '../../../common/utils/checksum.util';
 import { SessionStatus, AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { isWithinWindow } from '../../../common/utils/time-validation.util';
 import { hashFingerprint } from '../../../common/utils/device-fingerprint.util';
-import { v4 as uuid } from 'uuid';
+import type { DownloadablePackage } from '../interfaces/exam-package.interface';
 
 @Injectable()
 export class ExamDownloadService {
   constructor(
     private prisma: PrismaService,
     private builder: ExamPackageBuilderService,
+    private auditLogs: AuditLogsService,
+    private submissionSvc: ExamSubmissionService,
   ) {}
 
   async downloadPackage(
@@ -5174,14 +5315,14 @@ export class ExamDownloadService {
     deviceFingerprint: string,
     idempotencyKey: string,
   ): Promise<DownloadablePackage> {
-    // 1. Validasi sesi
+    // 1. Validasi sesi aktif
     const session = await this.prisma.examSession.findFirst({
       where: { id: sessionId, tenantId, status: SessionStatus.ACTIVE },
       include: { examPackage: true },
     });
     if (!session) throw new NotFoundException('Sesi tidak aktif atau tidak ditemukan');
 
-    // 2. Validasi waktu
+    // 2. Validasi window waktu
     if (!isWithinWindow(session.startTime, session.endTime)) {
       throw new BadRequestException('Ujian tidak dalam jangka waktu yang valid');
     }
@@ -5204,26 +5345,46 @@ export class ExamDownloadService {
         deviceFingerprint: hashFingerprint(deviceFingerprint),
         status: AttemptStatus.IN_PROGRESS,
       },
-      update: {},
+      update: {}, // sudah ada → return existing
     });
 
-    // 5. Build paket
-    const settings = session.examPackage.settings as Record<string, { shuffleQuestions?: boolean }>;
+    const isNewAttempt = attempt.startedAt.getTime() > Date.now() - 5000; // created within 5s
+
+    // 5. Build paket soal
+    const settings = session.examPackage.settings as {
+      shuffleQuestions?: boolean;
+      duration?: number;
+    };
     const pkg = await this.builder.buildForDownload(
       tenantId,
       session.examPackageId,
-      settings?.shuffleQuestions ?? false,
+      settings.shuffleQuestions ?? false,
     );
 
-    // 6. Checksum
+    // 6. Checksum integritas
     const checksum = sha256(JSON.stringify(pkg.questions));
+
+    // 7. Audit log download
+    await this.auditLogs.log({
+      tenantId,
+      userId,
+      action: 'DOWNLOAD_EXAM_PACKAGE',
+      entityType: 'ExamAttempt',
+      entityId: attempt.id,
+      after: { sessionId, packageId: session.examPackageId, checksum },
+    });
+
+    // 8. Schedule timeout hanya untuk attempt baru
+    if (isNewAttempt && settings.duration) {
+      await this.submissionSvc.scheduleTimeout(attempt.id, tenantId, sessionId, settings.duration);
+    }
 
     return {
       ...pkg,
       sessionId,
       attemptId: attempt.id,
       checksum,
-      encryptedKey: '', // enkripsi key dilakukan di layer transport/crypto
+      encryptedKey: '', // enkripsi key dilakukan di layer transport
       expiresAt: session.endTime.toISOString(),
     };
   }
@@ -5236,23 +5397,45 @@ export class ExamDownloadService {
 ### File: `src/modules/submissions/services/exam-submission.service.ts`
 
 ```typescript
-// ── services/exam-submission.service.ts ──────────────────
-import { Injectable as IS } from '@nestjs/common';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/services/exam-submission.service.ts  (updated)
+// — tambah: timeout scheduling, audit log, guard duplikat submit
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { AttemptStatus, GradingStatus } from '../../../common/enums/exam-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
+import { AttemptStatus } from '../../../common/enums/exam-status.enum';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { SubmitAnswerDto } from '../dto/submit-answer.dto';
+import { SubmitExamDto } from '../dto/submit-exam.dto';
+import { AutoGradeJobData } from '../processors/submission.processor';
 
-@IS()
+@Injectable()
 export class ExamSubmissionService {
   constructor(
     private prisma: PrismaService,
-    private autoGrading: AutoGradingService,
+    private auditLogs: AuditLogsService,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 
+  // ── Submit satu jawaban (idempotent) ───────────────────────────────────────
   async submitAnswer(dto: SubmitAnswerDto) {
-    // idempotent upsert
-    const answer = await this.prisma.examAnswer.upsert({
+    // Guard: pastikan attempt masih IN_PROGRESS
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: dto.attemptId },
+      select: { status: true, session: { select: { tenantId: true, endTime: true } } },
+    });
+    if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
+    if (attempt.status === AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Ujian sudah disubmit, jawaban tidak bisa diubah');
+    }
+    if (attempt.status === AttemptStatus.TIMED_OUT) {
+      throw new BadRequestException('Ujian sudah timeout');
+    }
+
+    return this.prisma.examAnswer.upsert({
       where: { idempotencyKey: dto.idempotencyKey },
       create: {
         attemptId: dto.attemptId,
@@ -5267,15 +5450,22 @@ export class ExamSubmissionService {
         updatedAt: new Date(),
       },
     });
-    return answer;
   }
 
+  // ── Submit ujian (idempotent) ──────────────────────────────────────────────
   async submitExam(dto: SubmitExamDto) {
-    const attempt = await this.prisma.examAttempt.findUnique({ where: { id: dto.attemptId } });
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: dto.attemptId },
+      include: { session: { select: { tenantId: true, examPackage: true } } },
+    });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
-    if (attempt.status === AttemptStatus.SUBMITTED) {
-      return { message: 'Ujian sudah disubmit sebelumnya' };
+
+    // Idempotency: sudah submit sebelumnya
+    if (attempt.status === AttemptStatus.SUBMITTED || attempt.status === AttemptStatus.TIMED_OUT) {
+      return { message: 'Ujian sudah disubmit sebelumnya', attemptId: dto.attemptId };
     }
+
+    const tenantId = attempt.session.tenantId;
 
     // Update status
     await this.prisma.examAttempt.update({
@@ -5283,20 +5473,61 @@ export class ExamSubmissionService {
       data: { status: AttemptStatus.SUBMITTED, submittedAt: new Date() },
     });
 
-    // Enqueue auto-grade
-    await this.submissionQueue.add(
-      'auto-grade',
-      { attemptId: dto.attemptId },
-      { jobId: `grade-${dto.attemptId}`, removeOnFail: false },
-    );
+    await this.auditLogs.log({
+      tenantId,
+      userId: attempt.userId,
+      action: 'SUBMIT_EXAM',
+      entityType: 'ExamAttempt',
+      entityId: dto.attemptId,
+      after: { submittedAt: new Date().toISOString() },
+    });
 
-    return { message: 'Ujian berhasil disubmit' };
+    // Enqueue auto-grade — jobId unik agar tidak duplikat jika retry
+    const jobData: AutoGradeJobData = { attemptId: dto.attemptId, tenantId };
+    await this.submissionQueue.add('auto-grade', jobData, {
+      jobId: `grade-${dto.attemptId}`,
+      removeOnComplete: 50,
+      removeOnFail: false,
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 2000 },
+    });
+
+    return { message: 'Ujian berhasil disubmit', attemptId: dto.attemptId };
   }
 
+  // ── Schedule timeout untuk attempt yang sedang berjalan ───────────────────
+  async scheduleTimeout(
+    attemptId: string,
+    tenantId: string,
+    sessionId: string,
+    durationMinutes: number,
+  ) {
+    const delayMs = durationMinutes * 60 * 1000;
+    await this.submissionQueue.add(
+      'timeout-attempt',
+      { attemptId, tenantId, sessionId },
+      {
+        jobId: `timeout-${attemptId}`,
+        delay: delayMs,
+        removeOnComplete: true,
+        removeOnFail: false,
+        attempts: 3,
+      },
+    );
+    this.logger?.log?.(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
+  }
+
+  // ── Ambil hasil attempt (hanya jika PUBLISHED) ─────────────────────────────
   async getAttemptResult(attemptId: string, userId: string) {
     const attempt = await this.prisma.examAttempt.findFirst({
       where: { id: attemptId, userId },
       include: {
+        session: {
+          select: {
+            title: true,
+            examPackage: { select: { title: true, settings: true } },
+          },
+        },
         answers: {
           select: {
             questionId: true,
@@ -5309,11 +5540,163 @@ export class ExamSubmissionService {
         },
       },
     });
+
     if (!attempt) throw new NotFoundException('Hasil ujian tidak ditemukan');
+
+    // Jika belum published, kembalikan status saja
     if (attempt.gradingStatus !== GradingStatus.PUBLISHED) {
-      return { status: attempt.gradingStatus, message: 'Hasil belum dipublish' };
+      return {
+        attemptId,
+        status: attempt.status,
+        gradingStatus: attempt.gradingStatus,
+        message: this.gradingStatusMessage(attempt.gradingStatus),
+      };
     }
-    return attempt;
+
+    const percentage =
+      attempt.maxScore && attempt.maxScore > 0
+        ? Math.round(((attempt.totalScore ?? 0) / attempt.maxScore) * 100 * 10) / 10
+        : 0;
+
+    const settings = attempt.session.examPackage.settings as { passingScore?: number };
+    const isPassed = settings.passingScore != null ? percentage >= settings.passingScore : null; // tidak ada passing score = tidak ada keterangan lulus/tidak
+
+    return {
+      attemptId,
+      sessionTitle: attempt.session.title,
+      packageTitle: attempt.session.examPackage.title,
+      status: attempt.status,
+      gradingStatus: attempt.gradingStatus,
+      totalScore: attempt.totalScore,
+      maxScore: attempt.maxScore,
+      percentage,
+      isPassed,
+      submittedAt: attempt.submittedAt,
+      gradingCompletedAt: attempt.gradingCompletedAt,
+      answers: attempt.answers,
+    };
+  }
+
+  private gradingStatusMessage(status: GradingStatus): string {
+    const map: Record<GradingStatus, string> = {
+      [GradingStatus.PENDING]: 'Jawaban sedang diproses',
+      [GradingStatus.AUTO_GRADED]: 'Penilaian otomatis selesai, menunggu review guru',
+      [GradingStatus.MANUAL_REQUIRED]: 'Menunggu penilaian manual dari guru',
+      [GradingStatus.COMPLETED]: 'Penilaian selesai, menunggu dipublish',
+      [GradingStatus.PUBLISHED]: 'Nilai telah dipublish',
+    };
+    return map[status] ?? 'Status tidak diketahui';
+  }
+
+  // logger optional agar tidak crash jika DI belum setup
+  private get logger() {
+    return { log: (msg: string) => console.log(`[ExamSubmissionService] ${msg}`) };
+  }
+}
+
+```
+
+---
+
+### File: `src/modules/submissions/services/grading-helper.service.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/services/grading-helper.service.ts
+// Memisahkan logika runAutoGrade agar tidak ada circular dependency
+// SubmissionsModule ↔ GradingModule
+// ════════════════════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { AutoGradingService } from './auto-grading.service';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { QuestionType } from '../../../common/enums/question-type.enum';
+
+@Injectable()
+export class GradingHelperService {
+  private readonly logger = new Logger(GradingHelperService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private autoGrading: AutoGradingService,
+  ) {}
+
+  async runAutoGrade(attemptId: string): Promise<void> {
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        answers: true,
+        session: {
+          include: {
+            examPackage: {
+              include: { questions: { include: { question: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!attempt) throw new NotFoundException(`Attempt ${attemptId} tidak ditemukan`);
+
+    let totalScore = 0;
+    let maxScore = 0;
+    let needsManual = false;
+
+    for (const ans of attempt.answers) {
+      const epq = attempt.session.examPackage.questions.find(
+        (q) => q.questionId === ans.questionId,
+      );
+      if (!epq) continue;
+
+      const pts = epq.points ?? epq.question.points;
+      maxScore += pts;
+
+      let result;
+      try {
+        result = this.autoGrading.gradeAnswer(
+          epq.question.type as QuestionType,
+          epq.question.correctAnswer as unknown as string,
+          ans.answer,
+          pts,
+        );
+      } catch (err) {
+        this.logger.error(`Grade error questionId=${epq.questionId}: ${(err as Error).message}`);
+        needsManual = true;
+        await this.prisma.examAnswer.update({ where: { id: ans.id }, data: { maxScore: pts } });
+        continue;
+      }
+
+      if (!result.requiresManual) {
+        totalScore += result.score;
+        await this.prisma.examAnswer.update({
+          where: { id: ans.id },
+          data: {
+            score: result.score,
+            maxScore: pts,
+            isAutoGraded: true,
+            gradedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.examAnswer.update({ where: { id: ans.id }, data: { maxScore: pts } });
+        needsManual = true;
+      }
+    }
+
+    const gradingStatus = needsManual ? GradingStatus.MANUAL_REQUIRED : GradingStatus.AUTO_GRADED;
+
+    await this.prisma.examAttempt.update({
+      where: { id: attemptId },
+      data: {
+        totalScore,
+        maxScore,
+        gradingStatus,
+        gradingCompletedAt: needsManual ? undefined : new Date(),
+      },
+    });
+
+    this.logger.log(
+      `Attempt ${attemptId} graded: ${totalScore}/${maxScore}, status=${gradingStatus}`,
+    );
   }
 }
 
@@ -5366,16 +5749,39 @@ export class SubmissionsService {
 ### File: `src/modules/submissions/submissions.module.ts`
 
 ```typescript
-// ── submissions.module.ts ────────────────────────────────
-import { BullModule } from '@nestjs/bullmq';
+// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/submissions.module.ts  (final — no circular dep)
+// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ExamPackagesModule } from '../exam-packages/exam-packages.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { ExamDownloadService } from './services/exam-download.service';
+import { ExamSubmissionService } from './services/exam-submission.service';
+import { AutoGradingService } from './services/auto-grading.service';
+import { SubmissionsService } from './services/submissions.service';
+import { StudentExamController } from './controllers/student-exam.controller';
+import { SubmissionsController } from './controllers/submissions.controller';
+import { SubmissionProcessor } from './processors/submission.processor';
+import { SubmissionEventsListener } from './processors/submission-events.listener';
+// GradingService di-inject via GradingModule — tapi itu circular.
+// Solusi: AutoGradingService di-provide langsung di sini,
+// GradingService.runAutoGrade di-call langsung tanpa import GradingModule.
+import { GradingHelperService } from './services/grading-helper.service';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'submission' }), ExamPackagesModule],
-  providers: [ExamDownloadService, ExamSubmissionService, AutoGradingService, SubmissionsService],
+  imports: [BullModule.registerQueue({ name: 'submission' }), ExamPackagesModule, AuditLogsModule],
+  providers: [
+    ExamDownloadService,
+    ExamSubmissionService,
+    AutoGradingService,
+    GradingHelperService, // internal helper, bukan GradingModule
+    SubmissionsService,
+    SubmissionProcessor,
+    SubmissionEventsListener,
+  ],
   controllers: [StudentExamController, SubmissionsController],
-  exports: [ExamSubmissionService, AutoGradingService],
+  exports: [ExamSubmissionService, AutoGradingService, GradingHelperService],
 })
 export class SubmissionsModule {}
 
@@ -7052,6 +7458,256 @@ describe('QuestionsService', () => {
   it('should be defined', () => {
     const svc = new QuestionsService({} as PrismaService, {} as ConfigService);
     expect(svc).toBeDefined();
+  });
+});
+
+```
+
+---
+
+### File: `test/unit/submissions/grading-helper.service.spec.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// test/unit/submissions/grading-helper.service.spec.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Test } from '@nestjs/testing';
+import { GradingHelperService } from '../../../src/modules/submissions/services/grading-helper.service';
+import { AutoGradingService } from '../../../src/modules/submissions/services/auto-grading.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { GradingStatus } from '../../../src/common/enums/grading-status.enum';
+import { QuestionType } from '../../../src/common/enums/question-type.enum';
+import { encrypt } from '../../../src/common/utils/encryption.util';
+import { ConfigService } from '@nestjs/config';
+
+describe('GradingHelperService', () => {
+  let svc: GradingHelperService;
+  const testKey = 'a'.repeat(64);
+
+  const mockAttempt = (answers: object[], questions: object[]) => ({
+    id: 'att-1',
+    answers,
+    session: {
+      examPackage: {
+        questions: questions.map((q: any) => ({
+          questionId: q.id,
+          points: q.points ?? 10,
+          question: q,
+        })),
+      },
+    },
+  });
+
+  const mockPrisma = {
+    examAttempt: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    examAnswer: { update: jest.fn() },
+  };
+
+  beforeEach(async () => {
+    const mod = await Test.createTestingModule({
+      providers: [
+        GradingHelperService,
+        AutoGradingService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: ConfigService, useValue: { get: jest.fn(() => testKey) } },
+      ],
+    }).compile();
+
+    svc = mod.get(GradingHelperService);
+    jest.clearAllMocks();
+  });
+
+  it('auto-grade pilihan ganda benar → AUTO_GRADED', async () => {
+    const ca = encrypt(JSON.stringify({ type: 'single', value: 'a' }), testKey);
+    mockPrisma.examAttempt.findUnique.mockResolvedValue(
+      mockAttempt(
+        [{ id: 'ans-1', questionId: 'q-1', answer: 'a' }],
+        [{ id: 'q-1', type: QuestionType.MULTIPLE_CHOICE, correctAnswer: ca, points: 10 }],
+      ),
+    );
+    mockPrisma.examAnswer.update.mockResolvedValue({});
+    mockPrisma.examAttempt.update.mockResolvedValue({});
+
+    await svc.runAutoGrade('att-1');
+
+    expect(mockPrisma.examAttempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ gradingStatus: GradingStatus.AUTO_GRADED, totalScore: 10 }),
+      }),
+    );
+  });
+
+  it('essay → MANUAL_REQUIRED', async () => {
+    const ca = encrypt(JSON.stringify({ type: 'text', value: 'jawaban model' }), testKey);
+    mockPrisma.examAttempt.findUnique.mockResolvedValue(
+      mockAttempt(
+        [{ id: 'ans-1', questionId: 'q-1', answer: 'jawaban siswa' }],
+        [{ id: 'q-1', type: QuestionType.ESSAY, correctAnswer: ca, points: 20 }],
+      ),
+    );
+    mockPrisma.examAnswer.update.mockResolvedValue({});
+    mockPrisma.examAttempt.update.mockResolvedValue({});
+
+    await svc.runAutoGrade('att-1');
+
+    expect(mockPrisma.examAttempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ gradingStatus: GradingStatus.MANUAL_REQUIRED }),
+      }),
+    );
+  });
+});
+
+```
+
+---
+
+### File: `test/unit/submissions/submission.processor.spec.ts`
+
+```typescript
+// ════════════════════════════════════════════════════════════════════════════
+// test/unit/submissions/submission.processor.spec.ts
+// ════════════════════════════════════════════════════════════════════════════
+import { Test, TestingModule } from '@nestjs/testing';
+import { SubmissionProcessor } from '../../../src/modules/submissions/processors/submission.processor';
+import { GradingHelperService } from '../../../src/modules/submissions/services/grading-helper.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { AuditLogsService } from '../../../src/modules/audit-logs/services/audit-logs.service';
+import { AttemptStatus } from '../../../src/common/enums/exam-status.enum';
+
+describe('SubmissionProcessor', () => {
+  let processor: SubmissionProcessor;
+  const mockPrisma = {
+    examAttempt: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+  const mockGradingHelper = { runAutoGrade: jest.fn() };
+  const mockAuditLogs = { log: jest.fn() };
+
+  beforeEach(async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        SubmissionProcessor,
+        { provide: GradingHelperService, useValue: mockGradingHelper },
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditLogsService, useValue: mockAuditLogs },
+      ],
+    }).compile();
+
+    processor = mod.get(SubmissionProcessor);
+    jest.clearAllMocks();
+  });
+
+  describe('auto-grade job', () => {
+    it('menjalankan auto-grade untuk attempt SUBMITTED', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue({
+        id: 'att-1',
+        status: AttemptStatus.SUBMITTED,
+        userId: 'user-1',
+      });
+      mockGradingHelper.runAutoGrade.mockResolvedValue(undefined);
+      mockAuditLogs.log.mockResolvedValue(undefined);
+
+      await processor.process({
+        name: 'auto-grade',
+        data: { attemptId: 'att-1', tenantId: 'tenant-1' },
+        attemptsMade: 0,
+      } as any);
+
+      expect(mockGradingHelper.runAutoGrade).toHaveBeenCalledWith('att-1');
+      expect(mockAuditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'AUTO_GRADE_COMPLETED' }),
+      );
+    });
+
+    it('skip jika attempt tidak ditemukan', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue(null);
+
+      await processor.process({
+        name: 'auto-grade',
+        data: { attemptId: 'att-missing', tenantId: 'tenant-1' },
+        attemptsMade: 0,
+      } as any);
+
+      expect(mockGradingHelper.runAutoGrade).not.toHaveBeenCalled();
+    });
+
+    it('skip jika status bukan SUBMITTED atau TIMED_OUT', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue({
+        id: 'att-1',
+        status: AttemptStatus.IN_PROGRESS,
+        userId: 'user-1',
+      });
+
+      await processor.process({
+        name: 'auto-grade',
+        data: { attemptId: 'att-1', tenantId: 'tenant-1' },
+        attemptsMade: 0,
+      } as any);
+
+      expect(mockGradingHelper.runAutoGrade).not.toHaveBeenCalled();
+    });
+
+    it('melempar error agar BullMQ retry', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue({
+        id: 'att-1',
+        status: AttemptStatus.SUBMITTED,
+        userId: 'user-1',
+      });
+      mockGradingHelper.runAutoGrade.mockRejectedValue(new Error('DB error'));
+
+      await expect(
+        processor.process({
+          name: 'auto-grade',
+          data: { attemptId: 'att-1', tenantId: 'tenant-1' },
+          attemptsMade: 0,
+        } as any),
+      ).rejects.toThrow('DB error');
+    });
+  });
+
+  describe('timeout-attempt job', () => {
+    it('update status ke TIMED_OUT dan auto-grade', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue({
+        id: 'att-1',
+        userId: 'user-1',
+      });
+      mockPrisma.examAttempt.update.mockResolvedValue({});
+      mockGradingHelper.runAutoGrade.mockResolvedValue(undefined);
+      mockAuditLogs.log.mockResolvedValue(undefined);
+
+      await processor.process({
+        name: 'timeout-attempt',
+        data: { attemptId: 'att-1', tenantId: 'tenant-1', sessionId: 'sess-1' },
+        attemptsMade: 0,
+      } as any);
+
+      expect(mockPrisma.examAttempt.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'att-1' },
+          data: expect.objectContaining({ status: AttemptStatus.TIMED_OUT }),
+        }),
+      );
+      expect(mockGradingHelper.runAutoGrade).toHaveBeenCalledWith('att-1');
+    });
+
+    it('skip jika attempt sudah tidak IN_PROGRESS', async () => {
+      mockPrisma.examAttempt.findFirst.mockResolvedValue(null); // tidak IN_PROGRESS
+
+      await processor.process({
+        name: 'timeout-attempt',
+        data: { attemptId: 'att-1', tenantId: 'tenant-1', sessionId: 'sess-1' },
+        attemptsMade: 0,
+      } as any);
+
+      expect(mockPrisma.examAttempt.update).not.toHaveBeenCalled();
+      expect(mockGradingHelper.runAutoGrade).not.toHaveBeenCalled();
+    });
   });
 });
 
