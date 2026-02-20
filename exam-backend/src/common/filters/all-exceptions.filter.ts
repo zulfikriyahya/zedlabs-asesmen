@@ -1,4 +1,3 @@
-// ── all-exceptions.filter.ts ─────────────────────────────────────────────────
 import { ArgumentsHost as AH, Catch as CatchAll, Logger as Log } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 
@@ -17,7 +16,6 @@ export class AllExceptionsFilter extends BaseExceptionFilter {
       );
     }
 
-    // delegate HttpException ke filter di atas, sisanya 500
     super.catch(ex, host);
   }
 }

@@ -1,4 +1,3 @@
-// ── question-type.enum.ts ────────────────────────────────────────────────────
 export enum QuestionType {
   MULTIPLE_CHOICE = 'MULTIPLE_CHOICE',
   COMPLEX_MULTIPLE_CHOICE = 'COMPLEX_MULTIPLE_CHOICE',

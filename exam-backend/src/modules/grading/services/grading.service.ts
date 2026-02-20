@@ -3,11 +3,11 @@
 // Tidak lagi depend pada AutoGradingService langsung —
 // inject GradingHelperService dari SubmissionsModule via exports
 // ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { Injectable } from '@nestjs/common';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { GradingHelperService } from '../../submissions/services/grading-helper.service';
 
 @Injectable()
@@ -42,4 +42,5 @@ export class GradingService {
     ]);
     return new PaginatedResponseDto(data, total, q.page, q.limit);
   }
+  // private readonly logger = new Logger(GradingService.name);
 }

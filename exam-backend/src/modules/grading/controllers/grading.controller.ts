@@ -1,7 +1,13 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/controllers/grading.controller.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -14,10 +20,13 @@ import { GradeAnswerDto } from '../dto/grade-answer.dto';
 import { CompleteGradingDto } from '../dto/complete-grading.dto';
 import { PublishResultDto } from '../dto/publish-result.dto';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
+import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
 @Controller('grading')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.TEACHER, UserRole.ADMIN)
+@UseInterceptors(AuditInterceptor)
 export class GradingController {
   constructor(
     private svc: GradingService,
@@ -30,6 +39,7 @@ export class GradingController {
   }
 
   @Patch('answer')
+  @AuditAction(AuditActions.GRADE_ANSWER, 'ExamAnswer')
   gradeAnswer(@CurrentUser() u: CurrentUserPayload, @Body() dto: GradeAnswerDto) {
     return this.manualSvc.gradeAnswer(dto, u.sub);
   }
@@ -40,6 +50,7 @@ export class GradingController {
   }
 
   @Post('publish')
+  @AuditAction(AuditActions.PUBLISH_RESULT, 'ExamAttempt')
   publish(@Body() dto: PublishResultDto) {
     return this.manualSvc.publishResults(dto);
   }

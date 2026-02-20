@@ -1,4 +1,3 @@
-// ── grading-status.enum.ts ───────────────────────────────────────────────────
 export enum GradingStatus {
   PENDING = 'PENDING',
   AUTO_GRADED = 'AUTO_GRADED',

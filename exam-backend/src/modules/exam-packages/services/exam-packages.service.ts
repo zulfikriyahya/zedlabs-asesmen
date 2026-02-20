@@ -7,6 +7,7 @@ import { ExamPackageStatus } from '../../../common/enums/exam-status.enum';
 import { AddQuestionsDto } from '../dto/add-questions.dto';
 import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
 import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
+import { sha256 } from '../../../common/utils/checksum.util';
 
 @Injectable()
 export class ExamPackagesService {

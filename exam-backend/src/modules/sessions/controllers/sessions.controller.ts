@@ -1,7 +1,14 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/controllers/sessions.controller.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -14,9 +21,12 @@ import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
+import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(AuditInterceptor)
 export class SessionsController {
   constructor(
     private svc: SessionsService,
@@ -63,6 +73,7 @@ export class SessionsController {
 
   @Post(':id/activate')
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @AuditAction(AuditActions.ACTIVATE_SESSION, 'ExamSession')
   activate(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.activate(tid, id);
   }

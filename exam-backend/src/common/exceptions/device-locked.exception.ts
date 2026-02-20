@@ -1,4 +1,3 @@
-// ── device-locked.exception.ts ───────────────────────────────────────────────
 import { ForbiddenException } from '@nestjs/common';
 
 export class DeviceLockedException extends ForbiddenException {

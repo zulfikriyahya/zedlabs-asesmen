@@ -1,4 +1,3 @@
-// ── base-response.dto.ts ─────────────────────────────────────────────────────
 export class PaginatedResponseDto<T> {
   data: T[];
   meta: {

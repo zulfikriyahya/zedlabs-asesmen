@@ -33,6 +33,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { HealthModule } from './modules/health/health.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RedisProvider } from './common/providers/redis.provider';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AppService } from './app.service';
       useFactory: (cfg: ConfigService) => ({
         throttlers: [
           {
+            name: 'default',
             ttl: cfg.get<number>('THROTTLE_TTL', 60) * 1000,
             limit: cfg.get<number>('THROTTLE_LIMIT', 100),
           },
@@ -89,6 +91,7 @@ import { AppService } from './app.service';
   controllers: [AppController],
   providers: [
     AppService,
+    RedisProvider,
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },

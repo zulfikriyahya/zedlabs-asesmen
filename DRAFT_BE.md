@@ -60,6 +60,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { HealthModule } from './modules/health/health.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RedisProvider } from './common/providers/redis.provider';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { AppService } from './app.service';
       useFactory: (cfg: ConfigService) => ({
         throttlers: [
           {
+            name: 'default',
             ttl: cfg.get<number>('THROTTLE_TTL', 60) * 1000,
             limit: cfg.get<number>('THROTTLE_LIMIT', 100),
           },
@@ -116,6 +118,7 @@ import { AppService } from './app.service';
   controllers: [AppController],
   providers: [
     AppService,
+    RedisProvider,
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
@@ -213,9 +216,36 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 ```typescript
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export const TenantId = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): string =>
-    ctx.switchToHttp().getRequest().tenantId,
+  (_data: unknown, ctx: ExecutionContext): string => ctx.switchToHttp().getRequest().tenantId,
 );
+
+```
+
+---
+
+### File: `src/common/decorators/throttle-tier.decorator.ts`
+
+```typescript
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
+
+/**
+ * Tier definitions:
+ *
+ * STRICT   — endpoint kritis: download paket, submit ujian
+ *            5 req / 60 detik per user
+ *
+ * MODERATE — endpoint semi-kritis: submit jawaban, upload chunk
+ *            30 req / 60 detik per user
+ *
+ * RELAXED  — endpoint baca biasa: list, get detail
+ *            120 req / 60 detik per user  (override default 100)
+ *
+ * OPEN     — endpoint yang tidak perlu throttle sama sekali
+ */
+export const ThrottleStrict = () => Throttle({ default: { limit: 5, ttl: 60_000 } });
+export const ThrottleModerate = () => Throttle({ default: { limit: 30, ttl: 60_000 } });
+export const ThrottleRelaxed = () => Throttle({ default: { limit: 120, ttl: 60_000 } });
+export const ThrottleOpen = () => SkipThrottle();
 
 ```
 
@@ -248,7 +278,6 @@ export class BaseQueryDto extends PaginationDto {
 ### File: `src/common/dto/base-response.dto.ts`
 
 ```typescript
-// ── base-response.dto.ts ─────────────────────────────────────────────────────
 export class PaginatedResponseDto<T> {
   data: T[];
   meta: {
@@ -271,7 +300,6 @@ export class PaginatedResponseDto<T> {
 ### File: `src/common/dto/pagination.dto.ts`
 
 ```typescript
-// ── pagination.dto.ts ────────────────────────────────────────────────────────
 import { IsOptional, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -301,7 +329,6 @@ export class PaginationDto {
 ### File: `src/common/enums/exam-status.enum.ts`
 
 ```typescript
-// ── exam-status.enum.ts ──────────────────────────────────────────────────────
 export enum ExamPackageStatus {
   DRAFT = 'DRAFT',
   REVIEW = 'REVIEW',
@@ -331,7 +358,6 @@ export enum AttemptStatus {
 ### File: `src/common/enums/grading-status.enum.ts`
 
 ```typescript
-// ── grading-status.enum.ts ───────────────────────────────────────────────────
 export enum GradingStatus {
   PENDING = 'PENDING',
   AUTO_GRADED = 'AUTO_GRADED',
@@ -347,7 +373,6 @@ export enum GradingStatus {
 ### File: `src/common/enums/question-type.enum.ts`
 
 ```typescript
-// ── question-type.enum.ts ────────────────────────────────────────────────────
 export enum QuestionType {
   MULTIPLE_CHOICE = 'MULTIPLE_CHOICE',
   COMPLEX_MULTIPLE_CHOICE = 'COMPLEX_MULTIPLE_CHOICE',
@@ -364,7 +389,6 @@ export enum QuestionType {
 ### File: `src/common/enums/sync-status.enum.ts`
 
 ```typescript
-// ── sync-status.enum.ts ──────────────────────────────────────────────────────
 export enum SyncStatus {
   PENDING = 'PENDING',
   PROCESSING = 'PROCESSING',
@@ -387,7 +411,6 @@ export enum SyncType {
 ### File: `src/common/enums/user-role.enum.ts`
 
 ```typescript
-// ── user-role.enum.ts ────────────────────────────────────────────────────────
 export enum UserRole {
   SUPERADMIN = 'SUPERADMIN',
   ADMIN = 'ADMIN',
@@ -404,7 +427,6 @@ export enum UserRole {
 ### File: `src/common/exceptions/device-locked.exception.ts`
 
 ```typescript
-// ── device-locked.exception.ts ───────────────────────────────────────────────
 import { ForbiddenException } from '@nestjs/common';
 
 export class DeviceLockedException extends ForbiddenException {
@@ -420,7 +442,6 @@ export class DeviceLockedException extends ForbiddenException {
 ### File: `src/common/exceptions/exam-not-available.exception.ts`
 
 ```typescript
-// ── exam-not-available.exception.ts ─────────────────────────────────────────
 import { BadRequestException } from '@nestjs/common';
 
 export class ExamNotAvailableException extends BadRequestException {
@@ -436,7 +457,6 @@ export class ExamNotAvailableException extends BadRequestException {
 ### File: `src/common/exceptions/idempotency-conflict.exception.ts`
 
 ```typescript
-// ── idempotency-conflict.exception.ts ───────────────────────────────────────
 import { ConflictException } from '@nestjs/common';
 
 export class IdempotencyConflictException extends ConflictException {
@@ -452,7 +472,6 @@ export class IdempotencyConflictException extends ConflictException {
 ### File: `src/common/exceptions/tenant-not-found.exception.ts`
 
 ```typescript
-// ── tenant-not-found.exception.ts ────────────────────────────────────────────
 import { NotFoundException } from '@nestjs/common';
 
 export class TenantNotFoundException extends NotFoundException {
@@ -468,7 +487,6 @@ export class TenantNotFoundException extends NotFoundException {
 ### File: `src/common/filters/all-exceptions.filter.ts`
 
 ```typescript
-// ── all-exceptions.filter.ts ─────────────────────────────────────────────────
 import { ArgumentsHost as AH, Catch as CatchAll, Logger as Log } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 
@@ -487,7 +505,6 @@ export class AllExceptionsFilter extends BaseExceptionFilter {
       );
     }
 
-    // delegate HttpException ke filter di atas, sisanya 500
     super.catch(ex, host);
   }
 }
@@ -499,7 +516,6 @@ export class AllExceptionsFilter extends BaseExceptionFilter {
 ### File: `src/common/filters/http-exception.filter.ts`
 
 ```typescript
-// ── http-exception.filter.ts ─────────────────────────────────────────────────
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 
@@ -572,15 +588,41 @@ export class TenantGuard implements CanActivate {
 ### File: `src/common/guards/throttler.guard.ts`
 
 ```typescript
-import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
+import { UserRole } from '../enums/user-role.enum';
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
+  /**
+   * Tracker key: tenantId:userId  → setiap user dihitung sendiri
+   * Fallback ke tenantId:ip jika belum authenticated
+   */
   protected async getTracker(req: Record<string, unknown>): Promise<string> {
     const tenantId = (req as { tenantId?: string }).tenantId ?? 'global';
-    const ip = (req as { ip?: string }).ip ?? '0.0.0.0';
-    return `${tenantId}:${ip}`;
+    const user = (req as { user?: { sub?: string } }).user;
+    const userId = user?.sub ?? (req as { ip?: string }).ip ?? '0.0.0.0';
+    return `${tenantId}:${userId}`;
+  }
+
+  /**
+   * Skip throttle untuk role ADMIN dan SUPERADMIN —
+   * mereka tidak boleh terkena block saat mengelola sistem
+   */
+  protected async shouldSkip(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest();
+    const role = (req.user as { role?: string } | undefined)?.role;
+    return role === UserRole.ADMIN || role === UserRole.SUPERADMIN;
+  }
+
+  protected async throwThrottlingException(
+    ctx: ExecutionContext,
+    throttlerLimitDetail: Parameters<ThrottlerGuard['throwThrottlingException']>[1],
+  ): Promise<void> {
+    const req = ctx.switchToHttp().getRequest<{ url: string }>();
+    throw new ThrottlerException(
+      `Terlalu banyak request ke ${req.url}. Coba lagi setelah beberapa saat.`,
+    );
   }
 }
 
@@ -591,40 +633,54 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 ### File: `src/common/interceptors/idempotency.interceptor.ts`
 
 ```typescript
+// src/common/interceptors/idempotency.interceptor.ts
 import {
+  CallHandler,
+  ExecutionContext,
+  Inject,
   Injectable,
   NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  ConflictException,
+  Optional,
 } from '@nestjs/common';
+import { Redis } from 'ioredis';
 import { Observable, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
-// Cache in-memory sederhana untuk dev.
-// Di production: ganti dengan Redis (ioredis).
-const cache = new Map<string, unknown>();
+const IDEMPOTENCY_TTL = 24 * 60 * 60; // 24 jam (detik)
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+  // Redis di-inject optional — fallback ke Map jika tidak tersedia (test)
+  constructor(@Optional() @Inject('REDIS_CLIENT') private readonly redis?: Redis) {}
+
+  async intercept(ctx: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     const req = ctx.switchToHttp().getRequest();
     const key = req.headers['idempotency-key'] as string | undefined;
     if (!key) return next.handle();
 
-    if (cache.has(key)) {
-      return of(cache.get(key));
+    const cacheKey = `idempotency:${key}`;
+
+    if (this.redis) {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) return of(JSON.parse(cached));
+      return next.handle().pipe(
+        tap(async (res) => {
+          await this.redis!.setex(cacheKey, IDEMPOTENCY_TTL, JSON.stringify(res));
+        }),
+      );
     }
 
+    // Fallback in-memory (dev/test)
+    if (localCache.has(key)) return of(localCache.get(key));
     return next.handle().pipe(
-      tap((response) => {
-        cache.set(key, response);
-        // TTL 24 jam
-        setTimeout(() => cache.delete(key), 24 * 60 * 60 * 1000);
+      tap((res) => {
+        localCache.set(key, res);
+        setTimeout(() => localCache.delete(key), IDEMPOTENCY_TTL * 1000);
       }),
     );
   }
 }
+const localCache = new Map<string, unknown>();
 
 ```
 
@@ -842,6 +898,31 @@ export const AppValidationPipe = new ValidationPipe({
   transform: true,
   transformOptions: { enableImplicitConversion: true },
 });
+
+```
+
+---
+
+### File: `src/common/providers/redis.provider.ts`
+
+```typescript
+// src/common/providers/redis.provider.ts
+import { Provider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+
+export const RedisProvider: Provider = {
+  provide: 'REDIS_CLIENT',
+  inject: [ConfigService],
+  useFactory: (cfg: ConfigService): Redis =>
+    new Redis({
+      host: cfg.get('REDIS_HOST', 'localhost'),
+      port: cfg.get<number>('REDIS_PORT', 6379),
+      password: cfg.get('REDIS_PASSWORD') || undefined,
+      lazyConnect: true,
+      maxRetriesPerRequest: 3,
+    }),
+};
 
 ```
 
@@ -1573,17 +1654,50 @@ export class DashboardService {
 ### File: `src/modules/audit-logs/audit-logs.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/audit-logs/audit-logs.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
 import { AuditLogsService } from './services/audit-logs.service';
+import { AuditLogsController } from './controllers/audit-logs.controller';
+import { AuditInterceptor } from './interceptors/audit.interceptor';
 
 @Module({
-  providers: [AuditLogsService],
-  exports: [AuditLogsService],
+  providers: [AuditLogsService, AuditInterceptor],
+  controllers: [AuditLogsController],
+  exports: [AuditLogsService, AuditInterceptor],
 })
 export class AuditLogsModule {}
+
+```
+
+---
+
+### File: `src/modules/audit-logs/controllers/audit-logs.controller.ts`
+
+```typescript
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { AuditLogsService } from '../services/audit-logs.service';
+import { AuditLogQueryDto } from '../dto/audit-log-query.dto';
+
+@Controller('audit-logs')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
+export class AuditLogsController {
+  constructor(private svc: AuditLogsService) {}
+
+  @Get()
+  findAll(@TenantId() tid: string, @Query() q: AuditLogQueryDto) {
+    return this.svc.findAll(tid, q);
+  }
+
+  @Get('summary')
+  summary(@TenantId() tid: string, @Query('days') days?: string) {
+    return this.svc.getSummary(tid, days ? parseInt(days, 10) : 7);
+  }
+}
 
 ```
 
@@ -1592,9 +1706,6 @@ export class AuditLogsModule {}
 ### File: `src/modules/audit-logs/decorators/audit.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/audit-logs/decorators/audit.decorator.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 
 export const AUDIT_ACTION_KEY = 'auditAction';
@@ -1607,6 +1718,103 @@ export interface AuditActionMeta {
 export const AuditAction = (action: string, entityType: string) =>
   SetMetadata(AUDIT_ACTION_KEY, { action, entityType } satisfies AuditActionMeta);
 
+/** Konstanta aksi — gunakan ini agar tidak ada typo di berbagai controller */
+export const AuditActions = {
+  // Auth
+  LOGIN: 'LOGIN',
+  LOGOUT: 'LOGOUT',
+  CHANGE_PASSWORD: 'CHANGE_PASSWORD',
+  // Exam
+  START_EXAM: 'START_EXAM',
+  SUBMIT_EXAM: 'SUBMIT_EXAM',
+  // Grading
+  GRADE_ANSWER: 'GRADE_ANSWER',
+  PUBLISH_RESULT: 'PUBLISH_RESULT',
+  // Session
+  ACTIVATE_SESSION: 'ACTIVATE_SESSION',
+  // Users
+  CREATE_USER: 'CREATE_USER',
+  UPDATE_USER: 'UPDATE_USER',
+  DEACTIVATE_USER: 'DEACTIVATE_USER',
+} as const;
+
+```
+
+---
+
+### File: `src/modules/audit-logs/dto/audit-log-query.dto.ts`
+
+```typescript
+import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+
+export class AuditLogQueryDto extends BaseQueryDto {
+  @IsOptional() @IsString() action?: string;
+  @IsOptional() @IsString() entityType?: string;
+  @IsOptional() @IsString() userId?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+}
+
+```
+
+---
+
+### File: `src/modules/audit-logs/interceptors/audit.interceptor.ts`
+
+```typescript
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { AUDIT_ACTION_KEY, AuditActionMeta } from '../decorators/audit.decorator';
+import { AuditLogsService } from '../services/audit-logs.service';
+
+@Injectable()
+export class AuditInterceptor implements NestInterceptor {
+  constructor(
+    private reflector: Reflector,
+    private auditSvc: AuditLogsService,
+  ) {}
+
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const meta = this.reflector.getAllAndOverride<AuditActionMeta>(AUDIT_ACTION_KEY, [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (!meta) return next.handle();
+
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user as { sub?: string; tenantId?: string } | undefined;
+
+    return next.handle().pipe(
+      tap((responseData) => {
+        // Ekstrak entityId dari: response.id, response.data.id, atau param :id
+        const entityId =
+          (responseData as { id?: string })?.id ??
+          (responseData as { data?: { id?: string } })?.data?.id ??
+          (req.params as { id?: string })?.id ??
+          'unknown';
+
+        this.auditSvc
+          .log({
+            tenantId: req.tenantId ?? user?.tenantId ?? 'unknown',
+            userId: user?.sub,
+            action: meta.action,
+            entityType: meta.entityType,
+            entityId,
+            after: responseData as object,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          })
+          .catch(() => {
+            // audit log tidak boleh gagalkan request utama
+          });
+      }),
+    );
+  }
+}
+
 ```
 
 ---
@@ -1614,12 +1822,10 @@ export const AuditAction = (action: string, entityType: string) =>
 ### File: `src/modules/audit-logs/services/audit-logs.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/audit-logs/services/audit-logs.service.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { AuditLogQueryDto } from '../dto/audit-log-query.dto';
 
 @Injectable()
 export class AuditLogsService {
@@ -1651,16 +1857,58 @@ export class AuditLogsService {
     });
   }
 
-  findAll(tenantId: string, q: BaseQueryDto & { action?: string }) {
-    return this.prisma.auditLog.findMany({
-      where: {
-        tenantId,
-        ...(q.action && { action: q.action }),
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: q.skip,
-      take: q.limit,
+  async findAll(tenantId: string, q: AuditLogQueryDto) {
+    const where = {
+      tenantId,
+      ...(q.action && { action: q.action }),
+      ...(q.entityType && { entityType: q.entityType }),
+      ...(q.userId && { userId: q.userId }),
+      ...(q.search && {
+        OR: [
+          { action: { contains: q.search, mode: 'insensitive' as const } },
+          { entityType: { contains: q.search, mode: 'insensitive' as const } },
+          { entityId: { contains: q.search, mode: 'insensitive' as const } },
+        ],
+      }),
+      ...(q.from || q.to
+        ? {
+            createdAt: {
+              ...(q.from && { gte: new Date(q.from) }),
+              ...(q.to && { lte: new Date(q.to) }),
+            },
+          }
+        : {}),
+    };
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        skip: q.skip,
+        take: q.limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { username: true, email: true, role: true } },
+        },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return new PaginatedResponseDto(data, total, q.page, q.limit);
+  }
+
+  /** Ringkasan aksi per hari — untuk grafik di dashboard superadmin */
+  async getSummary(tenantId: string, days = 7) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const logs = await this.prisma.auditLog.groupBy({
+      by: ['action'],
+      where: { tenantId, createdAt: { gte: since } },
+      _count: { action: true },
+      orderBy: { _count: { action: 'desc' } },
     });
+
+    return logs.map((l) => ({ action: l.action, count: l._count.action }));
   }
 }
 
@@ -1709,9 +1957,14 @@ export class AuthModule {}
 ### File: `src/modules/auth/controllers/auth.controller.ts`
 
 ```typescript
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
+import {
+  ThrottleStrict,
+  ThrottleModerate,
+} from '../../../common/decorators/throttle-tier.decorator';
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { LoginDto } from '../dto/login.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
@@ -1727,39 +1980,36 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(
-    @Req() req: { user: { id: string; tenantId: string; role: string; email: string } },
+  @ThrottleStrict() // ← brute force protection
+  login(
+    @CurrentUser() user: { id: string; tenantId: string; role: string; email: string },
     @Body() body: LoginDto,
   ) {
-    return this.authSvc.login(
-      req.user.id,
-      req.user.tenantId,
-      req.user.role,
-      req.user.email,
-      body.fingerprint,
-    );
+    return this.authSvc.login(user.id, user.tenantId, user.role, user.email, body.fingerprint);
   }
 
   @Public()
+  @UseGuards(AuthGuard('jwt-refresh'))
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() dto: RefreshTokenDto) {
-    const payload = this.authSvc['jwt'].decode(dto.refreshToken) as { sub: string };
-    return this.authSvc.refresh(payload.sub, dto.refreshToken);
+  @ThrottleModerate()
+  refresh(@CurrentUser() user: CurrentUserPayload & { refreshToken: string }) {
+    return this.authSvc.refresh(user.sub, user.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Body() dto: RefreshTokenDto) {
-    await this.authSvc.logout(dto.refreshToken);
+  logout(@Body() dto: RefreshTokenDto) {
+    return this.authSvc.logout(dto.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
-    await this.authSvc.changePassword(user.sub, dto.currentPassword, dto.newPassword);
+  @ThrottleModerate()
+  changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
+    return this.authSvc.changePassword(user.sub, dto.currentPassword, dto.newPassword);
   }
 }
 
@@ -2319,6 +2569,7 @@ import { ExamPackageStatus } from '../../../common/enums/exam-status.enum';
 import { AddQuestionsDto } from '../dto/add-questions.dto';
 import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
 import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
+import { sha256 } from '../../../common/utils/checksum.util';
 
 @Injectable()
 export class ExamPackagesService {
@@ -2421,12 +2672,13 @@ export class ExamPackagesService {
 ### File: `src/modules/exam-packages/services/exam-package-builder.service.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/exam-packages/services/exam-package-builder.service.ts
-// ══════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/exam-packages/services/exam-package-builder.service.ts — fix checksum
+// ────────────────────────────────────────────────────────────────────────────
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { shuffleArray } from '../../../common/utils/randomizer.util';
+import { sha256 } from '../../../common/utils/checksum.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
@@ -2455,17 +2707,21 @@ export class ExamPackageBuilderService {
       options: pq.question.options as Record<string, unknown> | undefined,
       points: pq.points ?? pq.question.points,
       order: pq.order,
-      correctAnswer: pq.question.correctAnswer as string,
+      correctAnswer: pq.question.correctAnswer as string, // tetap encrypted
     }));
 
     if (shuffle) questions = shuffleArray(questions);
+
+    // Checksum dari soal tanpa correctAnswer (siswa tidak dapat kunci jawaban mentah)
+    const forChecksum = questions.map(({ correctAnswer: _ca, ...rest }) => rest);
+    const checksum = sha256(JSON.stringify(forChecksum));
 
     return {
       packageId,
       title: pkg.title,
       settings: pkg.settings,
       questions,
-      checksum: '',
+      checksum,
     };
   }
 }
@@ -2680,10 +2936,16 @@ export class ExamRoomsService {
 ### File: `src/modules/grading/controllers/grading.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/controllers/grading.controller.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -2696,10 +2958,13 @@ import { GradeAnswerDto } from '../dto/grade-answer.dto';
 import { CompleteGradingDto } from '../dto/complete-grading.dto';
 import { PublishResultDto } from '../dto/publish-result.dto';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
+import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
 @Controller('grading')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.TEACHER, UserRole.ADMIN)
+@UseInterceptors(AuditInterceptor)
 export class GradingController {
   constructor(
     private svc: GradingService,
@@ -2712,6 +2977,7 @@ export class GradingController {
   }
 
   @Patch('answer')
+  @AuditAction(AuditActions.GRADE_ANSWER, 'ExamAnswer')
   gradeAnswer(@CurrentUser() u: CurrentUserPayload, @Body() dto: GradeAnswerDto) {
     return this.manualSvc.gradeAnswer(dto, u.sub);
   }
@@ -2722,6 +2988,7 @@ export class GradingController {
   }
 
   @Post('publish')
+  @AuditAction(AuditActions.PUBLISH_RESULT, 'ExamAttempt')
   publish(@Body() dto: PublishResultDto) {
     return this.manualSvc.publishResults(dto);
   }
@@ -2773,17 +3040,15 @@ export class PublishResultDto {
 ### File: `src/modules/grading/grading.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/grading.module.ts  (final — no circular dep)
-// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
 import { GradingService } from './services/grading.service';
 import { ManualGradingService } from './services/manual-grading.service';
 import { GradingController } from './controllers/grading.controller';
 import { SubmissionsModule } from '../submissions/submissions.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 
 @Module({
-  imports: [SubmissionsModule], // dapat GradingHelperService & AutoGradingService
+  imports: [SubmissionsModule, AuditLogsModule],
   providers: [GradingService, ManualGradingService],
   controllers: [GradingController],
   exports: [GradingService, ManualGradingService],
@@ -2802,11 +3067,11 @@ export class GradingModule {}
 // Tidak lagi depend pada AutoGradingService langsung —
 // inject GradingHelperService dari SubmissionsModule via exports
 // ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { Injectable } from '@nestjs/common';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { GradingHelperService } from '../../submissions/services/grading-helper.service';
 
 @Injectable()
@@ -2841,6 +3106,7 @@ export class GradingService {
     ]);
     return new PaginatedResponseDto(data, total, q.page, q.limit);
   }
+  // private readonly logger = new Logger(GradingService.name);
 }
 
 ```
@@ -3072,15 +3338,74 @@ import { BullModule } from '@nestjs/bullmq';
 import { MediaService } from './services/media.service';
 import { MediaUploadService } from './services/media-upload.service';
 import { MediaCompressionService } from './services/media-compression.service';
+import { MediaProcessor } from './processors/media.processor';
 import { MediaController } from './controllers/media.controller';
 
 @Module({
   imports: [BullModule.registerQueue({ name: 'media' })],
-  providers: [MediaService, MediaUploadService, MediaCompressionService],
+  providers: [MediaService, MediaUploadService, MediaCompressionService, MediaProcessor],
   controllers: [MediaController],
   exports: [MediaService, MediaUploadService],
 })
 export class MediaModule {}
+
+```
+
+---
+
+### File: `src/modules/media/processors/media.processor.ts`
+
+```typescript
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/media/processors/media.processor.ts — BARU (belum ada di struktur tapi dibutuhkan)
+// ────────────────────────────────────────────────────────────────────────────
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { MediaService } from '../services/media.service';
+import { MediaCompressionService } from '../services/media-compression.service';
+
+@Processor('media')
+export class MediaProcessor extends WorkerHost {
+  private readonly logger = new Logger(MediaProcessor.name);
+
+  constructor(
+    private mediaSvc: MediaService,
+    private compressionSvc: MediaCompressionService,
+  ) {
+    super();
+  }
+
+  async process(job: Job<{ objectName: string }>) {
+    switch (job.name) {
+      case 'compress-image':
+        await this.handleCompressImage(job.data.objectName);
+        break;
+      case 'transcode-video':
+        this.logger.warn(`transcode-video untuk ${job.data.objectName} — perlu ffmpeg impl`);
+        break;
+      default:
+        this.logger.warn(`Unknown media job: ${job.name}`);
+    }
+  }
+
+  private async handleCompressImage(objectName: string) {
+    this.logger.log(`Compressing image: ${objectName}`);
+    // Dalam produksi: download dari MinIO, compress, re-upload
+    // Ini placeholder — implementasi penuh perlu stream dari MinIO
+    this.logger.log(`Image ${objectName} compression queued`);
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job) {
+    this.logger.log(`Media job [${job.name}] ${job.id} done`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(`Media job [${job?.name}] ${job?.id} failed: ${err.message}`);
+  }
+}
 
 ```
 
@@ -3242,9 +3567,7 @@ export class MonitoringController {
 ### File: `src/modules/monitoring/gateways/monitoring.gateway.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
 // src/modules/monitoring/gateways/monitoring.gateway.ts
-// ════════════════════════════════════════════════════════════════════════════
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -3253,17 +3576,35 @@ import {
   OnGatewayDisconnect,
   MessageBody,
   ConnectedSocket,
+  WsException,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, UseGuards } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
-@WebSocketGateway({ cors: true, namespace: '/monitoring' })
+@WebSocketGateway({ cors: { origin: '*' }, namespace: '/monitoring' })
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(MonitoringGateway.name);
 
+  constructor(
+    private jwt: JwtService,
+    private cfg: ConfigService,
+  ) {}
+
   handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+    try {
+      const token =
+        (client.handshake.auth?.token as string) ??
+        client.handshake.headers.authorization?.replace('Bearer ', '');
+      if (!token) throw new Error('No token');
+      this.jwt.verify(token, { secret: this.cfg.get('JWT_ACCESS_SECRET') });
+      this.logger.log(`Client connected: ${client.id}`);
+    } catch {
+      this.logger.warn(`Unauthorized WS connection: ${client.id}`);
+      client.disconnect();
+    }
   }
 
   handleDisconnect(client: Socket) {
@@ -3272,6 +3613,7 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
   @SubscribeMessage('join-session')
   handleJoin(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
+    if (!data?.sessionId) throw new WsException('sessionId diperlukan');
     client.join(`session:${data.sessionId}`);
     return { event: 'joined', room: `session:${data.sessionId}` };
   }
@@ -3292,15 +3634,15 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 ### File: `src/modules/monitoring/monitoring.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/monitoring/monitoring.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
+// monitoring.module.ts — tambah JwtModule
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { MonitoringService } from './services/monitoring.service';
 import { MonitoringGateway } from './gateways/monitoring.gateway';
 import { MonitoringController } from './controllers/monitoring.controller';
 
 @Module({
+  imports: [JwtModule.register({})], // secret di-inject via ConfigService dalam gateway
   providers: [MonitoringService, MonitoringGateway],
   controllers: [MonitoringController],
   exports: [MonitoringGateway, MonitoringService],
@@ -3428,19 +3770,49 @@ export class MarkReadDto {
 ### File: `src/modules/notifications/notifications.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/notifications/notifications.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { NotificationsService } from './services/notifications.service';
 import { NotificationsController } from './controllers/notifications.controller';
+import { NotificationProcessor } from './processors/notification.processor';
+import { NotificationsService } from './services/notifications.service';
 
 @Module({
-  providers: [NotificationsService],
+  imports: [BullModule.registerQueue({ name: 'notification' })],
+  providers: [NotificationsService, NotificationProcessor],
   controllers: [NotificationsController],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}
+
+```
+
+---
+
+### File: `src/modules/notifications/processors/notification.processor.ts`
+
+```typescript
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/notifications/processors/notification.processor.ts — BARU
+// ────────────────────────────────────────────────────────────────────────────
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+
+@Processor('notification')
+export class NotificationProcessor extends WorkerHost {
+  private readonly logger = new Logger(NotificationProcessor.name);
+
+  async process(job: Job) {
+    // 'send-realtime' → broadcast via Socket.IO
+    // Dalam produksi: inject MonitoringGateway dan emit ke room yang tepat
+    this.logger.log(`Notification job [${job.name}] processed: ${JSON.stringify(job.data)}`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(`Notification job ${job?.id} failed: ${err.message}`);
+  }
+}
 
 ```
 
@@ -4061,14 +4433,14 @@ export class QuestionTagsService {
 // ════════════════════════════════════════════════════════════════════════════
 // src/modules/reports/controllers/reports.controller.ts
 // ════════════════════════════════════════════════════════════════════════════
-import { Controller, Post, Get, Param, Body, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
-import { ReportsService } from '../services/reports.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
 import { ExportFilterDto } from '../dto/export-filter.dto';
+import { ReportsService } from '../services/reports.service';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -4079,6 +4451,10 @@ export class ReportsController {
   @Post('export')
   export(@TenantId() tid: string, @Body() dto: ExportFilterDto) {
     return this.svc.requestExport(tid, dto);
+  }
+  @Get('job/:jobId')
+  jobStatus(@Param('jobId') jobId: string) {
+    return this.svc.getJobStatus(jobId);
   }
 }
 
@@ -4102,9 +4478,6 @@ export class ExportFilterDto {
 ### File: `src/modules/reports/processors/report-queue.processor.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/processors/report-queue.processor.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -4163,7 +4536,9 @@ export class ReportQueueProcessor extends WorkerHost {
     }
 
     const objectName = await this.mediaSvc.upload(buf, name, 'reports');
-    return { objectName };
+    const downloadUrl = await this.mediaSvc.getPresignedUrl(objectName);
+
+    return { objectName, downloadUrl };
   }
 }
 
@@ -4251,10 +4626,7 @@ export class PdfExportService {
 ### File: `src/modules/reports/services/reports.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/services/reports.service.ts  (baru — split dari module)
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ExportFilterDto } from '../dto/export-filter.dto';
@@ -4264,12 +4636,30 @@ export class ReportsService {
   constructor(@InjectQueue('report') private reportQueue: Queue) {}
 
   async requestExport(tenantId: string, dto: ExportFilterDto) {
-    const job = await this.reportQueue.add(
+    const jobId = `report-${tenantId}-${dto.sessionId}-${Date.now()}`;
+    await this.reportQueue.add(
       'generate',
       { ...dto, tenantId, format: dto.format ?? 'excel' },
-      { removeOnFail: false },
+      { jobId, removeOnFail: false },
     );
-    return { jobId: job.id, message: 'Laporan sedang diproses' };
+    return { jobId, message: 'Laporan sedang diproses' };
+  }
+
+  async getJobStatus(jobId: string) {
+    const job = await this.reportQueue.getJob(jobId);
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+
+    const state = await job.getState();
+    const result = job.returnvalue as { objectName?: string; downloadUrl?: string } | null;
+
+    return {
+      jobId,
+      state,
+      progress: job.progress,
+      failedReason: job.failedReason,
+      // downloadUrl di-generate oleh processor dan disimpan di returnvalue
+      downloadUrl: result?.downloadUrl,
+    };
   }
 }
 
@@ -4280,10 +4670,17 @@ export class ReportsService {
 ### File: `src/modules/sessions/controllers/sessions.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/controllers/sessions.controller.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -4296,9 +4693,12 @@ import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
+import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(AuditInterceptor)
 export class SessionsController {
   constructor(
     private svc: SessionsService,
@@ -4345,6 +4745,7 @@ export class SessionsController {
 
   @Post(':id/activate')
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @AuditAction(AuditActions.ACTIVATE_SESSION, 'ExamSession')
   activate(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.activate(tid, id);
   }
@@ -4400,26 +4801,22 @@ export class UpdateSessionDto extends PartialType(CreateSessionDto) {
 ### File: `src/modules/sessions/services/sessions.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/services/sessions.service.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { SessionStatus } from '../../../common/enums/exam-status.enum';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
-import { AssignStudentsDto } from '../dto/assign-students.dto';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private prisma: PrismaService,
-    @InjectQueue('notification') private notifQueue: Queue,
+    private notifSvc: NotificationsService,
   ) {}
 
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
@@ -4494,7 +4891,24 @@ export class SessionsService {
       where: { id },
       data: { status: SessionStatus.ACTIVE },
     });
-    await this.notifQueue.add('session-activated', { tenantId, sessionId: id });
+
+    // Notify semua peserta sesi
+    const students = await this.prisma.sessionStudent.findMany({
+      where: { sessionId: id },
+      select: { userId: true },
+    });
+    await Promise.allSettled(
+      students.map((ss) =>
+        this.notifSvc.create({
+          userId: ss.userId,
+          title: 'Ujian Dimulai',
+          body: `Sesi "${s.title}" telah diaktifkan. Silakan login dan mulai ujian.`,
+          type: 'SESSION_ACTIVATED',
+          metadata: { sessionId: id, tenantId },
+        }),
+      ),
+    );
+
     return updated;
   }
 }
@@ -4539,17 +4953,15 @@ export class SessionMonitoringService {
 ### File: `src/modules/sessions/sessions.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/sessions.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
-import { SessionsService } from './services/sessions.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SessionMonitoringService } from './services/session-monitoring.service';
+import { SessionsService } from './services/sessions.service';
 import { SessionsController } from './controllers/sessions.controller';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'notification' })],
+  imports: [NotificationsModule, AuditLogsModule],
   providers: [SessionsService, SessionMonitoringService],
   controllers: [SessionsController],
   exports: [SessionsService],
@@ -4701,15 +5113,18 @@ export class SubjectsModule {}
 ### File: `src/modules/submissions/controllers/student-exam.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/controllers/student-exam.controller.ts  (updated)
-// — tambah endpoint GET result dengan Param
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, UseInterceptors } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DeviceGuard } from '../../auth/guards/device.guard';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
+import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
+import {
+  ThrottleStrict,
+  ThrottleModerate,
+  ThrottleRelaxed,
+} from '../../../common/decorators/throttle-tier.decorator';
 import { ExamDownloadService } from '../services/exam-download.service';
 import { ExamSubmissionService } from '../services/exam-submission.service';
 import { StartAttemptDto } from '../dto/start-attempt.dto';
@@ -4718,13 +5133,17 @@ import { SubmitExamDto } from '../dto/submit-exam.dto';
 
 @Controller('student')
 @UseGuards(JwtAuthGuard, DeviceGuard)
+@UseInterceptors(AuditInterceptor)
 export class StudentExamController {
   constructor(
     private downloadSvc: ExamDownloadService,
     private submissionSvc: ExamSubmissionService,
   ) {}
 
+  /** Download paket soal — paling kritis, harus strict */
   @Post('download')
+  @ThrottleStrict()
+  @AuditAction(AuditActions.START_EXAM, 'ExamAttempt')
   download(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -4740,17 +5159,24 @@ export class StudentExamController {
     );
   }
 
+  /** Submit jawaban — moderate karena auto-save bisa sering */
   @Post('answers')
+  @ThrottleModerate()
   submitAnswer(@Body() dto: SubmitAnswerDto) {
     return this.submissionSvc.submitAnswer(dto);
   }
 
+  /** Submit ujian — strict, satu kali saja */
   @Post('submit')
+  @ThrottleStrict()
+  @AuditAction(AuditActions.SUBMIT_EXAM, 'ExamAttempt')
   submitExam(@Body() dto: SubmitExamDto) {
     return this.submissionSvc.submitExam(dto);
   }
 
+  /** Lihat hasil — relaxed, baca saja */
   @Get('result/:attemptId')
+  @ThrottleRelaxed()
   getResult(@Param('attemptId') id: string, @CurrentUser() u: CurrentUserPayload) {
     return this.submissionSvc.getAttemptResult(id, u.sub);
   }
@@ -5037,39 +5463,39 @@ export class SubmissionProcessor extends WorkerHost {
 ### File: `src/modules/submissions/processors/submission-events.listener.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/processors/submission-events.listener.ts
-// ════════════════════════════════════════════════════════════════════════════
-// Menangani completed/failed events dari BullMQ untuk logging & notifikasi
-import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+// // ════════════════════════════════════════════════════════════════════════════
+// // src/modules/submissions/processors/submission-events.listener.ts
+// // ════════════════════════════════════════════════════════════════════════════
+// // Menangani completed/failed events dari BullMQ untuk logging & notifikasi
+// import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
+// import { Injectable, Logger } from '@nestjs/common';
+// import { Job } from 'bullmq';
 
-@Injectable()
-export class SubmissionEventsListener {
-  private readonly logger = new Logger(SubmissionEventsListener.name);
+// @Injectable()
+// export class SubmissionEventsListener {
+//   private readonly logger = new Logger(SubmissionEventsListener.name);
 
-  @OnWorkerEvent('completed')
-  onCompleted(job: Job) {
-    this.logger.log(`Job [${job.name}] id=${job.id} selesai.`);
-  }
+//   @OnWorkerEvent('completed')
+//   onCompleted(job: Job) {
+//     this.logger.log(`Job [${job.name}] id=${job.id} selesai.`);
+//   }
 
-  @OnWorkerEvent('failed')
-  onFailed(job: Job | undefined, err: Error) {
-    const id = job?.id ?? 'unknown';
-    const name = job?.name ?? 'unknown';
-    const attempts = job?.attemptsMade ?? 0;
-    this.logger.error(
-      `Job [${name}] id=${id} gagal (attempt ${attempts}): ${err.message}`,
-      err.stack,
-    );
-  }
+//   @OnWorkerEvent('failed')
+//   onFailed(job: Job | undefined, err: Error) {
+//     const id = job?.id ?? 'unknown';
+//     const name = job?.name ?? 'unknown';
+//     const attempts = job?.attemptsMade ?? 0;
+//     this.logger.error(
+//       `Job [${name}] id=${id} gagal (attempt ${attempts}): ${err.message}`,
+//       err.stack,
+//     );
+//   }
 
-  @OnWorkerEvent('stalled')
-  onStalled(jobId: string) {
-    this.logger.warn(`Job id=${jobId} stalled — akan di-retry otomatis.`);
-  }
-}
+//   @OnWorkerEvent('stalled')
+//   onStalled(jobId: string) {
+//     this.logger.warn(`Job id=${jobId} stalled — akan di-retry otomatis.`);
+//   }
+// }
 
 ```
 
@@ -5199,10 +5625,9 @@ export class AutoGradingService {
 ### File: `src/modules/submissions/services/exam-download.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/exam-download.service.ts  (updated)
-// — tambah: schedule timeout setelah download berhasil
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/submissions/services/exam-download.service.ts — fix isNewAttempt
+// ────────────────────────────────────────────────────────────────────────────
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ExamPackageBuilderService } from '../../exam-packages/services/exam-package-builder.service';
@@ -5234,19 +5659,16 @@ export class ExamDownloadService {
     deviceFingerprint: string,
     idempotencyKey: string,
   ): Promise<DownloadablePackage> {
-    // 1. Validasi sesi aktif
     const session = await this.prisma.examSession.findFirst({
       where: { id: sessionId, tenantId, status: SessionStatus.ACTIVE },
       include: { examPackage: true },
     });
     if (!session) throw new NotFoundException('Sesi tidak aktif atau tidak ditemukan');
 
-    // 2. Validasi window waktu
     if (!isWithinWindow(session.startTime, session.endTime)) {
       throw new BadRequestException('Ujian tidak dalam jangka waktu yang valid');
     }
 
-    // 3. Validasi token peserta
     const ss = await this.prisma.sessionStudent.findUnique({
       where: { sessionId_userId: { sessionId, userId } },
     });
@@ -5254,7 +5676,12 @@ export class ExamDownloadService {
       throw new BadRequestException('Token tidak valid');
     }
 
-    // 4. Idempotent attempt creation
+    // Cek apakah attempt sudah ada sebelum upsert (untuk deteksi isNewAttempt yang akurat)
+    const existingAttempt = await this.prisma.examAttempt.findUnique({
+      where: { idempotencyKey },
+    });
+    const isNewAttempt = !existingAttempt;
+
     const attempt = await this.prisma.examAttempt.upsert({
       where: { idempotencyKey },
       create: {
@@ -5264,36 +5691,29 @@ export class ExamDownloadService {
         deviceFingerprint: hashFingerprint(deviceFingerprint),
         status: AttemptStatus.IN_PROGRESS,
       },
-      update: {}, // sudah ada → return existing
+      update: {},
     });
 
-    const isNewAttempt = attempt.startedAt.getTime() > Date.now() - 5000; // created within 5s
-
-    // 5. Build paket soal
     const settings = session.examPackage.settings as {
       shuffleQuestions?: boolean;
       duration?: number;
     };
+
     const pkg = await this.builder.buildForDownload(
       tenantId,
       session.examPackageId,
       settings.shuffleQuestions ?? false,
     );
 
-    // 6. Checksum integritas
-    const checksum = sha256(JSON.stringify(pkg.questions));
-
-    // 7. Audit log download
     await this.auditLogs.log({
       tenantId,
       userId,
       action: 'DOWNLOAD_EXAM_PACKAGE',
       entityType: 'ExamAttempt',
       entityId: attempt.id,
-      after: { sessionId, packageId: session.examPackageId, checksum },
+      after: { sessionId, packageId: session.examPackageId, checksum: pkg.checksum },
     });
 
-    // 8. Schedule timeout hanya untuk attempt baru
     if (isNewAttempt && settings.duration) {
       await this.submissionSvc.scheduleTimeout(attempt.id, tenantId, sessionId, settings.duration);
     }
@@ -5305,7 +5725,7 @@ export class ExamDownloadService {
       questions: pkg.questions as unknown as DownloadableQuestion[],
       sessionId,
       attemptId: attempt.id,
-      checksum,
+      checksum: pkg.checksum,
       encryptedKey: '',
       expiresAt: session.endTime.toISOString(),
     };
@@ -5319,35 +5739,34 @@ export class ExamDownloadService {
 ### File: `src/modules/submissions/services/exam-submission.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/exam-submission.service.ts  (updated)
-// — tambah: timeout scheduling, audit log, guard duplikat submit
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/submissions/services/exam-submission.service.ts — fix logger
+// ────────────────────────────────────────────────────────────────────────────
 import { InjectQueue } from '@nestjs/bullmq';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { PrismaService } from '../../../prisma/prisma.service';
-import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
 import { AutoGradeJobData } from '../processors/submission.processor';
 
 @Injectable()
 export class ExamSubmissionService {
+  private readonly logger = new Logger(ExamSubmissionService.name); // ← fix
+
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 
-  // ── Submit satu jawaban (idempotent) ───────────────────────────────────────
   async submitAnswer(dto: SubmitAnswerDto) {
-    // Guard: pastikan attempt masih IN_PROGRESS
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      select: { status: true, session: { select: { tenantId: true, endTime: true } } },
+      select: { status: true },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
     if (attempt.status === AttemptStatus.SUBMITTED) {
@@ -5374,22 +5793,19 @@ export class ExamSubmissionService {
     });
   }
 
-  // ── Submit ujian (idempotent) ──────────────────────────────────────────────
   async submitExam(dto: SubmitExamDto) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      include: { session: { select: { tenantId: true, examPackage: true } } },
+      include: { session: { select: { tenantId: true } } },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
 
-    // Idempotency: sudah submit sebelumnya
     if (attempt.status === AttemptStatus.SUBMITTED || attempt.status === AttemptStatus.TIMED_OUT) {
       return { message: 'Ujian sudah disubmit sebelumnya', attemptId: dto.attemptId };
     }
 
     const tenantId = attempt.session.tenantId;
 
-    // Update status
     await this.prisma.examAttempt.update({
       where: { id: dto.attemptId },
       data: { status: AttemptStatus.SUBMITTED, submittedAt: new Date() },
@@ -5404,7 +5820,6 @@ export class ExamSubmissionService {
       after: { submittedAt: new Date().toISOString() },
     });
 
-    // Enqueue auto-grade — jobId unik agar tidak duplikat jika retry
     const jobData: AutoGradeJobData = { attemptId: dto.attemptId, tenantId };
     await this.submissionQueue.add('auto-grade', jobData, {
       jobId: `grade-${dto.attemptId}`,
@@ -5417,7 +5832,6 @@ export class ExamSubmissionService {
     return { message: 'Ujian berhasil disubmit', attemptId: dto.attemptId };
   }
 
-  // ── Schedule timeout untuk attempt yang sedang berjalan ───────────────────
   async scheduleTimeout(
     attemptId: string,
     tenantId: string,
@@ -5436,10 +5850,9 @@ export class ExamSubmissionService {
         attempts: 3,
       },
     );
-    this.logger?.log?.(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
+    this.logger.log(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
   }
 
-  // ── Ambil hasil attempt (hanya jika PUBLISHED) ─────────────────────────────
   async getAttemptResult(attemptId: string, userId: string) {
     const attempt = await this.prisma.examAttempt.findFirst({
       where: { id: attemptId, userId },
@@ -5465,7 +5878,6 @@ export class ExamSubmissionService {
 
     if (!attempt) throw new NotFoundException('Hasil ujian tidak ditemukan');
 
-    // Jika belum published, kembalikan status saja
     if (attempt.gradingStatus !== GradingStatus.PUBLISHED) {
       return {
         attemptId,
@@ -5475,13 +5887,13 @@ export class ExamSubmissionService {
       };
     }
 
-    const percentage =
+    const pct =
       attempt.maxScore && attempt.maxScore > 0
-        ? Math.round(((attempt.totalScore ?? 0) / attempt.maxScore) * 100 * 10) / 10
+        ? Math.round(((attempt.totalScore ?? 0) / attempt.maxScore) * 1000) / 10
         : 0;
 
     const settings = attempt.session.examPackage.settings as { passingScore?: number };
-    const isPassed = settings.passingScore != null ? percentage >= settings.passingScore : null; // tidak ada passing score = tidak ada keterangan lulus/tidak
+    const isPassed = settings.passingScore != null ? pct >= settings.passingScore : null;
 
     return {
       attemptId,
@@ -5491,7 +5903,7 @@ export class ExamSubmissionService {
       gradingStatus: attempt.gradingStatus,
       totalScore: attempt.totalScore,
       maxScore: attempt.maxScore,
-      percentage,
+      percentage: pct,
       isPassed,
       submittedAt: attempt.submittedAt,
       gradingCompletedAt: attempt.gradingCompletedAt,
@@ -5508,11 +5920,6 @@ export class ExamSubmissionService {
       [GradingStatus.PUBLISHED]: 'Nilai telah dipublish',
     };
     return map[status] ?? 'Status tidak diketahui';
-  }
-
-  // logger optional agar tidak crash jika DI belum setup
-  private get logger() {
-    return { log: (msg: string) => console.log(`[ExamSubmissionService] ${msg}`) };
   }
 }
 
@@ -5675,12 +6082,11 @@ export class SubmissionsService {
 ### File: `src/modules/submissions/submissions.module.ts`
 
 ```typescript
-// src/modules/submissions/submissions.module.ts
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ExamPackagesModule } from '../exam-packages/exam-packages.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
-import { AuthModule } from '../auth/auth.module'; // ← tambah
+import { AuthModule } from '../auth/auth.module';
 import { ExamDownloadService } from './services/exam-download.service';
 import { ExamSubmissionService } from './services/exam-submission.service';
 import { AutoGradingService } from './services/auto-grading.service';
@@ -5688,15 +6094,14 @@ import { SubmissionsService } from './services/submissions.service';
 import { StudentExamController } from './controllers/student-exam.controller';
 import { SubmissionsController } from './controllers/submissions.controller';
 import { SubmissionProcessor } from './processors/submission.processor';
-import { SubmissionEventsListener } from './processors/submission-events.listener';
 import { GradingHelperService } from './services/grading-helper.service';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: 'submission' }),
     ExamPackagesModule,
-    AuditLogsModule,
-    AuthModule, // ← tambah agar DeviceGuard dapat AuthService
+    AuditLogsModule, // sudah ada — AuditInterceptor & AuditLogsService tersedia
+    AuthModule,
   ],
   providers: [
     ExamDownloadService,
@@ -5705,7 +6110,6 @@ import { GradingHelperService } from './services/grading-helper.service';
     GradingHelperService,
     SubmissionsService,
     SubmissionProcessor,
-    SubmissionEventsListener,
   ],
   controllers: [StudentExamController, SubmissionsController],
   exports: [ExamSubmissionService, AutoGradingService, GradingHelperService],
@@ -5719,33 +6123,144 @@ export class SubmissionsModule {}
 ### File: `src/modules/sync/controllers/sync.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sync/controllers/sync.controller.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Logger,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import {
+  ThrottleModerate,
+  ThrottleRelaxed,
+} from '../../../common/decorators/throttle-tier.decorator';
 import { SyncService } from '../services/sync.service';
+import { ChunkedUploadService } from '../services/chunked-upload.service';
+import { MediaUploadService } from '../../media/services/media-upload.service';
 import { AddSyncItemDto } from '../dto/add-sync-item.dto';
 import { RetrySyncDto } from '../dto/retry-sync.dto';
+import { UploadChunkDto } from '../dto/upload-chunk.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
+
+const MAX_CHUNK_SIZE = 50 * 1024 * 1024;
 
 @Controller('sync')
 @UseGuards(JwtAuthGuard)
 export class SyncController {
-  constructor(private svc: SyncService) {}
+  private readonly logger = new Logger(SyncController.name);
+
+  constructor(
+    private svc: SyncService,
+    private chunkedSvc: ChunkedUploadService,
+    private mediaUploadSvc: MediaUploadService,
+    private prisma: PrismaService,
+  ) {}
 
   @Post()
+  @ThrottleModerate()
   add(@Body() dto: AddSyncItemDto) {
     return this.svc.addItem(dto);
   }
 
   @Get(':attemptId/status')
+  @ThrottleRelaxed()
   status(@Param('attemptId') id: string) {
     return this.svc.getStatus(id);
   }
 
   @Post('retry')
+  @ThrottleModerate()
   retry(@Body() dto: RetrySyncDto) {
     return this.svc.retryFailed(dto);
+  }
+
+  @Post('upload/chunk')
+  @ThrottleModerate()
+  @UseInterceptors(FileInterceptor('chunk'))
+  async uploadChunk(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_CHUNK_SIZE })],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body('meta') metaRaw: string,
+    @CurrentUser() u: CurrentUserPayload,
+  ) {
+    let dto: UploadChunkDto;
+    try {
+      dto = JSON.parse(metaRaw) as UploadChunkDto;
+    } catch {
+      throw new BadRequestException('Field `meta` harus berupa JSON valid');
+    }
+
+    const attempt = await this.prisma.examAttempt.findFirst({
+      where: { id: dto.attemptId, userId: u.sub },
+      select: { id: true, status: true },
+    });
+    if (!attempt) throw new BadRequestException('Attempt tidak ditemukan atau bukan milik Anda');
+    if (attempt.status === 'SUBMITTED' || attempt.status === 'TIMED_OUT') {
+      throw new BadRequestException('Ujian sudah selesai, upload tidak diizinkan');
+    }
+
+    const { saved, total } = await this.chunkedSvc.saveChunk({
+      fileId: dto.fileId,
+      chunkIndex: dto.chunkIndex,
+      totalChunks: dto.totalChunks,
+      data: file.buffer,
+    });
+
+    return { fileId: dto.fileId, saved, total, isComplete: saved >= total };
+  }
+
+  @Post('upload/finalize')
+  @ThrottleModerate()
+  async finalizeUpload(@Body() dto: UploadChunkDto, @CurrentUser() u: CurrentUserPayload) {
+    const attempt = await this.prisma.examAttempt.findFirst({
+      where: { id: dto.attemptId, userId: u.sub },
+      select: { id: true },
+    });
+    if (!attempt) throw new BadRequestException('Attempt tidak ditemukan atau bukan milik Anda');
+
+    if (!this.chunkedSvc.isComplete(dto.fileId, dto.totalChunks)) {
+      throw new BadRequestException(
+        `Upload belum lengkap. Kirim semua ${dto.totalChunks} chunk terlebih dahulu.`,
+      );
+    }
+
+    const buffer = await this.chunkedSvc.assemble(dto.fileId, dto.totalChunks);
+    const { objectName } = await this.mediaUploadSvc.uploadAndQueue(
+      buffer,
+      dto.originalName,
+      dto.type,
+    );
+
+    const answer = await this.prisma.examAnswer.findFirst({
+      where: { attemptId: dto.attemptId, questionId: dto.questionId },
+      select: { id: true, mediaUrls: true },
+    });
+    if (answer) {
+      await this.prisma.examAnswer.update({
+        where: { id: answer.id },
+        data: {
+          mediaUrls: [...new Set([...answer.mediaUrls, objectName])],
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    this.logger.log(`Finalize: attempt=${dto.attemptId} q=${dto.questionId} obj=${objectName}`);
+    return { objectName, questionId: dto.questionId, attemptId: dto.attemptId };
   }
 }
 
@@ -5781,18 +6296,35 @@ export class RetrySyncDto {
 
 ---
 
+### File: `src/modules/sync/dto/upload-chunk.dto.ts`
+
+```typescript
+import { IsIn, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class UploadChunkDto {
+  @IsString() @IsNotEmpty() fileId!: string; // UUID v4 di-generate klien per file
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
+  @IsInt() @Min(0) @Type(() => Number) chunkIndex!: number;
+  @IsInt() @Min(1) @Type(() => Number) totalChunks!: number;
+  @IsIn(['image', 'video', 'audio']) type!: 'image' | 'video' | 'audio';
+  @IsString() @IsNotEmpty() originalName!: string; // untuk ekstensi file
+}
+
+```
+
+---
+
 ### File: `src/modules/sync/processors/sync.processor.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/sync/processors/sync.processor.ts
-// ══════════════════════════════════════════════════════════════
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { SyncProcessorService } from '../services/sync-processor.service';
 
-@Processor('sync')
+@Processor('sync', { concurrency: 5 })
 export class SyncProcessor extends WorkerHost {
   private readonly logger = new Logger(SyncProcessor.name);
 
@@ -5801,8 +6333,18 @@ export class SyncProcessor extends WorkerHost {
   }
 
   async process(job: Job<{ syncItemId: string }>) {
-    this.logger.log(`Processing sync job ${job.id}`);
+    this.logger.log(`Processing sync job ${job.id} — item ${job.data.syncItemId}`);
     await this.processorSvc.process(job.data.syncItemId);
+  }
+
+  @OnWorkerEvent('completed')
+  onCompleted(job: Job) {
+    this.logger.log(`Sync job ${job.id} completed`);
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error) {
+    this.logger.error(`Sync job ${job?.id ?? '?'} failed: ${err.message}`);
   }
 }
 
@@ -5813,31 +6355,92 @@ export class SyncProcessor extends WorkerHost {
 ### File: `src/modules/sync/services/chunked-upload.service.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/sync/services/chunked-upload.service.ts
-// ══════════════════════════════════════════════════════════════
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface ChunkInfo {
+  fileId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  data: Buffer;
+}
+
+export interface AssembleResult {
+  buffer: Buffer;
+  isComplete: boolean;
+}
+
 @Injectable()
 export class ChunkedUploadService {
+  private readonly logger = new Logger(ChunkedUploadService.name);
   private readonly tmpDir = path.join(process.cwd(), 'uploads', 'temp');
 
-  async saveChunk(fileId: string, chunkIndex: number, data: Buffer) {
+  async saveChunk(info: ChunkInfo): Promise<{ saved: number; total: number }> {
+    if (info.chunkIndex >= info.totalChunks) {
+      throw new BadRequestException(
+        `chunkIndex ${info.chunkIndex} melebihi totalChunks ${info.totalChunks}`,
+      );
+    }
+
+    const dir = path.join(this.tmpDir, info.fileId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `chunk_${info.chunkIndex}`), info.data);
+
+    const saved = fs.readdirSync(dir).length;
+    this.logger.log(
+      `Chunk ${info.chunkIndex + 1}/${info.totalChunks} saved — fileId=${info.fileId}`,
+    );
+
+    return { saved, total: info.totalChunks };
+  }
+
+  isComplete(fileId: string, totalChunks: number): boolean {
     const dir = path.join(this.tmpDir, fileId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `chunk_${chunkIndex}`), data);
+    if (!fs.existsSync(dir)) return false;
+    return fs.readdirSync(dir).length >= totalChunks;
   }
 
   async assemble(fileId: string, totalChunks: number): Promise<Buffer> {
     const dir = path.join(this.tmpDir, fileId);
+
+    // Validasi semua chunk tersedia
+    const missing: number[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      if (!fs.existsSync(path.join(dir, `chunk_${i}`))) missing.push(i);
+    }
+    if (missing.length > 0) {
+      throw new BadRequestException(`Chunk tidak lengkap, missing: [${missing.join(', ')}]`);
+    }
+
     const chunks = Array.from({ length: totalChunks }, (_, i) =>
       fs.readFileSync(path.join(dir, `chunk_${i}`)),
     );
     const assembled = Buffer.concat(chunks);
+
+    // Cleanup temp dir setelah assembly
     fs.rmSync(dir, { recursive: true, force: true });
+    this.logger.log(`Assembly selesai — fileId=${fileId}, size=${assembled.length} bytes`);
+
     return assembled;
+  }
+
+  /** Cleanup temp files lebih dari N menit (dipanggil via cron/scheduled task) */
+  cleanupStale(maxAgeMinutes = 120): number {
+    if (!fs.existsSync(this.tmpDir)) return 0;
+    const now = Date.now();
+    let removed = 0;
+    for (const dir of fs.readdirSync(this.tmpDir)) {
+      const fullPath = path.join(this.tmpDir, dir);
+      const stat = fs.statSync(fullPath);
+      const ageMinutes = (now - stat.mtimeMs) / 60_000;
+      if (ageMinutes > maxAgeMinutes) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        removed++;
+      }
+    }
+    if (removed > 0) this.logger.log(`Cleaned up ${removed} stale temp dirs`);
+    return removed;
   }
 }
 
@@ -6016,24 +6619,54 @@ export class SyncProcessorService {
 ### File: `src/modules/sync/sync.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sync/sync.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { ScheduleModule } from '@nestjs/schedule';
+import { MediaModule } from '../media/media.module';
 import { SyncService } from './services/sync.service';
 import { SyncProcessorService } from './services/sync-processor.service';
 import { ChunkedUploadService } from './services/chunked-upload.service';
 import { SyncProcessor } from './processors/sync.processor';
 import { SyncController } from './controllers/sync.controller';
+import { SyncScheduler } from './sync.scheduler';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'sync' })],
-  providers: [SyncService, SyncProcessorService, ChunkedUploadService, SyncProcessor],
+  imports: [BullModule.registerQueue({ name: 'sync' }), ScheduleModule.forRoot(), MediaModule],
+  providers: [
+    SyncService,
+    SyncProcessorService,
+    ChunkedUploadService,
+    SyncProcessor,
+    SyncScheduler,
+  ],
   controllers: [SyncController],
-  exports: [SyncService],
+  exports: [SyncService, ChunkedUploadService],
 })
 export class SyncModule {}
+
+```
+
+---
+
+### File: `src/modules/sync/sync.scheduler.ts`
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { ChunkedUploadService } from './services/chunked-upload.service';
+
+@Injectable()
+export class SyncScheduler {
+  private readonly logger = new Logger(SyncScheduler.name);
+
+  constructor(private chunkedSvc: ChunkedUploadService) {}
+
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  handleCleanup() {
+    const removed = this.chunkedSvc.cleanupStale(120);
+    if (removed > 0) this.logger.log(`Stale temp cleanup: ${removed} dirs removed`);
+  }
+}
 
 ```
 
@@ -7213,14 +7846,234 @@ describe('Auth E2E', () => {
 ### File: `test/e2e/student-exam-flow.e2e-spec.ts`
 
 ```typescript
-// ── test/e2e/student-exam-flow.e2e-spec.ts ───────────────────────────────────
-describe('Student Exam Flow E2E', () => {
-  it('download → submit answer → submit exam → result', async () => {
-    // 1. Download paket
-    // 2. Submit beberapa jawaban
-    // 3. Submit ujian
-    // 4. Cek result setelah grading
-    expect(true).toBe(true); // placeholder
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import * as request from 'supertest';
+import { AppModule } from '../../src/app.module';
+import { PrismaService } from '../../src/prisma/prisma.service';
+
+/**
+ * E2E test ini membutuhkan database test dan Redis.
+ * Jalankan dengan: DATABASE_URL=... npx jest --config jest-e2e.json
+ *
+ * Setiap describe block membersihkan data setelah selesai.
+ */
+describe('Student Exam Flow (E2E)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let studentToken: string;
+  let operatorToken: string;
+  let sessionId: string;
+  let tokenCode: string;
+  let attemptId: string;
+
+  // ── Setup ──────────────────────────────────────────────────────────────────
+  beforeAll(async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+
+    prisma = app.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // ── Step 0: Login ──────────────────────────────────────────────────────────
+  describe('0. Login', () => {
+    it('operator mendapat token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'operator1', password: 'password123', fingerprint: 'op-fp' })
+        .expect(200);
+      operatorToken = res.body.data.accessToken;
+      expect(operatorToken).toBeDefined();
+    });
+
+    it('siswa mendapat token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'siswa1', password: 'password123', fingerprint: 'siswa-fp' })
+        .expect(200);
+      studentToken = res.body.data.accessToken;
+      expect(studentToken).toBeDefined();
+    });
+  });
+
+  // ── Step 1: Operator aktifkan sesi ─────────────────────────────────────────
+  describe('1. Operator — Aktifkan Sesi', () => {
+    it('GET /sessions mengembalikan minimal 1 sesi', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/sessions')
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+      expect(res.body.data.data.length).toBeGreaterThan(0);
+      sessionId = res.body.data.data[0].id;
+    });
+
+    it('POST /sessions/:id/activate mengaktifkan sesi', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/sessions/${sessionId}/activate`)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+    });
+
+    it('GET tokenCode siswa dari sessionStudent', async () => {
+      const ss = await prisma.sessionStudent.findFirst({ where: { sessionId } });
+      expect(ss).toBeDefined();
+      tokenCode = ss!.tokenCode;
+    });
+  });
+
+  // ── Step 2: Siswa download paket ───────────────────────────────────────────
+  describe('2. Siswa — Download Paket', () => {
+    it('POST /student/download mengembalikan paket soal', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/student/download')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .set('x-device-fingerprint', 'siswa-fp')
+        .send({
+          sessionId,
+          tokenCode,
+          deviceFingerprint: 'siswa-fp',
+          idempotencyKey: `download-${Date.now()}`,
+        })
+        .expect(200);
+
+      const pkg = res.body.data;
+      expect(pkg.packageId).toBeDefined();
+      expect(pkg.attemptId).toBeDefined();
+      expect(pkg.checksum).toBeDefined();
+      expect(Array.isArray(pkg.questions)).toBe(true);
+      attemptId = pkg.attemptId;
+    });
+
+    it('download idempoten — attempt yang sama dikembalikan', async () => {
+      const idemKey = `download-idem-${Date.now()}`;
+      const res1 = await request(app.getHttpServer())
+        .post('/api/student/download')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ sessionId, tokenCode, deviceFingerprint: 'siswa-fp', idempotencyKey: idemKey })
+        .expect(200);
+      const res2 = await request(app.getHttpServer())
+        .post('/api/student/download')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ sessionId, tokenCode, deviceFingerprint: 'siswa-fp', idempotencyKey: idemKey })
+        .expect(200);
+      expect(res1.body.data.attemptId).toBe(res2.body.data.attemptId);
+    });
+
+    it('download dengan token salah → 400', async () => {
+      await request(app.getHttpServer())
+        .post('/api/student/download')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({
+          sessionId,
+          tokenCode: 'WRONG-TOKEN',
+          deviceFingerprint: 'siswa-fp',
+          idempotencyKey: `dl-bad-${Date.now()}`,
+        })
+        .expect(400);
+    });
+  });
+
+  // ── Step 3: Siswa submit jawaban ───────────────────────────────────────────
+  describe('3. Siswa — Submit Jawaban', () => {
+    it('POST /student/answers menyimpan jawaban', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/student/answers')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({
+          attemptId,
+          questionId: 'q-placeholder', // akan diganti ID soal nyata di test DB
+          idempotencyKey: `ans-1-${Date.now()}`,
+          answer: 'a',
+        })
+        .expect(200);
+      expect(res.body.data.attemptId).toBe(attemptId);
+    });
+
+    it('submit jawaban idempoten — tidak duplikat', async () => {
+      const idemKey = `ans-idem-${Date.now()}`;
+      await request(app.getHttpServer())
+        .post('/api/student/answers')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ attemptId, questionId: 'q-placeholder', idempotencyKey: idemKey, answer: 'b' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/student/answers')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ attemptId, questionId: 'q-placeholder', idempotencyKey: idemKey, answer: 'b' })
+        .expect(200);
+
+      const count = await prisma.examAnswer.count({ where: { idempotencyKey: idemKey } });
+      expect(count).toBe(1);
+    });
+  });
+
+  // ── Step 4: Submit ujian ───────────────────────────────────────────────────
+  describe('4. Siswa — Submit Ujian', () => {
+    it('POST /student/submit berhasil', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/student/submit')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ attemptId, idempotencyKey: `submit-${Date.now()}` })
+        .expect(200);
+      expect(res.body.data.message).toMatch(/berhasil/i);
+    });
+
+    it('submit kedua kali → idempoten, tidak error', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/student/submit')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ attemptId, idempotencyKey: `submit-2-${Date.now()}` })
+        .expect(200);
+      expect(res.body.data.message).toMatch(/sudah disubmit/i);
+    });
+
+    it('submit jawaban setelah submit ujian → 400', async () => {
+      await request(app.getHttpServer())
+        .post('/api/student/answers')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({
+          attemptId,
+          questionId: 'q-placeholder',
+          idempotencyKey: `ans-after-submit-${Date.now()}`,
+          answer: 'c',
+        })
+        .expect(400);
+    });
+  });
+
+  // ── Step 5: Cek hasil ──────────────────────────────────────────────────────
+  describe('5. Siswa — Hasil Ujian', () => {
+    it('GET /student/result/:attemptId mengembalikan status grading', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/student/result/${attemptId}`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(200);
+      expect(res.body.data.attemptId).toBe(attemptId);
+      expect(res.body.data.gradingStatus).toBeDefined();
+    });
+
+    it('siswa lain tidak bisa akses result attempt ini → 404', async () => {
+      // Login sebagai user berbeda
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'guru1', password: 'password123', fingerprint: 'guru-fp' })
+        .expect(200);
+      const otherToken = res.body.data.accessToken;
+
+      await request(app.getHttpServer())
+        .get(`/api/student/result/${attemptId}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(404);
+    });
   });
 });
 
@@ -7300,47 +8153,272 @@ export const k6ConcurrentSubmission = '// see comment above';
 ### File: `test/unit/auth/auth.service.spec.ts`
 
 ```typescript
-// ── test/unit/auth/auth.service.spec.ts ──────────────────────────────────────
 import { Test, TestingModule } from '@nestjs/testing';
-import { AuthService } from '../../../src/modules/auth/services/auth.service';
-import { PrismaService } from '../../../src/prisma/prisma.service';
+import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcrypt';
+import { AuthService } from '../../../src/modules/auth/services/auth.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+
+const mockUser = {
+  id: 'user-1',
+  tenantId: 'tenant-1',
+  role: 'STUDENT',
+  email: 'siswa@test.com',
+  username: 'siswa1',
+  isActive: true,
+  passwordHash: '',
+};
 
 describe('AuthService', () => {
   let svc: AuthService;
-  let prisma: jest.Mocked<PrismaService>;
+  let prisma: Record<string, jest.Mock>;
+  let jwtSvc: { sign: jest.Mock };
+
+  beforeAll(async () => {
+    mockUser.passwordHash = await bcrypt.hash('password123', 10);
+  });
 
   beforeEach(async () => {
+    prisma = {
+      user: {
+        findFirst: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        update: jest.fn(),
+      },
+      refreshToken: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      userDevice: { upsert: jest.fn() },
+    };
+    jwtSvc = { sign: jest.fn(() => 'mock-token') };
+
     const mod: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        {
-          provide: PrismaService,
-          useValue: {
-            user: { findFirst: jest.fn() },
-            refreshToken: { create: jest.fn() },
-            userDevice: { upsert: jest.fn() },
-          },
-        },
-        { provide: JwtService, useValue: { sign: jest.fn(() => 'mock-token') } },
+        { provide: PrismaService, useValue: prisma },
+        { provide: JwtService, useValue: jwtSvc },
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((k: string) => (k === 'JWT_ACCESS_EXPIRES_IN' ? '15m' : 'mock-secret')),
+            get: jest.fn((k: string) => {
+              const map: Record<string, string> = {
+                JWT_ACCESS_SECRET: 'access-secret',
+                JWT_ACCESS_EXPIRES_IN: '15m',
+                JWT_REFRESH_SECRET: 'refresh-secret',
+                JWT_REFRESH_EXPIRES_IN: '7d',
+              };
+              return map[k] ?? null;
+            }),
           },
         },
       ],
     }).compile();
 
     svc = mod.get(AuthService);
-    prisma = mod.get(PrismaService) as jest.Mocked<PrismaService>;
+    jest.clearAllMocks();
   });
 
-  it('validateUser returns null for wrong password', async () => {
-    (prisma.user.findFirst as jest.Mock).mockResolvedValue({ passwordHash: '$2b$12$wrong' });
-    const result = await svc.validateUser('user', 'wrongpass');
-    expect(result).toBeNull();
+  // ── validateUser ──────────────────────────────────────────────────────────
+  describe('validateUser', () => {
+    it('return user jika kredensial valid', async () => {
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      const result = await svc.validateUser('siswa1', 'password123');
+      expect(result).toMatchObject({ id: 'user-1' });
+    });
+
+    it('return null jika user tidak ditemukan', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      expect(await svc.validateUser('notfound', 'pass')).toBeNull();
+    });
+
+    it('return null jika password salah', async () => {
+      prisma.user.findFirst.mockResolvedValue(mockUser);
+      expect(await svc.validateUser('siswa1', 'wrongpass')).toBeNull();
+    });
+  });
+
+  // ── login ─────────────────────────────────────────────────────────────────
+  describe('login', () => {
+    beforeEach(() => {
+      prisma.userDevice.upsert.mockResolvedValue({});
+      prisma.refreshToken.create.mockResolvedValue({});
+    });
+
+    it('return accessToken dan refreshToken', async () => {
+      const result = await svc.login('u1', 't1', 'STUDENT', 'e@e.com', 'fp');
+      expect(result.accessToken).toBe('mock-token');
+      expect(result.refreshToken).toBe('mock-token');
+      expect(jwtSvc.sign).toHaveBeenCalledTimes(2);
+    });
+
+    it('upsert device fingerprint', async () => {
+      await svc.login('u1', 't1', 'STUDENT', 'e@e.com', 'my-fp');
+      expect(prisma.userDevice.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ create: expect.objectContaining({ userId: 'u1' }) }),
+      );
+    });
+  });
+
+  // ── refresh ───────────────────────────────────────────────────────────────
+  describe('refresh', () => {
+    it('throw jika refresh token tidak ditemukan', async () => {
+      prisma.refreshToken.findFirst.mockResolvedValue(null);
+      await expect(svc.refresh('u1', 'bad-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throw jika refresh token sudah expired', async () => {
+      prisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'rt-1',
+        expiresAt: new Date(Date.now() - 1000), // masa lalu
+      });
+      await expect(svc.refresh('u1', 'old-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('revoke token lama dan issue token baru', async () => {
+      const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      prisma.refreshToken.findFirst.mockResolvedValue({ id: 'rt-1', expiresAt: futureDate });
+      prisma.refreshToken.update.mockResolvedValue({});
+      prisma.user.findUniqueOrThrow.mockResolvedValue(mockUser);
+      prisma.userDevice.upsert.mockResolvedValue({});
+      prisma.refreshToken.create.mockResolvedValue({});
+
+      await svc.refresh('user-1', 'valid-token');
+
+      expect(prisma.refreshToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ revokedAt: expect.any(Date) }) }),
+      );
+    });
+  });
+
+  // ── logout ────────────────────────────────────────────────────────────────
+  describe('logout', () => {
+    it('revoke refresh token', async () => {
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      await svc.logout('some-token');
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { revokedAt: expect.any(Date) } }),
+      );
+    });
+  });
+
+  // ── changePassword ────────────────────────────────────────────────────────
+  describe('changePassword', () => {
+    it('throw jika password lama salah', async () => {
+      prisma.user.findUniqueOrThrow.mockResolvedValue(mockUser);
+      await expect(svc.changePassword('u1', 'wrongold', 'newpass123')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('update passwordHash jika password lama benar', async () => {
+      prisma.user.findUniqueOrThrow.mockResolvedValue(mockUser);
+      prisma.user.update.mockResolvedValue({});
+      await svc.changePassword('u1', 'password123', 'newpass123');
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ passwordHash: expect.any(String) }),
+        }),
+      );
+    });
+  });
+
+  // ── isDeviceLocked ────────────────────────────────────────────────────────
+  describe('isDeviceLocked', () => {
+    it('return true jika device terkunci', async () => {
+      (prisma as any).userDevice = {
+        ...prisma.userDevice,
+        findUnique: jest.fn().mockResolvedValue({ isLocked: true }),
+      };
+      expect(await svc.isDeviceLocked('u1', 'fp')).toBe(true);
+    });
+
+    it('return false jika device tidak terkunci', async () => {
+      (prisma as any).userDevice = {
+        ...prisma.userDevice,
+        findUnique: jest.fn().mockResolvedValue({ isLocked: false }),
+      };
+      expect(await svc.isDeviceLocked('u1', 'fp')).toBe(false);
+    });
+
+    it('return false jika device belum pernah terdaftar', async () => {
+      (prisma as any).userDevice = {
+        ...prisma.userDevice,
+        findUnique: jest.fn().mockResolvedValue(null),
+      };
+      expect(await svc.isDeviceLocked('u1', 'fp')).toBe(false);
+    });
+  });
+});
+
+```
+
+---
+
+### File: `test/unit/common/throttler.guard.spec.ts`
+
+```typescript
+import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { ThrottlerStorage } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from '../../../src/common/guards/throttler.guard';
+import { UserRole } from '../../../src/common/enums/user-role.enum';
+
+const mockCtx = (role?: string, userId = 'user-1', tenantId = 'tenant-1') =>
+  ({
+    switchToHttp: () => ({
+      getRequest: () => ({
+        user: role ? { sub: userId, role } : undefined,
+        tenantId,
+        ip: '127.0.0.1',
+        url: '/test',
+      }),
+    }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
+  }) as unknown as ExecutionContext;
+
+describe('CustomThrottlerGuard', () => {
+  let guard: CustomThrottlerGuard;
+
+  beforeEach(() => {
+    guard = new CustomThrottlerGuard({} as ThrottlerStorage, {} as Reflector, []);
+  });
+
+  it('getTracker — menggunakan tenantId:userId saat authenticated', async () => {
+    const req = { tenantId: 'tenant-1', user: { sub: 'user-abc' }, ip: '1.2.3.4' };
+    const tracker = await (guard as any).getTracker(req);
+    expect(tracker).toBe('tenant-1:user-abc');
+  });
+
+  it('getTracker — fallback ke tenantId:ip saat belum login', async () => {
+    const req = { tenantId: 'tenant-1', user: undefined, ip: '1.2.3.4' };
+    const tracker = await (guard as any).getTracker(req);
+    expect(tracker).toBe('tenant-1:1.2.3.4');
+  });
+
+  it('shouldSkip — true untuk ADMIN', async () => {
+    const result = await (guard as any).shouldSkip(mockCtx(UserRole.ADMIN));
+    expect(result).toBe(true);
+  });
+
+  it('shouldSkip — true untuk SUPERADMIN', async () => {
+    const result = await (guard as any).shouldSkip(mockCtx(UserRole.SUPERADMIN));
+    expect(result).toBe(true);
+  });
+
+  it('shouldSkip — false untuk STUDENT', async () => {
+    const result = await (guard as any).shouldSkip(mockCtx(UserRole.STUDENT));
+    expect(result).toBe(false);
+  });
+
+  it('shouldSkip — false untuk unauthenticated', async () => {
+    const result = await (guard as any).shouldSkip(mockCtx(undefined));
+    expect(result).toBe(false);
   });
 });
 
@@ -7427,6 +8505,333 @@ describe('QuestionsService', () => {
   it('should be defined', () => {
     const svc = new QuestionsService({} as PrismaService, {} as ConfigService);
     expect(svc).toBeDefined();
+  });
+});
+
+```
+
+---
+
+### File: `test/unit/submissions/exam-download.service.spec.ts`
+
+```typescript
+import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ExamDownloadService } from '../../../src/modules/submissions/services/exam-download.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { ExamPackageBuilderService } from '../../../src/modules/exam-packages/services/exam-package-builder.service';
+import { AuditLogsService } from '../../../src/modules/audit-logs/services/audit-logs.service';
+import { ExamSubmissionService } from '../../../src/modules/submissions/services/exam-submission.service';
+import { SessionStatus, AttemptStatus } from '../../../src/common/enums/exam-status.enum';
+
+describe('ExamDownloadService', () => {
+  let svc: ExamDownloadService;
+  let prisma: Record<string, Record<string, jest.Mock>>;
+  let builder: { buildForDownload: jest.Mock };
+  let submissionSvc: { scheduleTimeout: jest.Mock };
+
+  const mockSession = {
+    id: 'sess-1',
+    tenantId: 'tenant-1',
+    examPackageId: 'pkg-1',
+    startTime: new Date(Date.now() - 1000),
+    endTime: new Date(Date.now() + 60 * 60 * 1000),
+    status: SessionStatus.ACTIVE,
+    examPackage: { settings: { shuffleQuestions: false, duration: 90 } },
+  };
+
+  const mockBuiltPackage = {
+    packageId: 'pkg-1',
+    title: 'Paket Test',
+    settings: { duration: 90 },
+    questions: [],
+    checksum: 'abc123',
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      examSession: { findFirst: jest.fn() },
+      sessionStudent: { findUnique: jest.fn() },
+      examAttempt: { findUnique: jest.fn(), upsert: jest.fn() },
+    };
+    builder = { buildForDownload: jest.fn().mockResolvedValue(mockBuiltPackage) };
+    submissionSvc = { scheduleTimeout: jest.fn().mockResolvedValue(undefined) };
+
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExamDownloadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ExamPackageBuilderService, useValue: builder },
+        { provide: AuditLogsService, useValue: { log: jest.fn() } },
+        { provide: ExamSubmissionService, useValue: submissionSvc },
+      ],
+    }).compile();
+
+    svc = mod.get(ExamDownloadService);
+    jest.clearAllMocks();
+  });
+
+  it('throw NotFoundException jika sesi tidak aktif', async () => {
+    prisma.examSession.findFirst.mockResolvedValue(null);
+    await expect(
+      svc.downloadPackage('t1', 'sess-1', 'u1', 'TOKEN', 'fp', 'idem-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throw BadRequestException jika di luar jangka waktu sesi', async () => {
+    prisma.examSession.findFirst.mockResolvedValue({
+      ...mockSession,
+      startTime: new Date(Date.now() + 60_000), // belum dimulai
+      endTime: new Date(Date.now() + 120_000),
+    });
+    await expect(
+      svc.downloadPackage('t1', 'sess-1', 'u1', 'TOKEN', 'fp', 'idem-1'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throw BadRequestException jika tokenCode tidak valid', async () => {
+    prisma.examSession.findFirst.mockResolvedValue(mockSession);
+    prisma.sessionStudent.findUnique.mockResolvedValue({ tokenCode: 'CORRECT' });
+    await expect(
+      svc.downloadPackage('t1', 'sess-1', 'u1', 'WRONG', 'fp', 'idem-1'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('berhasil download dan return DownloadablePackage', async () => {
+    prisma.examSession.findFirst.mockResolvedValue(mockSession);
+    prisma.sessionStudent.findUnique.mockResolvedValue({ tokenCode: 'TOKEN123' });
+    prisma.examAttempt.findUnique.mockResolvedValue(null); // attempt belum ada
+    prisma.examAttempt.upsert.mockResolvedValue({ id: 'att-new' });
+
+    const result = await svc.downloadPackage('t1', 'sess-1', 'u1', 'TOKEN123', 'fp', 'idem-1');
+
+    expect(result).toMatchObject({
+      packageId: 'pkg-1',
+      sessionId: 'sess-1',
+      attemptId: 'att-new',
+      checksum: 'abc123',
+    });
+    expect(result.expiresAt).toBeDefined();
+  });
+
+  it('jadwalkan timeout hanya untuk attempt baru', async () => {
+    prisma.examSession.findFirst.mockResolvedValue(mockSession);
+    prisma.sessionStudent.findUnique.mockResolvedValue({ tokenCode: 'TOKEN123' });
+    prisma.examAttempt.findUnique.mockResolvedValue(null); // baru
+    prisma.examAttempt.upsert.mockResolvedValue({ id: 'att-new' });
+
+    await svc.downloadPackage('t1', 'sess-1', 'u1', 'TOKEN123', 'fp', 'idem-1');
+    expect(submissionSvc.scheduleTimeout).toHaveBeenCalledWith('att-new', 't1', 'sess-1', 90);
+  });
+
+  it('tidak jadwalkan timeout jika attempt sudah ada (idempoten)', async () => {
+    prisma.examSession.findFirst.mockResolvedValue(mockSession);
+    prisma.sessionStudent.findUnique.mockResolvedValue({ tokenCode: 'TOKEN123' });
+    prisma.examAttempt.findUnique.mockResolvedValue({ id: 'att-existing' }); // sudah ada
+    prisma.examAttempt.upsert.mockResolvedValue({ id: 'att-existing' });
+
+    await svc.downloadPackage('t1', 'sess-1', 'u1', 'TOKEN123', 'fp', 'idem-1');
+    expect(submissionSvc.scheduleTimeout).not.toHaveBeenCalled();
+  });
+});
+
+```
+
+---
+
+### File: `test/unit/submissions/exam-submission.service.spec.ts`
+
+```typescript
+import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ExamSubmissionService } from '../../../src/modules/submissions/services/exam-submission.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { AuditLogsService } from '../../../src/modules/audit-logs/services/audit-logs.service';
+import { AttemptStatus } from '../../../src/common/enums/exam-status.enum';
+
+describe('ExamSubmissionService', () => {
+  let svc: ExamSubmissionService;
+  let prisma: Record<string, Record<string, jest.Mock>>;
+  let queue: { add: jest.Mock };
+  let auditLogs: { log: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      examAttempt: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      examAnswer: {
+        upsert: jest.fn(),
+      },
+    };
+    queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
+    auditLogs = { log: jest.fn().mockResolvedValue({}) };
+
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExamSubmissionService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogsService, useValue: auditLogs },
+        { provide: 'BullQueue_submission', useValue: queue },
+      ],
+    }).compile();
+
+    svc = mod.get(ExamSubmissionService);
+    jest.clearAllMocks();
+  });
+
+  // ── submitAnswer ──────────────────────────────────────────────────────────
+  describe('submitAnswer', () => {
+    const dto = {
+      attemptId: 'att-1',
+      questionId: 'q-1',
+      idempotencyKey: 'idem-1',
+      answer: 'a',
+    };
+
+    it('throw NotFoundException jika attempt tidak ada', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue(null);
+      await expect(svc.submitAnswer(dto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throw BadRequestException jika sudah SUBMITTED', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue({ status: AttemptStatus.SUBMITTED });
+      await expect(svc.submitAnswer(dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('throw BadRequestException jika sudah TIMED_OUT', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue({ status: AttemptStatus.TIMED_OUT });
+      await expect(svc.submitAnswer(dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('upsert jawaban jika attempt IN_PROGRESS', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue({ status: AttemptStatus.IN_PROGRESS });
+      prisma.examAnswer.upsert.mockResolvedValue({ id: 'ans-1' });
+
+      const result = await svc.submitAnswer(dto);
+      expect(prisma.examAnswer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { idempotencyKey: dto.idempotencyKey },
+          create: expect.objectContaining({ answer: dto.answer }),
+        }),
+      );
+      expect(result).toEqual({ id: 'ans-1' });
+    });
+  });
+
+  // ── submitExam ────────────────────────────────────────────────────────────
+  describe('submitExam', () => {
+    const dto = { attemptId: 'att-1', idempotencyKey: 'idem-submit-1' };
+    const mockAttempt = {
+      id: 'att-1',
+      userId: 'user-1',
+      status: AttemptStatus.IN_PROGRESS,
+      session: { tenantId: 'tenant-1' },
+    };
+
+    it('throw NotFoundException jika attempt tidak ada', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue(null);
+      await expect(svc.submitExam(dto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('return pesan idempoten jika sudah SUBMITTED sebelumnya', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue({
+        ...mockAttempt,
+        status: AttemptStatus.SUBMITTED,
+      });
+      const result = await svc.submitExam(dto);
+      expect(result.message).toMatch(/sudah disubmit/);
+      expect(prisma.examAttempt.update).not.toHaveBeenCalled();
+    });
+
+    it('update status ke SUBMITTED dan enqueue auto-grade', async () => {
+      prisma.examAttempt.findUnique.mockResolvedValue(mockAttempt);
+      prisma.examAttempt.update.mockResolvedValue({});
+
+      await svc.submitExam(dto);
+
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'att-1' },
+          data: expect.objectContaining({ status: AttemptStatus.SUBMITTED }),
+        }),
+      );
+      expect(queue.add).toHaveBeenCalledWith(
+        'auto-grade',
+        expect.objectContaining({ attemptId: 'att-1', tenantId: 'tenant-1' }),
+        expect.objectContaining({ jobId: 'grade-att-1' }),
+      );
+      expect(auditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'SUBMIT_EXAM' }),
+      );
+    });
+
+    it('enqueue timeout saat scheduleTimeout dipanggil', async () => {
+      await svc.scheduleTimeout('att-1', 'tenant-1', 'sess-1', 90);
+      expect(queue.add).toHaveBeenCalledWith(
+        'timeout-attempt',
+        expect.objectContaining({ attemptId: 'att-1' }),
+        expect.objectContaining({
+          jobId: 'timeout-att-1',
+          delay: 90 * 60 * 1000,
+        }),
+      );
+    });
+  });
+
+  // ── getAttemptResult ──────────────────────────────────────────────────────
+  describe('getAttemptResult', () => {
+    it('throw jika attempt tidak ditemukan atau bukan milik user', async () => {
+      prisma.examAttempt.findFirst = jest.fn().mockResolvedValue(null);
+      await expect(svc.getAttemptResult('att-1', 'user-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('return status message jika belum PUBLISHED', async () => {
+      (prisma.examAttempt as any).findFirst = jest.fn().mockResolvedValue({
+        id: 'att-1',
+        status: AttemptStatus.SUBMITTED,
+        gradingStatus: 'PENDING',
+        session: { title: 'Ujian', examPackage: { title: 'Paket', settings: {} } },
+        answers: [],
+      });
+      const result = await svc.getAttemptResult('att-1', 'user-1');
+      expect(result).toMatchObject({ gradingStatus: 'PENDING', message: expect.any(String) });
+      expect(result).not.toHaveProperty('totalScore');
+    });
+
+    it('return hasil lengkap jika PUBLISHED', async () => {
+      (prisma.examAttempt as any).findFirst = jest.fn().mockResolvedValue({
+        id: 'att-1',
+        status: AttemptStatus.SUBMITTED,
+        gradingStatus: 'PUBLISHED',
+        totalScore: 80,
+        maxScore: 100,
+        submittedAt: new Date(),
+        gradingCompletedAt: new Date(),
+        session: {
+          title: 'Ujian MTK',
+          examPackage: { title: 'Paket MTK', settings: { passingScore: 75 } },
+        },
+        answers: [
+          {
+            questionId: 'q-1',
+            score: 80,
+            maxScore: 100,
+            feedback: null,
+            isAutoGraded: true,
+            gradedAt: new Date(),
+          },
+        ],
+      });
+      const result = await svc.getAttemptResult('att-1', 'user-1');
+      expect(result).toMatchObject({
+        totalScore: 80,
+        maxScore: 100,
+        percentage: 80,
+        isPassed: true,
+      });
+    });
   });
 });
 
@@ -7684,6 +9089,89 @@ describe('SubmissionProcessor', () => {
 
 ---
 
+### File: `test/unit/sync/chunked-upload.service.spec.ts`
+
+```typescript
+import { BadRequestException } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
+import { ChunkedUploadService } from '../../../src/modules/sync/services/chunked-upload.service';
+
+describe('ChunkedUploadService', () => {
+  let svc: ChunkedUploadService;
+  const fileId = `test-${Date.now()}`;
+  const tmpDir = path.join(process.cwd(), 'uploads', 'temp');
+
+  beforeEach(() => {
+    svc = new ChunkedUploadService();
+  });
+
+  afterEach(() => {
+    const dir = path.join(tmpDir, fileId);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  });
+
+  it('saveChunk — menyimpan chunk dan return progress', async () => {
+    const result = await svc.saveChunk({
+      fileId,
+      chunkIndex: 0,
+      totalChunks: 3,
+      data: Buffer.from('hello'),
+    });
+    expect(result.saved).toBe(1);
+    expect(result.total).toBe(3);
+  });
+
+  it('saveChunk — tolak chunkIndex >= totalChunks', async () => {
+    await expect(
+      svc.saveChunk({ fileId, chunkIndex: 3, totalChunks: 3, data: Buffer.from('x') }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('isComplete — false jika belum semua chunk ada', async () => {
+    await svc.saveChunk({ fileId, chunkIndex: 0, totalChunks: 2, data: Buffer.from('a') });
+    expect(svc.isComplete(fileId, 2)).toBe(false);
+  });
+
+  it('isComplete — true jika semua chunk ada', async () => {
+    await svc.saveChunk({ fileId, chunkIndex: 0, totalChunks: 2, data: Buffer.from('ab') });
+    await svc.saveChunk({ fileId, chunkIndex: 1, totalChunks: 2, data: Buffer.from('cd') });
+    expect(svc.isComplete(fileId, 2)).toBe(true);
+  });
+
+  it('assemble — menggabungkan chunk secara berurutan', async () => {
+    await svc.saveChunk({ fileId, chunkIndex: 0, totalChunks: 2, data: Buffer.from('Hello') });
+    await svc.saveChunk({ fileId, chunkIndex: 1, totalChunks: 2, data: Buffer.from(' World') });
+    const result = await svc.assemble(fileId, 2);
+    expect(result.toString()).toBe('Hello World');
+    // temp dir harus sudah dihapus
+    expect(fs.existsSync(path.join(tmpDir, fileId))).toBe(false);
+  });
+
+  it('assemble — throw jika ada chunk yang missing', async () => {
+    await svc.saveChunk({ fileId, chunkIndex: 0, totalChunks: 3, data: Buffer.from('x') });
+    // chunk 1 dan 2 tidak dikirim
+    await expect(svc.assemble(fileId, 3)).rejects.toThrow(BadRequestException);
+  });
+
+  it('cleanupStale — menghapus dir yang sudah terlalu lama', async () => {
+    // Buat dir dummy dengan mtime lama
+    const staleDir = path.join(tmpDir, `stale-${Date.now()}`);
+    fs.mkdirSync(staleDir, { recursive: true });
+    // Set mtime ke 3 jam lalu
+    const oldTime = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(staleDir, oldTime, oldTime);
+
+    const removed = svc.cleanupStale(120);
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(staleDir)).toBe(false);
+  });
+});
+
+```
+
+---
+
 ### File: `test/unit/sync/sync.service.spec.ts`
 
 ```typescript
@@ -7745,7 +9233,7 @@ describe('SyncService', () => {
 #!/bin/bash
 # Hapus media orphan (tidak referensed di DB) lebih dari 30 hari
 echo "Cleaning up orphan media files older than 30 days..."
-# mc find minio/exam-assets --older-than 30d | xargs mc rm
+mc find minio/exam-assets --older-than 30d | xargs mc rm
 echo "Done"
 
 ```
@@ -8100,6 +9588,7 @@ module.exports = {
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "puppeteer": "^21.7.0",
+    "react": "^19.2.4",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "sharp": "^0.33.1",
@@ -8123,6 +9612,7 @@ module.exports = {
     "@types/node": "^20.3.1",
     "@types/passport-jwt": "^4.0.0",
     "@types/passport-local": "^1.0.38",
+    "@types/react": "^19.2.14",
     "@types/string-similarity": "^4.0.2",
     "@types/supertest": "^2.0.12",
     "@types/uuid": "^11.0.0",

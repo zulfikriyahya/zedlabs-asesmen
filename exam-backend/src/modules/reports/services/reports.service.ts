@@ -1,7 +1,4 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/services/reports.service.ts  (baru — split dari module)
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ExportFilterDto } from '../dto/export-filter.dto';
@@ -11,11 +8,29 @@ export class ReportsService {
   constructor(@InjectQueue('report') private reportQueue: Queue) {}
 
   async requestExport(tenantId: string, dto: ExportFilterDto) {
-    const job = await this.reportQueue.add(
+    const jobId = `report-${tenantId}-${dto.sessionId}-${Date.now()}`;
+    await this.reportQueue.add(
       'generate',
       { ...dto, tenantId, format: dto.format ?? 'excel' },
-      { removeOnFail: false },
+      { jobId, removeOnFail: false },
     );
-    return { jobId: job.id, message: 'Laporan sedang diproses' };
+    return { jobId, message: 'Laporan sedang diproses' };
+  }
+
+  async getJobStatus(jobId: string) {
+    const job = await this.reportQueue.getJob(jobId);
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+
+    const state = await job.getState();
+    const result = job.returnvalue as { objectName?: string; downloadUrl?: string } | null;
+
+    return {
+      jobId,
+      state,
+      progress: job.progress,
+      failedReason: job.failedReason,
+      // downloadUrl di-generate oleh processor dan disimpan di returnvalue
+      downloadUrl: result?.downloadUrl,
+    };
   }
 }

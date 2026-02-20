@@ -1,23 +1,19 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/services/sessions.service.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { SessionStatus } from '../../../common/enums/exam-status.enum';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
-import { AssignStudentsDto } from '../dto/assign-students.dto';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private prisma: PrismaService,
-    @InjectQueue('notification') private notifQueue: Queue,
+    private notifSvc: NotificationsService,
   ) {}
 
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
@@ -92,7 +88,24 @@ export class SessionsService {
       where: { id },
       data: { status: SessionStatus.ACTIVE },
     });
-    await this.notifQueue.add('session-activated', { tenantId, sessionId: id });
+
+    // Notify semua peserta sesi
+    const students = await this.prisma.sessionStudent.findMany({
+      where: { sessionId: id },
+      select: { userId: true },
+    });
+    await Promise.allSettled(
+      students.map((ss) =>
+        this.notifSvc.create({
+          userId: ss.userId,
+          title: 'Ujian Dimulai',
+          body: `Sesi "${s.title}" telah diaktifkan. Silakan login dan mulai ujian.`,
+          type: 'SESSION_ACTIVATED',
+          metadata: { sessionId: id, tenantId },
+        }),
+      ),
+    );
+
     return updated;
   }
 }

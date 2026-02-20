@@ -1,32 +1,31 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/exam-submission.service.ts  (updated)
-// — tambah: timeout scheduling, audit log, guard duplikat submit
-// ════════════════════════════════════════════════════════════════════════════
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/submissions/services/exam-submission.service.ts — fix logger
+// ────────────────────────────────────────────────────────────────────────────
 import { InjectQueue } from '@nestjs/bullmq';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { PrismaService } from '../../../prisma/prisma.service';
-import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
 import { AutoGradeJobData } from '../processors/submission.processor';
 
 @Injectable()
 export class ExamSubmissionService {
+  private readonly logger = new Logger(ExamSubmissionService.name); // ← fix
+
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 
-  // ── Submit satu jawaban (idempotent) ───────────────────────────────────────
   async submitAnswer(dto: SubmitAnswerDto) {
-    // Guard: pastikan attempt masih IN_PROGRESS
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      select: { status: true, session: { select: { tenantId: true, endTime: true } } },
+      select: { status: true },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
     if (attempt.status === AttemptStatus.SUBMITTED) {
@@ -53,22 +52,19 @@ export class ExamSubmissionService {
     });
   }
 
-  // ── Submit ujian (idempotent) ──────────────────────────────────────────────
   async submitExam(dto: SubmitExamDto) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      include: { session: { select: { tenantId: true, examPackage: true } } },
+      include: { session: { select: { tenantId: true } } },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
 
-    // Idempotency: sudah submit sebelumnya
     if (attempt.status === AttemptStatus.SUBMITTED || attempt.status === AttemptStatus.TIMED_OUT) {
       return { message: 'Ujian sudah disubmit sebelumnya', attemptId: dto.attemptId };
     }
 
     const tenantId = attempt.session.tenantId;
 
-    // Update status
     await this.prisma.examAttempt.update({
       where: { id: dto.attemptId },
       data: { status: AttemptStatus.SUBMITTED, submittedAt: new Date() },
@@ -83,7 +79,6 @@ export class ExamSubmissionService {
       after: { submittedAt: new Date().toISOString() },
     });
 
-    // Enqueue auto-grade — jobId unik agar tidak duplikat jika retry
     const jobData: AutoGradeJobData = { attemptId: dto.attemptId, tenantId };
     await this.submissionQueue.add('auto-grade', jobData, {
       jobId: `grade-${dto.attemptId}`,
@@ -96,7 +91,6 @@ export class ExamSubmissionService {
     return { message: 'Ujian berhasil disubmit', attemptId: dto.attemptId };
   }
 
-  // ── Schedule timeout untuk attempt yang sedang berjalan ───────────────────
   async scheduleTimeout(
     attemptId: string,
     tenantId: string,
@@ -115,10 +109,9 @@ export class ExamSubmissionService {
         attempts: 3,
       },
     );
-    this.logger?.log?.(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
+    this.logger.log(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
   }
 
-  // ── Ambil hasil attempt (hanya jika PUBLISHED) ─────────────────────────────
   async getAttemptResult(attemptId: string, userId: string) {
     const attempt = await this.prisma.examAttempt.findFirst({
       where: { id: attemptId, userId },
@@ -144,7 +137,6 @@ export class ExamSubmissionService {
 
     if (!attempt) throw new NotFoundException('Hasil ujian tidak ditemukan');
 
-    // Jika belum published, kembalikan status saja
     if (attempt.gradingStatus !== GradingStatus.PUBLISHED) {
       return {
         attemptId,
@@ -154,13 +146,13 @@ export class ExamSubmissionService {
       };
     }
 
-    const percentage =
+    const pct =
       attempt.maxScore && attempt.maxScore > 0
-        ? Math.round(((attempt.totalScore ?? 0) / attempt.maxScore) * 100 * 10) / 10
+        ? Math.round(((attempt.totalScore ?? 0) / attempt.maxScore) * 1000) / 10
         : 0;
 
     const settings = attempt.session.examPackage.settings as { passingScore?: number };
-    const isPassed = settings.passingScore != null ? percentage >= settings.passingScore : null; // tidak ada passing score = tidak ada keterangan lulus/tidak
+    const isPassed = settings.passingScore != null ? pct >= settings.passingScore : null;
 
     return {
       attemptId,
@@ -170,7 +162,7 @@ export class ExamSubmissionService {
       gradingStatus: attempt.gradingStatus,
       totalScore: attempt.totalScore,
       maxScore: attempt.maxScore,
-      percentage,
+      percentage: pct,
       isPassed,
       submittedAt: attempt.submittedAt,
       gradingCompletedAt: attempt.gradingCompletedAt,
@@ -187,10 +179,5 @@ export class ExamSubmissionService {
       [GradingStatus.PUBLISHED]: 'Nilai telah dipublish',
     };
     return map[status] ?? 'Status tidak diketahui';
-  }
-
-  // logger optional agar tidak crash jika DI belum setup
-  private get logger() {
-    return { log: (msg: string) => console.log(`[ExamSubmissionService] ${msg}`) };
   }
 }

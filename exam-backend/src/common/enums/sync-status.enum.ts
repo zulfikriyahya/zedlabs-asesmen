@@ -1,4 +1,3 @@
-// ── sync-status.enum.ts ──────────────────────────────────────────────────────
 export enum SyncStatus {
   PENDING = 'PENDING',
   PROCESSING = 'PROCESSING',

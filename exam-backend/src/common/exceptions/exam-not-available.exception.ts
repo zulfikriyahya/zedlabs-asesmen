@@ -1,4 +1,3 @@
-// ── exam-not-available.exception.ts ─────────────────────────────────────────
 import { BadRequestException } from '@nestjs/common';
 
 export class ExamNotAvailableException extends BadRequestException {

@@ -1,7 +1,6 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/exam-download.service.ts  (updated)
-// — tambah: schedule timeout setelah download berhasil
-// ════════════════════════════════════════════════════════════════════════════
+// ────────────────────────────────────────────────────────────────────────────
+// src/modules/submissions/services/exam-download.service.ts — fix isNewAttempt
+// ────────────────────────────────────────────────────────────────────────────
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ExamPackageBuilderService } from '../../exam-packages/services/exam-package-builder.service';
@@ -33,19 +32,16 @@ export class ExamDownloadService {
     deviceFingerprint: string,
     idempotencyKey: string,
   ): Promise<DownloadablePackage> {
-    // 1. Validasi sesi aktif
     const session = await this.prisma.examSession.findFirst({
       where: { id: sessionId, tenantId, status: SessionStatus.ACTIVE },
       include: { examPackage: true },
     });
     if (!session) throw new NotFoundException('Sesi tidak aktif atau tidak ditemukan');
 
-    // 2. Validasi window waktu
     if (!isWithinWindow(session.startTime, session.endTime)) {
       throw new BadRequestException('Ujian tidak dalam jangka waktu yang valid');
     }
 
-    // 3. Validasi token peserta
     const ss = await this.prisma.sessionStudent.findUnique({
       where: { sessionId_userId: { sessionId, userId } },
     });
@@ -53,7 +49,12 @@ export class ExamDownloadService {
       throw new BadRequestException('Token tidak valid');
     }
 
-    // 4. Idempotent attempt creation
+    // Cek apakah attempt sudah ada sebelum upsert (untuk deteksi isNewAttempt yang akurat)
+    const existingAttempt = await this.prisma.examAttempt.findUnique({
+      where: { idempotencyKey },
+    });
+    const isNewAttempt = !existingAttempt;
+
     const attempt = await this.prisma.examAttempt.upsert({
       where: { idempotencyKey },
       create: {
@@ -63,36 +64,29 @@ export class ExamDownloadService {
         deviceFingerprint: hashFingerprint(deviceFingerprint),
         status: AttemptStatus.IN_PROGRESS,
       },
-      update: {}, // sudah ada → return existing
+      update: {},
     });
 
-    const isNewAttempt = attempt.startedAt.getTime() > Date.now() - 5000; // created within 5s
-
-    // 5. Build paket soal
     const settings = session.examPackage.settings as {
       shuffleQuestions?: boolean;
       duration?: number;
     };
+
     const pkg = await this.builder.buildForDownload(
       tenantId,
       session.examPackageId,
       settings.shuffleQuestions ?? false,
     );
 
-    // 6. Checksum integritas
-    const checksum = sha256(JSON.stringify(pkg.questions));
-
-    // 7. Audit log download
     await this.auditLogs.log({
       tenantId,
       userId,
       action: 'DOWNLOAD_EXAM_PACKAGE',
       entityType: 'ExamAttempt',
       entityId: attempt.id,
-      after: { sessionId, packageId: session.examPackageId, checksum },
+      after: { sessionId, packageId: session.examPackageId, checksum: pkg.checksum },
     });
 
-    // 8. Schedule timeout hanya untuk attempt baru
     if (isNewAttempt && settings.duration) {
       await this.submissionSvc.scheduleTimeout(attempt.id, tenantId, sessionId, settings.duration);
     }
@@ -104,7 +98,7 @@ export class ExamDownloadService {
       questions: pkg.questions as unknown as DownloadableQuestion[],
       sessionId,
       attemptId: attempt.id,
-      checksum,
+      checksum: pkg.checksum,
       encryptedKey: '',
       expiresAt: session.endTime.toISOString(),
     };

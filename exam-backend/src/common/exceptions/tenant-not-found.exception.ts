@@ -1,4 +1,3 @@
-// ── tenant-not-found.exception.ts ────────────────────────────────────────────
 import { NotFoundException } from '@nestjs/common';
 
 export class TenantNotFoundException extends NotFoundException {

@@ -1,12 +1,12 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/notifications/notifications.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { NotificationsService } from './services/notifications.service';
 import { NotificationsController } from './controllers/notifications.controller';
+import { NotificationProcessor } from './processors/notification.processor';
+import { NotificationsService } from './services/notifications.service';
 
 @Module({
-  providers: [NotificationsService],
+  imports: [BullModule.registerQueue({ name: 'notification' })],
+  providers: [NotificationsService, NotificationProcessor],
   controllers: [NotificationsController],
   exports: [NotificationsService],
 })

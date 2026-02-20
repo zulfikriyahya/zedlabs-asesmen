@@ -1,14 +1,12 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/sessions.module.ts  (clean)
-// ════════════════════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
-import { SessionsService } from './services/sessions.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SessionMonitoringService } from './services/session-monitoring.service';
+import { SessionsService } from './services/sessions.service';
 import { SessionsController } from './controllers/sessions.controller';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'notification' })],
+  imports: [NotificationsModule, AuditLogsModule],
   providers: [SessionsService, SessionMonitoringService],
   controllers: [SessionsController],
   exports: [SessionsService],

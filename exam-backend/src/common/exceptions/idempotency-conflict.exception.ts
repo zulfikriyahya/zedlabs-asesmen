@@ -1,4 +1,3 @@
-// ── idempotency-conflict.exception.ts ───────────────────────────────────────
 import { ConflictException } from '@nestjs/common';
 
 export class IdempotencyConflictException extends ConflictException {

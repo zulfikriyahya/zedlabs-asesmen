@@ -1,6 +1,3 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/processors/report-queue.processor.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -59,6 +56,8 @@ export class ReportQueueProcessor extends WorkerHost {
     }
 
     const objectName = await this.mediaSvc.upload(buf, name, 'reports');
-    return { objectName };
+    const downloadUrl = await this.mediaSvc.getPresignedUrl(objectName);
+
+    return { objectName, downloadUrl };
   }
 }

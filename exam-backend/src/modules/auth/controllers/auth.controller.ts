@@ -1,6 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
+import {
+  ThrottleStrict,
+  ThrottleModerate,
+} from '../../../common/decorators/throttle-tier.decorator';
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { LoginDto } from '../dto/login.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
@@ -16,38 +21,35 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(
-    @Req() req: { user: { id: string; tenantId: string; role: string; email: string } },
+  @ThrottleStrict() // ← brute force protection
+  login(
+    @CurrentUser() user: { id: string; tenantId: string; role: string; email: string },
     @Body() body: LoginDto,
   ) {
-    return this.authSvc.login(
-      req.user.id,
-      req.user.tenantId,
-      req.user.role,
-      req.user.email,
-      body.fingerprint,
-    );
+    return this.authSvc.login(user.id, user.tenantId, user.role, user.email, body.fingerprint);
   }
 
   @Public()
+  @UseGuards(AuthGuard('jwt-refresh'))
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() dto: RefreshTokenDto) {
-    const payload = this.authSvc['jwt'].decode(dto.refreshToken) as { sub: string };
-    return this.authSvc.refresh(payload.sub, dto.refreshToken);
+  @ThrottleModerate()
+  refresh(@CurrentUser() user: CurrentUserPayload & { refreshToken: string }) {
+    return this.authSvc.refresh(user.sub, user.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Body() dto: RefreshTokenDto) {
-    await this.authSvc.logout(dto.refreshToken);
+  logout(@Body() dto: RefreshTokenDto) {
+    return this.authSvc.logout(dto.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
-    await this.authSvc.changePassword(user.sub, dto.currentPassword, dto.newPassword);
+  @ThrottleModerate()
+  changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
+    return this.authSvc.changePassword(user.sub, dto.currentPassword, dto.newPassword);
   }
 }

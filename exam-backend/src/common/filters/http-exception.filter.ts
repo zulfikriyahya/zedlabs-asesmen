@@ -1,4 +1,3 @@
-// ── http-exception.filter.ts ─────────────────────────────────────────────────
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 
