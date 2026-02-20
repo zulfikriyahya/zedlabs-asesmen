@@ -54,6 +54,7 @@ model User {
   gradedAnswers ExamAnswer[]      @relation("GradedBy")
   auditLogs     AuditLog[]
   notifications Notification[]
+  sessions      SessionStudent[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -244,10 +245,11 @@ model SessionStudent {
   sessionId String
   userId    String
   tokenCode String    @unique
-  expiresAt DateTime? // ← token expiry opsional
+  expiresAt DateTime?
   addedAt   DateTime  @default(now())
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade) // ← tambah ini
 
   @@id([sessionId, userId])
   @@map("session_students")

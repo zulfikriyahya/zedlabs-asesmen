@@ -1,6 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
@@ -14,8 +13,6 @@ import type {
   GradingCompletedEvent,
 } from '../processors/submission.events.listener';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-
-
 @Injectable()
 export class ExamSubmissionService {
   private readonly logger = new Logger(ExamSubmissionService.name);
@@ -23,7 +20,7 @@ export class ExamSubmissionService {
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
-    private eventEmitter: EventEmitter2, // ← tambah ini
+    private eventEmitter: EventEmitter2,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 

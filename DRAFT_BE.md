@@ -2126,6 +2126,7 @@ export const AuditActions = {
   CREATE_USER: 'CREATE_USER',
   UPDATE_USER: 'UPDATE_USER',
   DEACTIVATE_USER: 'DEACTIVATE_USER',
+  COMPLETE_SESSION: 'COMPLETE_SESSION',
 } as const;
 
 ```
@@ -5391,6 +5392,19 @@ export class SessionsController {
   activate(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.activate(tid, id);
   }
+  @Post(':id/complete')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @AuditAction('COMPLETE_SESSION', 'ExamSession')
+  @ApiOperation({
+    summary: 'Selesaikan sesi ujian',
+    description: 'Status → COMPLETED. Semua attempt IN_PROGRESS di-timeout otomatis.',
+  })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Sesi berhasil diselesaikan' })
+  @ApiResponse({ status: 400, description: 'Sesi sudah dibatalkan' })
+  complete(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.complete(tid, id);
+  }
 }
 
 ```
@@ -5444,13 +5458,14 @@ export class UpdateSessionDto extends PartialType(CreateSessionDto) {
 
 ```typescript
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ExamSession } from '@prisma/client';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { SessionStatus } from '../../../common/enums/exam-status.enum';
+import { EmailService } from '../../../common/services/email.service';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
-import { EmailService } from '../../../common/services/email.service';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
@@ -5462,7 +5477,6 @@ export class SessionsService {
     private notifSvc: NotificationsService,
     private emailSvc: EmailService,
   ) {}
-
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
     const where = {
       tenantId,
@@ -5569,6 +5583,27 @@ export class SessionsService {
     );
 
     return updated;
+  }
+  async complete(tenantId: string, id: string): Promise<ExamSession> {
+    const s = await this.findOne(tenantId, id);
+
+    if (s.status === SessionStatus.COMPLETED) {
+      return s; // idempoten
+    }
+    if (s.status === SessionStatus.CANCELLED) {
+      throw new BadRequestException('Sesi yang sudah dibatalkan tidak bisa diselesaikan');
+    }
+
+    // Timeout semua attempt yang masih IN_PROGRESS
+    await this.prisma.examAttempt.updateMany({
+      where: { sessionId: id, status: 'IN_PROGRESS' },
+      data: { status: 'TIMED_OUT', submittedAt: new Date() },
+    });
+
+    return this.prisma.examSession.update({
+      where: { id },
+      data: { status: SessionStatus.COMPLETED },
+    });
   }
 }
 
@@ -6536,7 +6571,6 @@ export class ExamDownloadService {
 ```typescript
 import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
@@ -6549,7 +6583,7 @@ import type {
   ExamSubmittedEvent,
   GradingCompletedEvent,
 } from '../processors/submission.events.listener';
-
+import { EventEmitter2 } from '@nestjs/event-emitter';
 @Injectable()
 export class ExamSubmissionService {
   private readonly logger = new Logger(ExamSubmissionService.name);
@@ -6949,6 +6983,145 @@ import { GradingHelperService } from './services/grading-helper.service';
   exports: [ExamSubmissionService, AutoGradingService, GradingHelperService],
 })
 export class SubmissionsModule {}
+
+```
+
+---
+
+### File: `src/modules/sync/controllers/powersync.controller.ts`
+
+```typescript
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Headers,
+  UseGuards,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { SyncService } from '../services/sync.service';
+import { SyncType, SyncStatus } from '../../../common/enums/sync-status.enum';
+import { PrismaService } from '../../../prisma/prisma.service';
+
+interface PowerSyncCheckpoint {
+  last_op_id: string;
+  write_checkpoint?: string;
+}
+
+interface PowerSyncDataLine {
+  op: 'PUT' | 'REMOVE' | 'CLEAR';
+  object_type?: string;
+  object_id?: string;
+  data?: Record<string, unknown>;
+}
+
+@ApiTags('PowerSync')
+@ApiBearerAuth()
+@Controller('powersync')
+@UseGuards(JwtAuthGuard)
+export class PowerSyncController {
+  private readonly logger = new Logger(PowerSyncController.name);
+
+  constructor(
+    private syncSvc: SyncService,
+    private prisma: PrismaService,
+  ) {}
+
+  /**
+   * POST /powersync/data
+   * Terima batch mutations dari PowerSync client (offline recovery).
+   * Format: NDJSON — setiap baris adalah satu operasi.
+   */
+  @Post('data')
+  @ApiOperation({ summary: 'Terima batch mutations dari PowerSync client' })
+  async receiveData(
+    @CurrentUser() u: CurrentUserPayload,
+    @Body()
+    body: {
+      batch: Array<{
+        type: SyncType;
+        payload: Record<string, unknown>;
+        idempotencyKey: string;
+        attemptId: string;
+      }>;
+    },
+  ) {
+    if (!Array.isArray(body.batch) || body.batch.length === 0) {
+      throw new BadRequestException('batch harus array non-kosong');
+    }
+
+    const results = await Promise.allSettled(
+      body.batch.map((item) =>
+        this.syncSvc.addItem({
+          attemptId: item.attemptId,
+          idempotencyKey: item.idempotencyKey,
+          type: item.type,
+          payload: item.payload,
+        }),
+      ),
+    );
+
+    const accepted = results.filter((r) => r.status === 'fulfilled').length;
+    const rejected = results.filter((r) => r.status === 'rejected').length;
+
+    this.logger.log(`PowerSync batch: ${accepted} accepted, ${rejected} rejected — user=${u.sub}`);
+    return { accepted, rejected };
+  }
+
+  /**
+   * GET /powersync/checkpoint
+   * Kembalikan checkpoint terakhir untuk klien — digunakan PowerSync
+   * untuk menentukan titik sync selanjutnya.
+   */
+  @Get('checkpoint')
+  @ApiOperation({ summary: 'Checkpoint terakhir untuk PowerSync client' })
+  async getCheckpoint(@CurrentUser() u: CurrentUserPayload): Promise<PowerSyncCheckpoint> {
+    // Ambil syncQueue item terbaru milik user sebagai last_op_id
+    const latest = await this.prisma.syncQueue.findFirst({
+      where: {
+        attempt: { userId: u.sub },
+        status: SyncStatus.COMPLETED,
+      },
+      orderBy: { processedAt: 'desc' },
+      select: { id: true, processedAt: true },
+    });
+
+    return {
+      last_op_id: latest?.id ?? '0',
+      write_checkpoint: latest?.processedAt?.toISOString(),
+    };
+  }
+
+  /**
+   * GET /powersync/status
+   * Status sync queue untuk user — digunakan UI untuk menampilkan
+   * indikator "N item belum tersinkron".
+   */
+  @Get('status')
+  @ApiOperation({ summary: 'Status sync queue milik user' })
+  async getStatus(@CurrentUser() u: CurrentUserPayload) {
+    const counts = await this.prisma.syncQueue.groupBy({
+      by: ['status'],
+      where: { attempt: { userId: u.sub } },
+      _count: { status: true },
+    });
+
+    const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count.status]));
+
+    return {
+      pending: byStatus[SyncStatus.PENDING] ?? 0,
+      processing: byStatus[SyncStatus.PROCESSING] ?? 0,
+      failed: byStatus[SyncStatus.FAILED] ?? 0,
+      deadLetter: byStatus[SyncStatus.DEAD_LETTER] ?? 0,
+      completed: byStatus[SyncStatus.COMPLETED] ?? 0,
+    };
+  }
+}
 
 ```
 
@@ -7503,6 +7676,8 @@ import { ChunkedUploadService } from './services/chunked-upload.service';
 import { SyncProcessor } from './processors/sync.processor';
 import { SyncController } from './controllers/sync.controller';
 import { SyncScheduler } from './sync.scheduler';
+import { PowerSyncController } from './controllers/powersync.controller';
+
 
 @Module({
   imports: [BullModule.registerQueue({ name: 'sync' }), ScheduleModule.forRoot(), MediaModule],
@@ -7513,7 +7688,7 @@ import { SyncScheduler } from './sync.scheduler';
     SyncProcessor,
     SyncScheduler,
   ],
-  controllers: [SyncController],
+  controllers: [SyncController, PowerSyncController],
   exports: [SyncService, ChunkedUploadService],
 })
 export class SyncModule {}
@@ -8541,6 +8716,7 @@ model User {
   gradedAnswers ExamAnswer[]      @relation("GradedBy")
   auditLogs     AuditLog[]
   notifications Notification[]
+  sessions      SessionStudent[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -8731,10 +8907,11 @@ model SessionStudent {
   sessionId String
   userId    String
   tokenCode String    @unique
-  expiresAt DateTime? // ← token expiry opsional
+  expiresAt DateTime?
   addedAt   DateTime  @default(now())
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade) // ← tambah ini
 
   @@id([sessionId, userId])
   @@map("session_students")
@@ -10180,7 +10357,20 @@ const mockUser = {
 
 describe('AuthService', () => {
   let svc: AuthService;
-  let prisma: Record<string, jest.Mock>;
+  let prisma: {
+    user: {
+      findFirst: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
+      update: jest.Mock;
+    };
+    refreshToken: {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    userDevice: { upsert: jest.Mock };
+  };
   let jwtSvc: { sign: jest.Mock };
 
   beforeAll(async () => {
@@ -10371,7 +10561,8 @@ describe('AuthService', () => {
 ```typescript
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerStorage } from '@nestjs/throttler';
+import { Test } from '@nestjs/testing';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from '../../../src/common/guards/throttler.guard';
 import { UserRole } from '../../../src/common/enums/user-role.enum';
 
@@ -10392,8 +10583,13 @@ const mockCtx = (role?: string, userId = 'user-1', tenantId = 'tenant-1') =>
 describe('CustomThrottlerGuard', () => {
   let guard: CustomThrottlerGuard;
 
-  beforeEach(() => {
-    guard = new CustomThrottlerGuard({} as ThrottlerStorage, {} as Reflector, []);
+  beforeEach(async () => {
+    const module = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])],
+      providers: [CustomThrottlerGuard, Reflector],
+    }).compile();
+
+    guard = module.get(CustomThrottlerGuard);
   });
 
   it('getTracker — menggunakan tenantId:userId saat authenticated', async () => {
@@ -10402,30 +10598,38 @@ describe('CustomThrottlerGuard', () => {
     expect(tracker).toBe('tenant-1:user-abc');
   });
 
-  it('getTracker — fallback ke tenantId:ip saat belum login', async () => {
-    const req = { tenantId: 'tenant-1', user: undefined, ip: '1.2.3.4' };
+  it('getTracker — fallback ke ip saat tidak ada user', async () => {
+    const req = { tenantId: 'tenant-1', ip: '1.2.3.4' };
     const tracker = await (guard as any).getTracker(req);
     expect(tracker).toBe('tenant-1:1.2.3.4');
   });
 
+  it('getTracker — fallback ke global:0.0.0.0 jika tidak ada data', async () => {
+    const req = {};
+    const tracker = await (guard as any).getTracker(req);
+    expect(tracker).toBe('global:0.0.0.0');
+  });
+
   it('shouldSkip — true untuk ADMIN', async () => {
-    const result = await (guard as any).shouldSkip(mockCtx(UserRole.ADMIN));
-    expect(result).toBe(true);
+    expect(await (guard as any).shouldSkip(mockCtx(UserRole.ADMIN))).toBe(true);
   });
 
   it('shouldSkip — true untuk SUPERADMIN', async () => {
-    const result = await (guard as any).shouldSkip(mockCtx(UserRole.SUPERADMIN));
-    expect(result).toBe(true);
+    expect(await (guard as any).shouldSkip(mockCtx(UserRole.SUPERADMIN))).toBe(true);
   });
 
   it('shouldSkip — false untuk STUDENT', async () => {
-    const result = await (guard as any).shouldSkip(mockCtx(UserRole.STUDENT));
-    expect(result).toBe(false);
+    expect(await (guard as any).shouldSkip(mockCtx(UserRole.STUDENT))).toBe(false);
   });
 
-  it('shouldSkip — false untuk unauthenticated', async () => {
-    const result = await (guard as any).shouldSkip(mockCtx(undefined));
-    expect(result).toBe(false);
+  it('shouldSkip — false jika tidak ada user', async () => {
+    expect(await (guard as any).shouldSkip(mockCtx())).toBe(false);
+  });
+
+  it('throwThrottlingException — melempar pesan dengan URL', async () => {
+    await expect(
+      (guard as any).throwThrottlingException(mockCtx(UserRole.STUDENT), {}),
+    ).rejects.toThrow('/test');
   });
 });
 
@@ -11804,6 +12008,7 @@ module.exports = {
     "ioredis": "^5.3.2",
     "minio": "^7.1.3",
     "multer": "^1.4.5-lts.1",
+    "nest-winston": "^1.10.2",
     "nodemailer": "^6.9.8",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -11815,8 +12020,8 @@ module.exports = {
     "socket.io": "^4.6.1",
     "string-similarity": "^4.0.4",
     "uuid": "^9.0.1",
-    "winston": "^3.11.0",
-    "winston-daily-rotate-file": "^4.7.1",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -12201,335 +12406,4 @@ Mendukung multi-tenant via subdomain isolation (smkn1.exam.app → tenantId `smk
 ```
 
 ---
-### File: prisma/migrations/rls/enable_rls.sql
 
-```sql
--- ============================================================
--- prisma/migrations/rls/enable_rls.sql
--- PostgreSQL Row Level Security — safety net lapis kedua
--- Jalankan: psql $DATABASE_DIRECT_URL -f prisma/migrations/rls/enable_rls.sql
--- ============================================================
-
--- ── 1. Buat role aplikasi ─────────────────────────────────────────────────────
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'exam_app') THEN
-    CREATE ROLE exam_app;
-  END IF;
-END $$;
-
-GRANT CONNECT ON DATABASE exam_db TO exam_app;
-GRANT USAGE ON SCHEMA public TO exam_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO exam_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO exam_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO exam_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO exam_app;
-
--- ── 2. Set search_path ────────────────────────────────────────────────────────
-ALTER ROLE exam_app SET search_path TO public;
-
--- ── 3. Helper function: ambil tenant_id dari session variable ─────────────────
-CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS TEXT AS $$
-  SELECT NULLIF(current_setting('app.tenant_id', TRUE), '')::TEXT;
-$$ LANGUAGE SQL STABLE SECURITY DEFINER;
-
-CREATE OR REPLACE FUNCTION current_app_role() RETURNS TEXT AS $$
-  SELECT NULLIF(current_setting('app.role', TRUE), '')::TEXT;
-$$ LANGUAGE SQL STABLE SECURITY DEFINER;
-
--- ── 4. Enable RLS pada tabel yang mengandung tenantId ────────────────────────
-
--- Tabel dengan kolom tenant_id langsung
-ALTER TABLE tenants          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE subjects         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE questions        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE question_tags    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_packages    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_rooms       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_sessions    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs       ENABLE ROW LEVEL SECURITY;
-
--- Tabel tanpa tenant_id langsung (isolation via JOIN atau bypass)
-ALTER TABLE refresh_tokens           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_devices             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE question_tag_mappings    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_package_questions   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE session_students         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_attempts            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_answers             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sync_queue               ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_activity_logs       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications            ENABLE ROW LEVEL SECURITY;
-
--- ── 5. Policy: SUPERADMIN/ADMIN bypass semua RLS ──────────────────────────────
-
--- Untuk tabel dengan tenant_id langsung
-CREATE POLICY superadmin_bypass ON tenants
-  USING (current_app_role() IN ('SUPERADMIN', 'ADMIN') OR TRUE);
-
--- ── 6. Policy per tabel dengan tenant_id langsung ────────────────────────────
-
--- tenants: hanya SUPERADMIN yang bisa lihat semua; tenant lain hanya diri sendiri
-DROP POLICY IF EXISTS tenant_isolation ON tenants;
-CREATE POLICY tenant_isolation ON tenants
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    current_app_role() = 'SUPERADMIN'
-    OR id = current_tenant_id()
-  );
-
--- users
-DROP POLICY IF EXISTS tenant_isolation ON users;
-CREATE POLICY tenant_isolation ON users
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- subjects
-DROP POLICY IF EXISTS tenant_isolation ON subjects;
-CREATE POLICY tenant_isolation ON subjects
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- questions
-DROP POLICY IF EXISTS tenant_isolation ON questions;
-CREATE POLICY tenant_isolation ON questions
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- question_tags
-DROP POLICY IF EXISTS tenant_isolation ON question_tags;
-CREATE POLICY tenant_isolation ON question_tags
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- exam_packages
-DROP POLICY IF EXISTS tenant_isolation ON exam_packages;
-CREATE POLICY tenant_isolation ON exam_packages
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- exam_rooms
-DROP POLICY IF EXISTS tenant_isolation ON exam_rooms;
-CREATE POLICY tenant_isolation ON exam_rooms
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- exam_sessions
-DROP POLICY IF EXISTS tenant_isolation ON exam_sessions;
-CREATE POLICY tenant_isolation ON exam_sessions
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- audit_logs (append-only: INSERT + SELECT saja)
-DROP POLICY IF EXISTS tenant_isolation ON audit_logs;
-CREATE POLICY tenant_isolation ON audit_logs
-  AS PERMISSIVE FOR SELECT TO exam_app
-  USING (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
-DROP POLICY IF EXISTS tenant_insert ON audit_logs;
-CREATE POLICY tenant_insert ON audit_logs
-  AS PERMISSIVE FOR INSERT TO exam_app
-  WITH CHECK (tenant_id = current_tenant_id() OR current_app_role() = 'SUPERADMIN');
-
--- Blokir UPDATE dan DELETE pada audit_logs (append-only enforcement)
-DROP POLICY IF EXISTS no_update ON audit_logs;
-CREATE POLICY no_update ON audit_logs
-  AS RESTRICTIVE FOR UPDATE TO exam_app
-  USING (FALSE);
-
-DROP POLICY IF EXISTS no_delete ON audit_logs;
-CREATE POLICY no_delete ON audit_logs
-  AS RESTRICTIVE FOR DELETE TO exam_app
-  USING (FALSE);
-
--- ── 7. Policy tabel tanpa tenant_id langsung ─────────────────────────────────
-
--- refresh_tokens: user hanya akses miliknya
-DROP POLICY IF EXISTS owner_isolation ON refresh_tokens;
-CREATE POLICY owner_isolation ON refresh_tokens
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    user_id IN (SELECT id FROM users WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- user_devices: sama seperti refresh_tokens
-DROP POLICY IF EXISTS owner_isolation ON user_devices;
-CREATE POLICY owner_isolation ON user_devices
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    user_id IN (SELECT id FROM users WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- question_tag_mappings: via question → tenant
-DROP POLICY IF EXISTS tenant_isolation ON question_tag_mappings;
-CREATE POLICY tenant_isolation ON question_tag_mappings
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    question_id IN (SELECT id FROM questions WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- exam_package_questions: via exam_package → tenant
-DROP POLICY IF EXISTS tenant_isolation ON exam_package_questions;
-CREATE POLICY tenant_isolation ON exam_package_questions
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    exam_package_id IN (SELECT id FROM exam_packages WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- session_students: via exam_session → tenant
-DROP POLICY IF EXISTS tenant_isolation ON session_students;
-CREATE POLICY tenant_isolation ON session_students
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    session_id IN (SELECT id FROM exam_sessions WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- exam_attempts: via exam_session → tenant
-DROP POLICY IF EXISTS tenant_isolation ON exam_attempts;
-CREATE POLICY tenant_isolation ON exam_attempts
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    session_id IN (SELECT id FROM exam_sessions WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- exam_answers: via exam_attempt → exam_session → tenant
-DROP POLICY IF EXISTS tenant_isolation ON exam_answers;
-CREATE POLICY tenant_isolation ON exam_answers
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    attempt_id IN (
-      SELECT ea.id FROM exam_attempts ea
-      JOIN exam_sessions es ON es.id = ea.session_id
-      WHERE es.tenant_id = current_tenant_id()
-    )
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- sync_queue: via exam_attempt → tenant
-DROP POLICY IF EXISTS tenant_isolation ON sync_queue;
-CREATE POLICY tenant_isolation ON sync_queue
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    attempt_id IN (
-      SELECT ea.id FROM exam_attempts ea
-      JOIN exam_sessions es ON es.id = ea.session_id
-      WHERE es.tenant_id = current_tenant_id()
-    )
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- exam_activity_logs: via exam_attempt → tenant
-DROP POLICY IF EXISTS tenant_isolation ON exam_activity_logs;
-CREATE POLICY tenant_isolation ON exam_activity_logs
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    attempt_id IN (
-      SELECT ea.id FROM exam_attempts ea
-      JOIN exam_sessions es ON es.id = ea.session_id
-      WHERE es.tenant_id = current_tenant_id()
-    )
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- notifications: via user → tenant
-DROP POLICY IF EXISTS tenant_isolation ON notifications;
-CREATE POLICY tenant_isolation ON notifications
-  AS PERMISSIVE FOR ALL TO exam_app
-  USING (
-    user_id IN (SELECT id FROM users WHERE tenant_id = current_tenant_id())
-    OR current_app_role() = 'SUPERADMIN'
-  );
-
--- ── 8. Performance: index untuk RLS subquery ─────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_exam_sessions_tenant ON exam_sessions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_exam_attempts_session ON exam_attempts(session_id);
-CREATE INDEX IF NOT EXISTS idx_exam_answers_attempt ON exam_answers(attempt_id);
-CREATE INDEX IF NOT EXISTS idx_sync_queue_attempt ON sync_queue(attempt_id);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_attempt ON exam_activity_logs(attempt_id);
-CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
-
--- ── 9. Verifikasi ─────────────────────────────────────────────────────────────
-DO $$
-DECLARE
-  tbl TEXT;
-  rls_tables TEXT[] := ARRAY[
-    'tenants','users','subjects','questions','question_tags',
-    'exam_packages','exam_rooms','exam_sessions','audit_logs',
-    'refresh_tokens','user_devices','exam_attempts','exam_answers',
-    'sync_queue','exam_activity_logs','notifications'
-  ];
-BEGIN
-  FOREACH tbl IN ARRAY rls_tables LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_tables
-      WHERE tablename = tbl AND rowsecurity = TRUE
-    ) THEN
-      RAISE WARNING 'RLS TIDAK aktif pada tabel: %', tbl;
-    ELSE
-      RAISE NOTICE 'RLS aktif: %', tbl;
-    END IF;
-  END LOOP;
-END $$;
-
-RAISE NOTICE '✅ RLS setup selesai';
-
-```
-
----
-
-### TODO:
-## Estimasi Progress
-
-Berdasarkan semua kode yang sudah ada, project ini sekitar **65-70% selesai** untuk backend, dan **~20-25%** untuk frontend (hanya struktur folder, belum ada implementasi).
-
-### Yang sudah selesai (Backend ~65-70%)
-
-**Solid & production-ready:**
-- Infrastruktur NestJS (guards, interceptors, middleware, filters)
-- Auth module (JWT, refresh token rotation, device fingerprint)
-- Multi-tenancy (subdomain middleware, RLS PostgreSQL)
-- Questions, ExamPackages, ExamRooms, Sessions, Subjects
-- Submissions flow lengkap (download → answer → submit → auto-grade)
-- Grading (auto + manual)
-- Sync module (chunked upload, retry, DLQ)
-- Media (MinIO upload, presigned URL)
-- Monitoring (Socket.IO gateway)
-- Reports (Excel/PDF via BullMQ)
-- Audit logs, Activity logs, Notifications
-- Database schema + RLS + seeds
-- Unit & E2E tests (coverage cukup baik)
-
----
-### Yang belum ada / masih kurang
-
-**Backend (sisa ~30-35%):**
-
-| Item | Prioritas |
-|------|-----------|
-| `EventEmitter2` tidak di-inject di `ExamSubmissionService` — compile error | 🔴 Critical |
-| `nest-winston` package terdaftar tapi tidak ada di `package.json` | 🔴 Critical |
-| PowerSync integration endpoint (`/api/sync` untuk PowerSync protokol) | 🟡 High |
-| Token expiry validation di `SessionStudent.expiresAt` belum dipakai | 🟡 High |
-| Rate limiting per-tenant (saat ini per user, belum ada global tenant limit) | 🟡 Medium |
-| `POST /sessions/:id/complete` (menutup sesi setelah ujian berakhir) | 🟡 Medium |
-| Cleanup job untuk expired refresh tokens | 🟠 Low |
-| WebSocket auth untuk siswa (bukan hanya supervisor) | 🟠 Low |
-
-## Tahap Selanjutnya (Rekomendasi Urutan)
-
-1. Fix `EventEmitter2` injection di `ExamSubmissionService`
-2. Tambah `nest-winston` ke `package.json`
-3. Test compile & run `npm run start:dev`
-4. E2E test frontend (Playwright)
-5. Load testing (k6 scripts sudah ada)
-6. Production deployment checklist

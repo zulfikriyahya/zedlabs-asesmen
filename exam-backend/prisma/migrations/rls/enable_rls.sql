@@ -275,4 +275,6 @@ BEGIN
   END LOOP;
 END $$;
 
-RAISE NOTICE '✅ RLS setup selesai';
+DO $$ BEGIN
+  RAISE NOTICE '✅ RLS setup selesai';
+END $$;

@@ -18,7 +18,20 @@ const mockUser = {
 
 describe('AuthService', () => {
   let svc: AuthService;
-  let prisma: Record<string, jest.Mock>;
+  let prisma: {
+    user: {
+      findFirst: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
+      update: jest.Mock;
+    };
+    refreshToken: {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    userDevice: { upsert: jest.Mock };
+  };
   let jwtSvc: { sign: jest.Mock };
 
   beforeAll(async () => {

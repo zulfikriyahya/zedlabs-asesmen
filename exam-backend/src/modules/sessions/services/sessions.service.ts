@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ExamSession } from '@prisma/client';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { SessionStatus } from '../../../common/enums/exam-status.enum';
+import { EmailService } from '../../../common/services/email.service';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
-import { EmailService } from '../../../common/services/email.service';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
