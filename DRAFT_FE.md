@@ -228,9 +228,9 @@ export async function POST(req: NextRequest) {
 ### File: `src/app/global.css`
 
 ```css
-@import url('./styles/animations.css');
-@import url('./styles/arabic.css');
-@import url('./styles/print.css');
+@import url('../styles/animations.css');
+@import url('../styles/arabic.css');
+@import url('../styles/print.css');
 
 @tailwind base;
 @tailwind components;
@@ -558,63 +558,68 @@ export default function GradingPage() {
 
 ---
 
-### File: `src/app/(guru)/grading/[attemptId]/page.tsx`
+### File: `src/app/(guru)/grading/[id]/page.tsx`
 
 ```typescript
-'use client'
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { gradingApi } from '@/lib/api/grading.api'
-import { parseErrorMessage } from '@/lib/utils/error'
-import type { ManualGradingItem } from '@/types/answer'
-import { ManualGradingCard } from '@/components/grading/ManualGradingCard'
-import { GradingRubric } from '@/components/grading/GradingRubric'
-import { Loading } from '@/components/ui/Loading'
-import { Alert } from '@/components/ui/Alert'
-import { Button } from '@/components/ui/Button'
-import { useToast } from '@/hooks/use-toast'
+'use client';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { gradingApi } from '@/lib/api/grading.api';
+import { parseErrorMessage } from '@/lib/utils/error';
+import type { ManualGradingItem } from '@/types/answer';
+import { ManualGradingCard } from '@/components/grading/ManualGradingCard';
+import { GradingRubric } from '@/components/grading/GradingRubric';
+import { Loading } from '@/components/ui/Loading';
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
+import { useToast } from '@/hooks/use-toast';
 
 export default function AttemptGradingPage() {
-  const params = useParams()
-  const router = useRouter()
-  const attemptId = params.attemptId as string
-  const { success, error: toastError } = useToast()
+  const params = useParams();
+  const router = useRouter();
+  const attemptId = params.id as string; // ← ganti dari params.attemptId
+  const { success, error: toastError } = useToast();
 
-  const [items, setItems] = useState<ManualGradingItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [completing, setCompleting] = useState(false)
+  const [items, setItems] = useState<ManualGradingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
-    gradingApi.listPending({ status: 'MANUAL_REQUIRED' })
-      .then(res => setItems(res.data.filter(i => i.attemptId === attemptId)))
-      .catch(e => setError(parseErrorMessage(e)))
-      .finally(() => setLoading(false))
-  }, [attemptId])
+    gradingApi
+      .listPending({ status: 'MANUAL_REQUIRED' })
+      .then((res) => setItems(res.data.filter((i) => i.attemptId === attemptId)))
+      .catch((e) => setError(parseErrorMessage(e)))
+      .finally(() => setLoading(false));
+  }, [attemptId]);
 
   const handleComplete = async () => {
-    setCompleting(true)
+    setCompleting(true);
     try {
-      await gradingApi.completeGrading(attemptId)
-      await gradingApi.publishResult({ attemptId })
-      success('Penilaian selesai dan hasil dipublikasikan!')
-      router.replace('/guru/grading')
+      await gradingApi.completeGrading(attemptId);
+      await gradingApi.publishResult({ attemptId });
+      success('Penilaian selesai dan hasil dipublikasikan!');
+      router.replace('/guru/grading');
     } catch (e) {
-      toastError(parseErrorMessage(e))
+      toastError(parseErrorMessage(e));
     } finally {
-      setCompleting(false)
+      setCompleting(false);
     }
-  }
+  };
 
-  if (loading) return <Loading fullscreen text="Memuat data penilaian..." />
+  if (loading) return <Loading fullscreen text="Memuat data penilaian..." />;
 
-  const allGraded = items.length === 0
+  const allGraded = items.length === 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="ghost" onClick={() => router.back()}>←</Button>
-        <h1 className="text-xl font-bold">Nilai Attempt: <span className="font-mono text-base">{attemptId.slice(0, 8)}</span></h1>
+        <Button size="sm" variant="ghost" onClick={() => router.back()}>
+          ←
+        </Button>
+        <h1 className="text-xl font-bold">
+          Nilai Attempt: <span className="font-mono text-base">{attemptId.slice(0, 8)}</span>
+        </h1>
       </div>
 
       {error && <Alert variant="error">{error}</Alert>}
@@ -631,11 +636,13 @@ export default function AttemptGradingPage() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
           <div className="space-y-4">
-            {items.map(item => (
+            {items.map((item) => (
               <ManualGradingCard
                 key={item.answerId}
                 item={item}
-                onGraded={() => setItems(prev => prev.filter(i => i.answerId !== item.answerId))}
+                onGraded={() =>
+                  setItems((prev) => prev.filter((i) => i.answerId !== item.answerId))
+                }
               />
             ))}
           </div>
@@ -645,7 +652,7 @@ export default function AttemptGradingPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 ```
@@ -3284,7 +3291,7 @@ export default function LiveSessionListPage() {
 
 ---
 
-### File: `src/app/(pengawas)/monitoring/[sessionId]/page.tsx`
+### File: `src/app/(pengawas)/monitoring/[id]/page.tsx`
 
 ```typescript
 'use client'
@@ -3293,7 +3300,7 @@ import { LiveMonitor } from '@/components/monitoring/LiveMonitor'
 
 export default function MonitoringSessionPage() {
   const params = useParams()
-  const sessionId = params.sessionId as string
+  const sessionId = params.id as string;
 
   return (
     <div className="space-y-4">
@@ -3611,7 +3618,7 @@ export default function UjianPage() {
 
 ---
 
-### File: `src/app/(siswa)/ujian/[sessionId]/page.tsx`
+### File: `src/app/(siswa)/ujian/[id]/page.tsx`
 
 ```typescript
 'use client'
@@ -3648,7 +3655,7 @@ const Matching = lazy(() => import('@/components/exam/question-types/Matching').
 function QuestionRenderer({ question }: { question: ExamQuestion }) {
   const { answers } = useAnswerStore()
   const params = useParams()
-  const sessionId = params.sessionId as string
+  const sessionId = params.id as string
   const { activeAttempt } = useExamStore()
   const { saveAnswer } = useAutoSave({ attemptId: activeAttempt?.id ?? '', sessionId })
 
@@ -3883,21 +3890,20 @@ export default function ExamPage() {
 
 ---
 
-### File: `src/app/(siswa)/ujian/[sessionId]/result/page.tsx`
+### File: `src/app/(siswa)/ujian/[id]/result/page.tsx`
 
 ```typescript
-'use client'
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { useExamStore } from '@/stores/exam.store'
-import { submissionsApi } from '@/lib/api/submissions.api'
-import { parseErrorMessage } from '@/lib/utils/error'
-import { formatDateTime } from '@/lib/utils/format'
-import type { ExamResult } from '@/types/exam'
-import { Loading } from '@/components/ui/Loading'
-import { Alert } from '@/components/ui/Alert'
-import { Card } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
+'use client';
+import { Alert } from '@/components/ui/Alert';
+import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Loading } from '@/components/ui/Loading';
+import { submissionsApi } from '@/lib/api/submissions.api';
+import { parseErrorMessage } from '@/lib/utils/error';
+import { formatDateTime } from '@/lib/utils/format';
+import type { ExamResult } from '@/types/exam';
+import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 const GRADING_STATUS_LABEL: Record<string, string> = {
   PENDING: 'Menunggu',
@@ -3905,50 +3911,53 @@ const GRADING_STATUS_LABEL: Record<string, string> = {
   MANUAL_REQUIRED: 'Menunggu Guru',
   COMPLETED: 'Selesai Dinilai',
   PUBLISHED: 'Nilai Dipublikasikan',
-}
+};
 
 export default function ResultPage() {
-  const params = useParams()
-  const { activeAttempt, clearExam } = useExamStore()
-  const [result, setResult] = useState<ExamResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const params = useParams();
+  // const { activeAttempt, clearExam } = useExamStore()
+  const [result, setResult] = useState<ExamResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const attemptId = activeAttempt?.id ?? (params.sessionId as string)
-
+  // const attemptId = activeAttempt?.id ?? (params.sessionId as string)
+  const attemptId = activeAttempt?.id ?? (params.id as string);
   useEffect(() => {
-    if (!attemptId) return
-    submissionsApi.getResult(attemptId)
+    if (!attemptId) return;
+    submissionsApi
+      .getResult(attemptId)
       .then(setResult)
-      .catch(e => setError(parseErrorMessage(e)))
-      .finally(() => setLoading(false))
-  }, [attemptId])
+      .catch((e) => setError(parseErrorMessage(e)))
+      .finally(() => setLoading(false));
+  }, [attemptId]);
 
   useEffect(() => {
     // Bersihkan exam state setelah result dimuat
-    return () => { clearExam() }
-  }, [clearExam])
+    return () => {
+      clearExam();
+    };
+  }, [clearExam]);
 
-  if (loading) return <Loading fullscreen text="Memuat hasil ujian..." />
-  if (error) return (
-    <div className="mx-auto max-w-md pt-16">
-      <Alert variant="error">{error}</Alert>
-    </div>
-  )
-  if (!result) return null
+  if (loading) return <Loading fullscreen text="Memuat hasil ujian..." />;
+  if (error)
+    return (
+      <div className="mx-auto max-w-md pt-16">
+        <Alert variant="error">{error}</Alert>
+      </div>
+    );
+  if (!result) return null;
 
-  const pct = result.percentage
-  const scoreColor = pct >= 75 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-error'
+  const pct = result.percentage;
+  const scoreColor = pct >= 75 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-error';
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pt-8">
-      <div className="text-center space-y-2">
+      <div className="space-y-2 text-center">
         <h1 className="text-2xl font-bold">{result.sessionTitle}</h1>
-        <p className="text-sm text-base-content/60">Dikumpulkan: {formatDateTime(result.submittedAt)}</p>
-        <Badge
-          variant={result.gradingStatus === 'PUBLISHED' ? 'success' : 'warning'}
-          size="sm"
-        >
+        <p className="text-sm text-base-content/60">
+          Dikumpulkan: {formatDateTime(result.submittedAt)}
+        </p>
+        <Badge variant={result.gradingStatus === 'PUBLISHED' ? 'success' : 'warning'} size="sm">
           {GRADING_STATUS_LABEL[result.gradingStatus]}
         </Badge>
       </div>
@@ -3957,10 +3966,8 @@ export default function ResultPage() {
         <>
           {/* Score card */}
           <Card className="text-center">
-            <div className={`text-6xl font-bold tabular-nums ${scoreColor}`}>
-              {Math.round(pct)}
-            </div>
-            <p className="text-base-content/60 mt-1">Nilai (%)</p>
+            <div className={`text-6xl font-bold tabular-nums ${scoreColor}`}>{Math.round(pct)}</div>
+            <p className="mt-1 text-base-content/60">Nilai (%)</p>
             <p className="mt-2 text-sm">
               {result.totalScore} / {result.maxScore} poin
             </p>
@@ -3969,14 +3976,20 @@ export default function ResultPage() {
           {/* Breakdown */}
           {result.answers && result.answers.length > 0 && (
             <Card>
-              <h3 className="font-semibold mb-3">Rincian Jawaban</h3>
+              <h3 className="mb-3 font-semibold">Rincian Jawaban</h3>
               <div className="space-y-2">
                 {result.answers.map((a, i) => (
                   <div key={a.questionId} className="flex items-center justify-between text-sm">
                     <span className="text-base-content/60">Soal {i + 1}</span>
                     <div className="flex items-center gap-2">
-                      {a.feedback && <span className="text-xs text-base-content/50 italic">{a.feedback}</span>}
-                      <span className={a.score === a.maxScore ? 'text-success font-medium' : 'text-base-content'}>
+                      {a.feedback && (
+                        <span className="text-xs italic text-base-content/50">{a.feedback}</span>
+                      )}
+                      <span
+                        className={
+                          a.score === a.maxScore ? 'font-medium text-success' : 'text-base-content'
+                        }
+                      >
                         {a.score ?? '-'}/{a.maxScore}
                       </span>
                     </div>
@@ -3994,14 +4007,14 @@ export default function ResultPage() {
         </Alert>
       )}
     </div>
-  )
+  );
 }
 
 ```
 
 ---
 
-### File: `src/app/(siswa)/ujian/[sessionId]/review/page.tsx`
+### File: `src/app/(siswa)/ujian/[id]/review/page.tsx`
 
 ```typescript
 'use client'

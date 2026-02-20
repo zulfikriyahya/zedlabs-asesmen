@@ -9137,9 +9137,9 @@ enum SyncType {
 ```
 # ── Application ──────────────────────────────────────────
 NODE_ENV=development
-PORT=3000
+PORT=3001
 API_PREFIX=api
-APP_URL=http://localhost:3000
+APP_URL=http://localhost:3001
 
 # ── Database (Prisma) ─────────────────────────────────────
 # Via PgBouncer (production)

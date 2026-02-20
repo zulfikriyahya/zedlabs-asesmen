@@ -43,6 +43,7 @@ Panduan pengerjaan untuk proyek sistem ujian offline-first multi-tenant.
 - Custom hook untuk setiap logika stateful yang digunakan lebih dari satu komponen.
 - Komponen soal di-lazy load per tipe (`dynamic(() => import(...))`) untuk mengurangi initial bundle.
 - Auto-save menggunakan debounce, bukan interval mentah, agar tidak overwrite saat pengguna masih mengetik.
+- Zustand stores bersifat **in-memory only** — tidak ada store yang dipersist ke localStorage atau sessionStorage.
 
 ### Backend
 - Guard NestJS untuk autentikasi dan otorisasi; dekorator custom (`@CurrentUser`, `@TenantId`, `@Roles`, `@UseIdempotency`) untuk ekstrak konteks dari JWT.
@@ -79,7 +80,7 @@ Login → DeviceGuard (fingerprint check)
 ```
 
 **State yang terlibat:** `examStore`, `answerStore`, `syncStore`, `timerStore`
-**Storage yang terlibat:** IndexedDB via Dexie (`examPackages`, `answers`, `activityLogs`, `syncQueue`)
+**Storage yang terlibat:** IndexedDB via Dexie (`examPackages`, `answers`, `activityLogs`, `syncQueue`, `mediaBlobs`)
 **Catatan:** Key enkripsi hanya hidup di memori selama sesi aktif. Tidak pernah masuk ke Zustand persist, localStorage, maupun IndexedDB.
 
 ### Guru
@@ -128,7 +129,7 @@ Login (role: SUPERVISOR) → Subscribe sesi aktif via Socket.IO (/monitoring)
 | Docs | Swagger / OpenAPI (`/docs`, non-production only) |
 | Scheduler | @nestjs/schedule (cleanup stale chunks) |
 | Events | @nestjs/event-emitter (domain events antar modul) |
-| Frontend | Next.js, Zustand, Dexie, PowerSync |
+| Frontend | Next.js 15 (App Router), Zustand 4, Dexie 3, PowerSync |
 
 ---
 
@@ -148,58 +149,59 @@ exam-frontend/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── auth/ (login, logout, refresh)
+│   │   │   ├── auth/               # login, logout, refresh
 │   │   │   ├── download/
 │   │   │   ├── health/
 │   │   │   ├── media/
 │   │   │   └── sync/
 │   │   ├── (auth)/login/
-│   │   ├── (guru)/          # dashboard, grading, hasil, soal, ujian
-│   │   ├── (operator)/      # dashboard, laporan, peserta, ruang, sesi
-│   │   ├── (pengawas)/      # dashboard, monitoring/[sessionId]
-│   │   ├── (siswa)/         # dashboard, profile, ujian/[sessionId]/{review,result}
-│   │   └── (superadmin)/    # audit-logs, dashboard, schools, settings, users
+│   │   ├── (guru)/                 # dashboard, grading, hasil, soal, ujian
+│   │   ├── (operator)/             # dashboard, laporan, peserta, ruang, sesi
+│   │   ├── (pengawas)/             # dashboard, monitoring/[sessionId]
+│   │   ├── (siswa)/                # dashboard, profile, ujian/[sessionId]/{review,result}
+│   │   └── (superadmin)/           # audit-logs, dashboard, schools, settings, users
 │   ├── components/
-│   │   ├── analytics/       # DashboardStats, ExamStatistics, ItemAnalysisChart, StudentProgress
-│   │   ├── auth/            # DeviceLockWarning, LoginForm
-│   │   ├── exam/            # ActivityLogger, AutoSaveIndicator, ExamTimer, QuestionNavigation
-│   │   │   └── question-types/  # Essay, Matching, MultipleChoice, ShortAnswer, TrueFalse
-│   │   ├── grading/         # EssaySimilarityBadge, GradingRubric, ManualGradingCard
-│   │   ├── layout/          # Footer, Header, MainLayout, Sidebar
-│   │   ├── madrasah/        # ArabicKeyboard, HafalanRecorder, QuranDisplay, TajwidMarker
-│   │   ├── monitoring/      # ActivityLogViewer, LiveMonitor, StudentProgressCard
-│   │   ├── questions/       # MatchingEditor, MediaUpload, OptionsEditor, QuestionEditor, TagSelector
-│   │   ├── sync/            # ChecksumValidator, DownloadProgress, SyncStatus, UploadQueue
-│   │   └── ui/              # Alert, Badge, Button, Card, Confirm, Input, Modal, Table, Toast, dll.
+│   │   ├── analytics/              # DashboardStats, ExamStatistics, ItemAnalysisChart, StudentProgress
+│   │   ├── auth/                   # DeviceLockWarning, LoginForm
+│   │   ├── exam/                   # ActivityLogger, AutoSaveIndicator, ExamTimer, QuestionNavigation
+│   │   │   └── question-types/     # Essay, Matching, MultipleChoice, ShortAnswer, TrueFalse
+│   │   ├── grading/                # EssaySimilarityBadge, GradingRubric, ManualGradingCard
+│   │   ├── layout/                 # Footer, Header, MainLayout, Sidebar
+│   │   ├── madrasah/               # ArabicKeyboard, HafalanRecorder, QuranDisplay, TajwidMarker
+│   │   ├── monitoring/             # ActivityLogViewer, LiveMonitor, StudentProgressCard
+│   │   ├── questions/              # MatchingEditor, MediaUpload, OptionsEditor, QuestionEditor, TagSelector
+│   │   ├── sync/                   # ChecksumValidator, DownloadProgress, SyncStatus, UploadQueue
+│   │   └── ui/                     # Alert, Badge, Button, Card, Confirm, Input, Modal, Table, Toast, dll.
 │   ├── hooks/
-│   │   ├── use-auth.ts
-│   │   ├── use-auto-save.ts
-│   │   ├── use-device-warnings.ts
-│   │   ├── use-exam.ts
-│   │   ├── use-media-recorder.ts
-│   │   ├── use-online-status.ts
-│   │   ├── use-powersync.ts
-│   │   ├── use-sync-status.ts
-│   │   ├── use-timer.ts
-│   │   └── use-toast.ts
+│   │   ├── use-auth.ts             # refresh token, redirect per role
+│   │   ├── use-auto-save.ts        # debounce save jawaban ke IndexedDB
+│   │   ├── use-device-warnings.ts  # cek Web Crypto + storage availability
+│   │   ├── use-exam.ts             # selector currentQuestion + progress
+│   │   ├── use-media-recorder.ts   # MediaRecorder API wrapper
+│   │   ├── use-online-status.ts    # navigator.onLine listener
+│   │   ├── use-powersync.ts        # flush sync queue via PowerSync
+│   │   ├── use-sync-status.ts      # status sinkronisasi gabungan
+│   │   ├── use-timer.ts            # tick setiap detik, panggil onExpire
+│   │   └── use-toast.ts            # helper success/error/warning/info
 │   ├── lib/
-│   │   ├── api/             # client.ts + per-domain API files
-│   │   ├── crypto/          # aes-gcm.ts, checksum.ts, key-manager.ts
-│   │   ├── db/              # Dexie schema, migrations, queries
-│   │   ├── exam/            # activity-logger, auto-save, controller, navigation, randomizer, timer
-│   │   ├── media/           # chunked-upload, compress, player, recorder
-│   │   ├── middleware/       # auth, role, tenant middleware
-│   │   ├── offline/         # cache, checksum, download, queue, sync
-│   │   └── utils/           # compression, device, error, format, logger, network, time
-│   ├── middleware.ts
-│   ├── schemas/             # Zod schemas: answer, auth, exam, question, sync, user
-│   ├── stores/              # Zustand: activity, answer, auth, exam, sync, timer, ui
-│   ├── styles/              # animations.css, arabic.css, print.css
+│   │   ├── api/                    # client.ts (ky + token refresh), per-domain API files
+│   │   ├── crypto/                 # aes-gcm.ts, checksum.ts, key-manager.ts
+│   │   ├── db/                     # Dexie schema, migrations, queries
+│   │   ├── exam/                   # activity-logger, auto-save, controller,
+│   │   │                           # navigation, package-decoder, randomizer, timer, validator
+│   │   ├── media/                  # chunked-upload, compress, player, recorder, upload
+│   │   ├── middleware/             # auth, role, tenant helpers
+│   │   ├── offline/                # cache, checksum, download, queue, sync
+│   │   └── utils/                  # compression, device, error, format, logger, network, time
+│   ├── middleware.ts               # Next.js middleware: auth check + RBAC + subdomain header
+│   ├── schemas/                    # Zod: answer, auth, exam, question, sync, user
+│   ├── stores/                     # Zustand (in-memory): activity, answer, auth, exam, sync, timer, ui
+│   ├── styles/                     # animations.css, arabic.css, print.css
 │   ├── tests/
-│   │   ├── integration/     # dexie.spec.ts, sync.spec.ts
-│   │   └── unit/            # hooks, lib, stores
-│   └── types/               # activity, answer, api, exam, media, question, sync, user
-├── tests/e2e/               # Playwright: auth, exam-flow, grading, media-recording, offline-sync
+│   │   ├── integration/            # dexie.spec.ts, sync.spec.ts
+│   │   └── unit/                   # hooks, lib, stores
+│   └── types/                      # activity, answer, api, exam, media, question, sync, user
+├── tests/e2e/                      # Playwright: auth, exam-flow, grading, media-recording, offline-sync
 ├── tailwind.config.ts
 ├── tsconfig.json
 └── vitest.config.ts
@@ -329,12 +331,13 @@ notification → send-realtime        Broadcast event ke Socket.IO
 | Layer | Mekanisme |
 |-------|-----------|
 | Transport | HTTPS + Helmet (CSP, HSTS, dll.) |
-| Auth | JWT access (15m) + refresh (7d) dengan rotation |
+| Auth | JWT access (15m) + refresh (7d) dengan rotation; `access_token` di memory, `refresh_token` di httpOnly cookie |
 | Tenant isolation | `tenantId` wajib di setiap Prisma query |
 | RLS | PostgreSQL Row-Level Security sebagai safety net |
 | RBAC | RolesGuard — 6 role: SUPERADMIN > ADMIN > TEACHER > OPERATOR > SUPERVISOR > STUDENT |
 | Device | DeviceGuard — fingerprint hash (SHA-256), bisa di-lock per perangkat |
 | Enkripsi soal | `correctAnswer` disimpan AES-256-GCM; key tidak pernah ke client |
+| Key lifecycle | `keyManager` hapus key saat submit / logout / `beforeunload` |
 | Idempotency | Unique constraint `idempotencyKey` di `ExamAttempt` dan `ExamAnswer` |
 | Rate limiting | `CustomThrottlerGuard` — tier: STRICT (5/60s), MODERATE (30/60s), RELAXED (120/60s) |
 | Audit | Tabel `audit_logs` append-only — login, start exam, submit, grade, publish |
@@ -359,7 +362,7 @@ socket.on('activity-log', (log) => { /* tab blur, paste, idle */ });
 
 ### PowerSync Batch Endpoint
 
-```
+```json
 POST /api/powersync/data
 {
   "batch": [
@@ -372,14 +375,3 @@ POST /api/powersync/data
   ]
 }
 ```
-
----
-
-## Format Respons AI
-
-- Jawaban langsung pada solusi teknis tanpa pembuka panjang.
-- Kode menggunakan nama variabel ringkas namun deskriptif.
-- Jika ada beberapa pendekatan, tampilkan perbedaan dan trade-off secara singkat — bukan semua opsi secara panjang lebar.
-- Tidak perlu menyertakan instruksi instalasi, struktur folder standar, atau penjelasan umum yang sudah diketahui senior developer, kecuali diminta secara spesifik.
-- Gunakan Bahasa Indonesia untuk penjelasan, Bahasa Inggris untuk kode dan nama teknis.
-- Saat mengerjakan fitur baru, selalu rujuk bagian **Alur Aplikasi** dan **Struktur Proyek** di atas untuk memastikan implementasi diletakkan di layer dan file yang tepat.

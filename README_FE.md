@@ -7,10 +7,10 @@ Sistem ujian offline-first multi-tenant untuk sekolah dan madrasah, dibangun den
 ## Tech Stack
 
 | Layer | Teknologi |
-|---|---|
+|-------|-----------|
 | Framework | Next.js 15 (App Router), TypeScript 5 (strict mode) |
 | Styling | Tailwind CSS 3, DaisyUI 4 |
-| State Management | Zustand 4 (in-memory, tidak dipersist) |
+| State Management | Zustand 4 (in-memory only, tidak dipersist) |
 | Offline Storage | Dexie 3 (IndexedDB) |
 | Offline Sync | PowerSync |
 | HTTP Client | ky 1 |
@@ -20,6 +20,7 @@ Sistem ujian offline-first multi-tenant untuk sekolah dan madrasah, dibangun den
 | Chart | Chart.js 4 + react-chartjs-2 |
 | Real-time | Socket.IO Client 4 |
 | Tanggal | date-fns 3 |
+| Security | next-safe (CSP) |
 | Testing | Vitest 1, Playwright 1 |
 
 ---
@@ -29,7 +30,7 @@ Sistem ujian offline-first multi-tenant untuk sekolah dan madrasah, dibangun den
 ```
 Browser (Offline-capable PWA)
         │
-        ├── Next.js App Router
+        ├── Next.js 15 App Router
         │    ├── src/middleware.ts           ← auth + RBAC + subdomain tenant
         │    ├── src/app/(auth)/             ← login
         │    ├── src/app/(siswa)/            ← ruang ujian, review, result
@@ -68,13 +69,12 @@ Login → DeviceGuard (fingerprint SHA-256)
 → Server: upsert ExamAttempt + schedule timeout BullMQ
 → Client: simpan paket terenkripsi ke IndexedDB (Dexie: examPackages)
 → Dekripsi di memori (lib/crypto/aes-gcm.ts, Web Crypto API)
-→ Key enkripsi HANYA di memori — tidak pernah ke Zustand persist,
-  localStorage, atau IndexedDB
+→ Key enkripsi HANYA di memori — tidak pernah ke Zustand,
+  localStorage, sessionStorage, atau IndexedDB
 → Kerjakan ujian → auto-save debounce → IndexedDB (Dexie: answers)
-→ POST /api/student/answers (upsert via idempotencyKey)
-→ Rekam audio/video → chunked blob ke IndexedDB
+→ Rekam audio/video → chunked blob ke IndexedDB (Dexie: mediaBlobs)
+→ PowerSync flush syncQueue → POST /api/student/answers (idempotencyKey)
 → Review jawaban → POST /api/student/submit
-→ PowerSync flush sync queue saat online
 ```
 
 ---
@@ -95,7 +95,7 @@ exam-frontend/
 │   │   ├── (guru)/                 # dashboard, soal, ujian, grading, hasil
 │   │   ├── (operator)/             # dashboard, ruang, sesi, peserta, laporan
 │   │   ├── (pengawas)/             # dashboard, monitoring/[sessionId]
-│   │   ├── (siswa)/                # dashboard, profile, ujian/[sessionId]
+│   │   ├── (siswa)/                # dashboard, profile, ujian/[sessionId]/{review,result}
 │   │   └── (superadmin)/           # audit-logs, dashboard, schools, users, settings
 │   ├── components/
 │   │   ├── analytics/              # DashboardStats, ExamStatistics, ItemAnalysisChart, StudentProgress
@@ -122,7 +122,7 @@ exam-frontend/
 │   │   ├── use-timer.ts            # tick setiap detik, panggil onExpire
 │   │   └── use-toast.ts            # helper success/error/warning/info
 │   ├── lib/
-│   │   ├── api/                    # client.ts (ky + token refresh), per-domain API files
+│   │   ├── api/                    # client.ts (ky + interceptor token refresh), per-domain API files
 │   │   ├── crypto/                 # aes-gcm.ts, checksum.ts, key-manager.ts
 │   │   ├── db/                     # Dexie schema, migrations, queries
 │   │   ├── exam/                   # activity-logger, auto-save, controller,
@@ -133,7 +133,7 @@ exam-frontend/
 │   │   └── utils/                  # compression, device, error, format, logger, network, time
 │   ├── middleware.ts               # Next.js middleware: auth check + RBAC + subdomain header
 │   ├── schemas/                    # Zod: answer, auth, exam, question, sync, user
-│   ├── stores/                     # Zustand: activity, answer, auth, exam, sync, timer, ui
+│   ├── stores/                     # Zustand (in-memory): activity, answer, auth, exam, sync, timer, ui
 │   ├── styles/                     # animations.css, arabic.css, print.css
 │   ├── tests/
 │   │   ├── integration/            # dexie.spec.ts, sync.spec.ts
@@ -153,7 +153,7 @@ exam-frontend/
 ## Halaman & Routes
 
 | Route | Role | Deskripsi |
-|---|---|---|
+|-------|------|-----------|
 | `/login` | Semua | Login dengan verifikasi device fingerprint |
 | `/(siswa)/dashboard` | STUDENT | Riwayat ujian + akses cepat |
 | `/(siswa)/ujian/download` | STUDENT | Input token ujian |
@@ -182,31 +182,14 @@ exam-frontend/
 
 ---
 
-## Model Keamanan
-
-| Layer | Mekanisme |
-|---|---|
-| Auth | JWT access (15 menit) di memory + refresh token (7 hari) di httpOnly cookie |
-| Token refresh | Auto-refresh via interceptor ky saat 401; tidak memblokir request lain |
-| Device | Fingerprint SHA-256 (userAgent + screen + timezone) dikirim saat login & download |
-| Enkripsi soal | AES-256-GCM via Web Crypto API; `CryptoKey` non-extractable, hanya di memori |
-| Key lifecycle | `keyManager` hapus key saat submit / logout / `beforeunload` |
-| Idempotency | Setiap jawaban dan submission membawa UUID v4 `idempotencyKey` |
-| RBAC | `middleware.ts` decode JWT (tanpa verify) → cek prefix route vs role |
-| Activity log | Tab blur, paste, idle dicatat ke IndexedDB → sync ke server → monitoring real-time |
-
-> **Penting:** Key enkripsi tidak pernah masuk ke Zustand persist, localStorage, sessionStorage, maupun IndexedDB. Key hanya hidup di `Map` dalam `key-manager.ts` selama sesi berlangsung.
-
----
-
 ## Komponen Tipe Soal
 
-Semua tipe soal di-lazy load (`dynamic(() => import(...))`) untuk mengurangi initial bundle:
+Semua tipe soal di-lazy load via `dynamic(() => import(...))`:
 
 | Tipe | Komponen | Deskripsi |
-|---|---|---|
+|------|----------|-----------|
 | `MULTIPLE_CHOICE` | `MultipleChoice` | Radio button dengan highlight pilihan terpilih |
-| `COMPLEX_MULTIPLE_CHOICE` | `MultipleChoiceComplex` | Checkbox (lebih dari satu jawaban benar) |
+| `COMPLEX_MULTIPLE_CHOICE` | `MultipleChoiceComplex` | Checkbox, lebih dari satu jawaban benar |
 | `TRUE_FALSE` | `TrueFalse` | Dua tombol toggle Benar / Salah |
 | `MATCHING` | `Matching` | Tabel radio matrix kiri–kanan |
 | `SHORT_ANSWER` | `ShortAnswer` | Input teks maks. 500 karakter |
@@ -217,7 +200,7 @@ Semua tipe soal di-lazy load (`dynamic(() => import(...))`) untuk mengurangi ini
 ## Fitur Madrasah
 
 | Komponen | Fungsi |
-|---|---|
+|----------|--------|
 | `ArabicKeyboard` | Virtual keyboard Arab dengan harakat, tanda baca, dan frasa khusus (basmalah, shalawat) |
 | `HafalanRecorder` | Rekaman hafalan multi-bagian (per surah/ayat) dengan referensi teks Arab |
 | `QuranDisplay` | Tampilan teks Al-Quran per ayat dengan terjemahan dan highlight ayat kunci |
@@ -225,17 +208,33 @@ Semua tipe soal di-lazy load (`dynamic(() => import(...))`) untuk mengurangi ini
 
 ---
 
-## Auto-Save & Sync
+## Auto-Save & Sync Flow
 
 ```
 Perubahan jawaban
   → setAnswer(questionId, value)    ← optimistic update UI (Zustand)
   → debouncedSave(1500ms)           ← mencegah overwrite saat mengetik
-  → upsertAnswer(IndexedDB)         ← persist lokal
+  → upsertAnswer(IndexedDB)         ← persist lokal (Dexie: answers)
   → enqueueSyncItem(syncQueue)      ← antrian ke server
   → PowerSync flush (saat online)   ← POST /api/student/answers
   → markAnswerSynced()              ← update flag di IndexedDB
 ```
+
+---
+
+## Model Keamanan
+
+| Layer | Mekanisme |
+|-------|-----------|
+| Auth | JWT access (15m) di memory + refresh (7d) di httpOnly cookie; auto-refresh via interceptor ky saat 401 |
+| Device | Fingerprint SHA-256 (userAgent + screen + timezone) dikirim saat login & download |
+| Enkripsi soal | AES-256-GCM via Web Crypto API; `CryptoKey` non-extractable, hanya di memori |
+| Key lifecycle | `keyManager` hapus key saat submit / logout / `beforeunload` |
+| Idempotency | Setiap jawaban dan submission membawa UUID v4 `idempotencyKey` |
+| RBAC | `middleware.ts` decode JWT (tanpa verify) → cek prefix route vs role |
+| Activity log | Tab blur, paste, idle dicatat ke IndexedDB → sync ke server → monitoring real-time |
+
+> **Penting:** Key enkripsi tidak pernah masuk ke Zustand, localStorage, sessionStorage, maupun IndexedDB. Key hanya hidup di `Map` dalam `key-manager.ts` selama sesi berlangsung.
 
 ---
 
@@ -259,23 +258,13 @@ NEXT_PUBLIC_MIN_STORAGE_MB=2048
 
 ---
 
-## Setup & Pengembangan
+## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Development server
-npm run dev
-
-# Type check
-npm run type-check
-
-# Lint
-npm run lint
-
-# Format
-npm run format
+npm run dev          # development server
+npm run type-check   # TypeScript check
+npm run lint         # ESLint
+npm run format       # Prettier
 ```
 
 ---
@@ -283,24 +272,14 @@ npm run format
 ## Testing
 
 ```bash
-# Unit & integration test
-npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:cov
-
-# E2E (Playwright) — pastikan dev server berjalan
-npm run test:e2e
-
-# E2E dengan UI interaktif
-npm run test:e2e:ui
+npm test             # unit & integration (Vitest)
+npm run test:watch   # watch mode
+npm run test:cov     # coverage report
+npm run test:e2e     # Playwright (pastikan dev server berjalan)
+npm run test:e2e:ui  # Playwright UI interaktif
 ```
 
-### Skenario E2E yang Dicakup
-
+### Skenario E2E
 - `auth.spec.ts` — Login, logout, redirect per role
 - `exam-flow.spec.ts` — Download → kerjakan → submit → result
 - `grading.spec.ts` — Manual grading esai
@@ -317,13 +296,12 @@ npm start
 ```
 
 ### Checklist Deployment
-
-- [ ] `NEXT_PUBLIC_API_URL` mengarah ke backend production (bukan localhost)
+- [ ] `NEXT_PUBLIC_API_URL` mengarah ke backend production
 - [ ] Subdomain wildcard `*.exam.example.com` → server yang sama
-- [ ] CSP tidak memblokir Web Crypto API atau domain PowerSync/MinIO
+- [ ] CSP tidak memblokir Web Crypto API, PowerSync, atau domain MinIO
 - [ ] Service Worker PowerSync tidak konflik dengan cache Next.js
-- [ ] Uji offline flow end-to-end: download → airplane mode → ujian → sync
-- [ ] Uji rekaman pada Android low-end (RAM 2–3 GB)
-- [ ] Verifikasi `access_token` cookie `httpOnly: false`, `refresh_token` cookie `httpOnly: true`
+- [ ] Verifikasi `access_token` tidak di httpOnly cookie; `refresh_token` di httpOnly cookie
 - [ ] Verifikasi key enkripsi tidak tersimpan di IndexedDB setelah submit
-
+- [ ] Auto-save diuji pada kondisi IndexedDB hampir penuh
+- [ ] Offline flow end-to-end: download → airplane mode → ujian → sync
+- [ ] Recording diuji pada Android low-end (RAM 2–3 GB)

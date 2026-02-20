@@ -9,27 +9,28 @@ RESTful API untuk sistem ujian sekolah dan madrasah dengan arsitektur **offline-
 | Layer | Teknologi |
 |-------|-----------|
 | Framework | NestJS 10, TypeScript 5 (strict mode) |
-| ORM & Database | Prisma 5, PostgreSQL 16, PgBouncer (transaction mode) |
+| ORM & Database | Prisma 5, PostgreSQL 16, PgBouncer (transaction mode, port 6432) |
 | Cache & Queue | Redis 7 (ioredis), BullMQ 5 |
 | Real-time | Socket.IO 4 (`/monitoring` namespace) |
 | Auth | JWT (passport-jwt), refresh token rotation, bcrypt |
 | Security | helmet, @nestjs/throttler, AES-256-GCM (enkripsi soal) |
-| Storage | MinIO (S3-compatible, presigned URL) |
+| Storage | MinIO (S3-compatible, presigned URL, private bucket) |
 | Media | Sharp (kompresi gambar), fluent-ffmpeg, Puppeteer (PDF), ExcelJS |
 | Monitoring | Winston + DailyRotateFile, Sentry (@sentry/node), @nestjs/terminus |
-| Docs | Swagger / OpenAPI (`/docs`) |
+| Docs | Swagger / OpenAPI (`/docs`, non-production only) |
 | Scheduler | @nestjs/schedule (cleanup stale chunks) |
 | Events | @nestjs/event-emitter (domain events antar modul) |
+| Testing | Jest, Playwright, k6 |
 
 ---
 
 ## Arsitektur Sistem
 
 ```
-Client (Offline-capable PWA / Mobile)
+Client (Offline-capable PWA)
          │
          ▼
-   Nginx / Caddy  ←── TLS, rate limiting
+   Nginx / Caddy  ←── TLS termination, rate limiting
          │
          ▼
   NestJS API (PM2 Cluster)
@@ -60,62 +61,62 @@ Client (Offline-capable PWA / Mobile)
 exam-backend/
 ├── src/
 │   ├── app.module.ts              # Root module, guards & interceptors global
-│   ├── main.ts                    # Bootstrap, Swagger, global pipes
+│   ├── main.ts                    # Bootstrap, Swagger (/docs), global pipes
 │   ├── common/
-│   │   ├── decorators/            # @CurrentUser, @TenantId, @Roles, @UseIdempotency
+│   │   ├── decorators/            # @CurrentUser, @TenantId, @Roles, @UseIdempotency, @ThrottleTier, @Public
 │   │   ├── dto/                   # PaginationDto, BaseQueryDto, PaginatedResponseDto
-│   │   ├── enums/                 # UserRole, QuestionType, SessionStatus, GradingStatus, dll.
-│   │   ├── exceptions/            # DeviceLocked, ExamNotAvailable, TenantNotFound, dll.
+│   │   ├── enums/                 # UserRole, QuestionType, ExamStatus, GradingStatus, SyncStatus
+│   │   ├── exceptions/            # DeviceLocked, ExamNotAvailable, IdempotencyConflict, TenantNotFound
 │   │   ├── filters/               # AllExceptionsFilter, HttpExceptionFilter
 │   │   ├── guards/                # TenantGuard, CustomThrottlerGuard
 │   │   ├── interceptors/          # Idempotency, Logging, Tenant, Timeout, Transform
 │   │   ├── middleware/            # SubdomainMiddleware, LoggerMiddleware, PerformanceMiddleware
 │   │   ├── pipes/                 # AppValidationPipe, ParseIntPipe
+│   │   ├── providers/             # RedisProvider (ioredis)
 │   │   ├── services/              # EmailService (nodemailer), SentryService
-│   │   └── utils/                 # checksum, encryption (AES-GCM), device-fingerprint, randomizer
-│   ├── config/                    # app, jwt, database, redis, minio, bullmq, throttler, smtp
+│   │   └── utils/                 # checksum, encryption (AES-GCM), device-fingerprint, randomizer, similarity
+│   ├── config/                    # app, jwt, database, redis, minio, bullmq, throttler, smtp, sentry, multer
 │   ├── modules/
-│   │   ├── auth/                  # login, refresh, logout, change-password
-│   │   ├── users/                 # CRUD user, device management (lock/unlock)
-│   │   ├── tenants/               # manajemen multi-tenant (SUPERADMIN only)
+│   │   ├── auth/                  # login, refresh, logout; guards: DeviceGuard, JwtAuthGuard, RolesGuard
+│   │   ├── users/                 # CRUD user, device lock/unlock
+│   │   ├── tenants/               # multi-tenant management (SUPERADMIN only)
 │   │   ├── subjects/              # mata pelajaran per tenant
-│   │   ├── questions/             # soal 6 tipe + bulk import + statistik
+│   │   ├── questions/             # 6 tipe soal + bulk import + statistik
 │   │   ├── question-tags/         # tag soal per tenant
-│   │   ├── exam-packages/         # paket ujian + item analysis
+│   │   ├── exam-packages/         # paket ujian + item analysis + ExamPackageBuilder
 │   │   ├── exam-rooms/            # ruang ujian
-│   │   ├── sessions/              # sesi ujian, assign peserta, aktivasi
-│   │   ├── submissions/           # download, submit jawaban, submit ujian, auto-grade
+│   │   ├── sessions/              # sesi ujian, assign peserta, aktivasi, session-monitoring
+│   │   ├── submissions/           # download paket, submit jawaban/ujian, auto-grade, ExamDownload
 │   │   ├── grading/               # manual grading, complete grading, publish hasil
-│   │   ├── sync/                  # sync queue, chunked upload, PowerSync endpoint
-│   │   ├── media/                 # upload, presigned URL, kompresi (BullMQ)
-│   │   ├── monitoring/            # Socket.IO gateway, live status peserta
+│   │   ├── sync/                  # sync queue, chunked upload, PowerSync endpoint, scheduler
+│   │   ├── media/                 # upload, presigned URL, kompresi via BullMQ (Sharp + ffmpeg)
+│   │   ├── monitoring/            # Socket.IO gateway (/monitoring), live status peserta
 │   │   ├── activity-logs/         # log aktivitas siswa (tab blur, paste, idle)
-│   │   ├── audit-logs/            # append-only audit trail aksi sensitif
+│   │   ├── audit-logs/            # append-only audit trail + @Audit decorator + AuditInterceptor
 │   │   ├── analytics/             # dashboard summary, analitik sesi
-│   │   ├── reports/               # export PDF/Excel via BullMQ + MinIO
-│   │   ├── notifications/         # notifikasi in-app per user
-│   │   └── health/                # health check (Prisma ping)
+│   │   ├── reports/               # export PDF (Puppeteer) / Excel (ExcelJS) via BullMQ → MinIO
+│   │   ├── notifications/         # notifikasi in-app, BullMQ processor
+│   │   └── health/                # @nestjs/terminus health check (Prisma ping)
 │   └── prisma/
 │       ├── prisma.service.ts      # PrismaClient + forTenant() + withTenantContext()
 │       ├── seeds/                 # 01-tenants, 02-users, 03-subjects
-│       └── factories/             # exam-package, question, user factories (testing)
+│       └── factories/             # exam-package, question, user (testing)
 ├── prisma/
 │   ├── schema.prisma
-│   └── migrations/
-│       └── rls/enable_rls.sql
+│   └── migrations/rls/enable_rls.sql
 ├── test/
 │   ├── e2e/                       # auth, student-exam-flow, grading, offline-sync
-│   ├── integration/               # database, minio, redis
+│   ├── integration/               # database (tenant isolation, idempotency), minio, redis
 │   ├── load/                      # k6: concurrent-submission, exam-download, sync-stress
-│   └── unit/                      # auth, grading, submissions, sync
+│   └── unit/                      # auth, grading, submissions, sync, throttler
 ├── scripts/
 │   ├── backup.sh / restore.sh
-│   ├── cleanup-media.sh
-│   ├── rotate-keys.ts             # re-enkripsi correctAnswer dengan key baru
+│   ├── cleanup-media.sh           # hapus media orphan di MinIO (>7 hari, tidak ada di DB)
+│   ├── rotate-keys.ts             # re-enkripsi correctAnswer dengan ENCRYPTION_KEY baru
 │   └── seed.sh
-├── docs/architecture/             # database-schema, offline-sync-flow, security-model
+├── docs/architecture/             # database-schema, offline-sync-flow, security-model, system-design
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml             # services: api, postgres, pgbouncer, redis, minio
 └── ecosystem.config.js            # PM2 cluster config
 ```
 
@@ -147,11 +148,11 @@ Semua queue dikonfigurasi dengan **dead letter queue** dan `removeOnFail: false`
 | Queue | Job | Deskripsi |
 |-------|-----|-----------|
 | `submission` | `auto-grade` | Penilaian otomatis soal objektif setelah submit |
-| `submission` | `timeout-attempt` | Timeout attempt saat durasi ujian habis |
+| `submission` | `timeout-attempt` | Force-submit saat durasi ujian habis |
 | `sync` | `process` | Proses batch item dari syncQueue offline |
 | `media` | `compress-image` | Kompresi gambar via Sharp |
 | `media` | `transcode-video` | Transcode video jawaban via ffmpeg |
-| `report` | `generate` | Generate Excel (ExcelJS) / PDF (Puppeteer) → MinIO |
+| `report` | `generate` | Generate PDF (Puppeteer) / Excel (ExcelJS) → MinIO → presigned URL |
 | `notification` | `send-realtime` | Broadcast event ke Socket.IO |
 
 ---
@@ -163,7 +164,7 @@ Semua queue dikonfigurasi dengan **dead letter queue** dan `removeOnFail: false`
 | Auth | `/api/auth` | Public (login), JWT (logout, change-password) |
 | Tenants | `/api/tenants` | SUPERADMIN |
 | Users | `/api/users` | ADMIN, SUPERADMIN |
-| Device Management | `/api/devices` | ADMIN, OPERATOR (lock/unlock) |
+| Device Management | `/api/devices` | ADMIN, OPERATOR |
 | Subjects | `/api/subjects` | TEACHER, ADMIN |
 | Questions | `/api/questions` | TEACHER, ADMIN |
 | Question Tags | `/api/question-tags` | TEACHER, ADMIN |
@@ -175,15 +176,15 @@ Semua queue dikonfigurasi dengan **dead letter queue** dan `removeOnFail: false`
 | Grading | `/api/grading` | TEACHER, ADMIN |
 | Sync | `/api/sync` | STUDENT (JWT) |
 | PowerSync | `/api/powersync` | STUDENT (JWT) |
-| Media | `/api/media` | JWT |
+| Media | `/api/media` | JWT (semua role) |
 | Monitoring | `/api/monitoring` | SUPERVISOR, OPERATOR, ADMIN |
-| Activity Logs | `/api/activity-logs` | JWT |
+| Activity Logs | `/api/activity-logs` | JWT (semua role) |
 | Audit Logs | `/api/audit-logs` | SUPERADMIN, ADMIN |
 | Analytics | `/api/analytics` | TEACHER, ADMIN, SUPERADMIN |
 | Reports | `/api/reports` | OPERATOR, ADMIN |
 | Health | `/api/health` | Public |
 
-Swagger UI tersedia di `/docs` (hanya di non-production).
+Swagger UI tersedia di `/docs` (non-production only).
 
 ---
 
@@ -191,49 +192,80 @@ Swagger UI tersedia di `/docs` (hanya di non-production).
 
 ```
 Login → DeviceGuard (fingerprint check)
-  → POST /api/student/download (tokenCode + idempotencyKey)
-  → Server: validasi sesi ACTIVE, waktu valid, tokenCode cocok
-  → Server: upsert ExamAttempt (idempoten), schedule timeout via BullMQ
-  → Client: simpan paket terenkripsi ke IndexedDB (Dexie)
-  → Client: dekripsi di memori (Web Crypto AES-GCM)
-  → Kerjakan soal → auto-save debounce → Dexie.answers
-  → POST /api/student/answers (upsert via idempotencyKey)
-  → POST /api/student/submit
-  → BullMQ: auto-grade → GradingHelperService
-  → Jika ada essay: gradingStatus = MANUAL_REQUIRED
-  → Guru grade manual → POST /api/grading/answer
-  → POST /api/grading/complete → POST /api/grading/publish
-  → GET /api/student/result/:attemptId
+→ POST /api/student/download (tokenCode + idempotencyKey)
+→ Server: validasi sesi ACTIVE, waktu valid, tokenCode cocok
+→ Server: upsert ExamAttempt (idempoten), schedule timeout via BullMQ
+→ Client: simpan paket terenkripsi ke IndexedDB (Dexie)
+→ Client: dekripsi di memori (Web Crypto AES-256-GCM)
+→ Kerjakan soal → auto-save debounce → Dexie.answers
+→ POST /api/student/answers (upsert via idempotencyKey)
+→ POST /api/student/submit
+→ BullMQ: auto-grade → GradingHelperService
+→ Jika ada essay: gradingStatus = MANUAL_REQUIRED
+→ Guru grade manual → POST /api/grading/answer
+→ POST /api/grading/complete → POST /api/grading/publish
+→ GET /api/student/result/:attemptId
 ```
 
 ---
 
 ## Model Keamanan
 
-### Defence in Depth
-
 | Layer | Mekanisme |
 |-------|-----------|
-| Transport | HTTPS + Helmet (CSP, HSTS, dll.) |
-| Auth | JWT access (15m) + refresh (7d) dengan rotation |
-| Tenant isolation | `tenantId` wajib di setiap Prisma query |
-| RLS | PostgreSQL Row-Level Security sebagai safety net |
+| Transport | HTTPS + Helmet (CSP, HSTS) |
+| Auth | JWT access (15m) + refresh (7d) dengan rotation; `refresh_token` di httpOnly cookie |
+| Tenant isolation | `tenantId` wajib di setiap Prisma query; RLS PostgreSQL sebagai safety net |
 | RBAC | RolesGuard — 6 role: SUPERADMIN > ADMIN > TEACHER > OPERATOR > SUPERVISOR > STUDENT |
-| Device | DeviceGuard — fingerprint hash (SHA-256), bisa di-lock per perangkat |
-| Enkripsi soal | `correctAnswer` disimpan AES-256-GCM; key tidak pernah ke client |
+| Device | DeviceGuard — fingerprint SHA-256, bisa di-lock per perangkat oleh ADMIN/OPERATOR |
+| Enkripsi soal | `correctAnswer` disimpan AES-256-GCM; `ENCRYPTION_KEY` tidak pernah ke client |
 | Idempotency | Unique constraint `idempotencyKey` di `ExamAttempt` dan `ExamAnswer` |
-| Rate limiting | `CustomThrottlerGuard` — tier: STRICT (5/60s), MODERATE (30/60s), RELAXED (120/60s) |
+| Rate limiting | `CustomThrottlerGuard` — STRICT (5/60s), MODERATE (30/60s), RELAXED (120/60s) |
 | Audit | Tabel `audit_logs` append-only — login, start exam, submit, grade, publish |
+| Presigned URL | Semua aset media via signed URL MinIO dengan TTL terbatas (`MINIO_PRESIGNED_TTL`) |
 
-### Enkripsi Paket Soal
+### Multi-Tenant via Subdomain
+
+`SubdomainMiddleware` meng-resolve `tenantId` dari subdomain request:
 
 ```
-Server: correctAnswer → AES-256-GCM → disimpan di DB
-  key = ENCRYPTION_KEY (env, tidak pernah ke client)
+smkn1.exam.app → tenant.subdomain = 'smkn1' → tenantId = 'cuid...'
+```
 
-Client: paket diterima via HTTPS → dekripsi di memori (Web Crypto API)
-  key session hanya hidup selama tab aktif
-  TIDAK pernah masuk Zustand persist / localStorage / IndexedDB
+Untuk akses via IP langsung (SUPERADMIN), `tenantId` diambil dari JWT payload.
+
+### Rotasi Encryption Key
+
+```bash
+OLD_KEY=<64hex> NEW_KEY=<64hex> ts-node scripts/rotate-keys.ts
+# Setelah 0 kegagalan: update ENCRYPTION_KEY di .env dan restart API
+```
+
+### Socket.IO Monitoring
+
+```javascript
+const socket = io('https://api.yourdomain.com/monitoring', {
+  auth: { token: accessToken }
+});
+socket.emit('join-session', { sessionId: 'sess-abc' });
+socket.on('student-update', (data) => { /* live status */ });
+socket.on('activity-log', (log) => { /* tab blur, paste, idle */ });
+```
+
+### PowerSync Batch Endpoint
+
+```json
+POST /api/powersync/data
+{
+  "batch": [
+    {
+      "type": "SUBMIT_ANSWER",
+      "attemptId": "att-abc",
+      "idempotencyKey": "uuid-v4",
+      "payload": { "questionId": "q-1", "answer": "a" }
+    }
+  ]
+}
 ```
 
 ---
@@ -292,7 +324,7 @@ ALLOWED_VIDEO_TYPES=video/mp4,video/webm
 SENTRY_DSN=
 SENTRY_TRACES_SAMPLE_RATE=0.1
 
-# Email Notification (kosongkan untuk disable)
+# Email (kosongkan untuk disable)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -303,58 +335,28 @@ SMTP_FROM=noreply@exam.app
 
 ---
 
-## Setup & Development
-
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL 16
-- Redis 7
-- MinIO (atau S3-compatible storage)
-
-### Instalasi
+## Database
 
 ```bash
-npm install
-cp .env.example .env
-# Edit .env sesuai environment lokal
+npm run db:generate      # generate Prisma client
+npm run db:migrate:dev   # jalankan migrasi (dev)
+npm run db:rls           # aktifkan PostgreSQL RLS
+npm run db:seed          # seed data awal (tenant, users, subjects)
 ```
 
-### Database
+## Development
 
 ```bash
-# Generate Prisma client
-npm run db:generate
-
-# Jalankan migrasi (dev)
-npm run db:migrate:dev
-
-# Aktifkan PostgreSQL RLS
-npm run db:rls
-
-# Seed data awal (tenant, users, subjects)
-npm run db:seed
+npm run start:dev        # watch mode
+npm run start:debug      # debug mode
+npm run build && npm run start:prod
 ```
 
-### Menjalankan API
-
-```bash
-# Development (watch mode)
-npm run start:dev
-
-# Debug mode
-npm run start:debug
-
-# Production
-npm run build
-npm run start:prod
-```
-
-### Docker Compose (Full Stack)
+## Docker Compose
 
 ```bash
 docker compose up -d
-# Services: api, postgres, pgbouncer, redis, minio
+# services: api, postgres, pgbouncer, redis, minio
 ```
 
 ---
@@ -362,17 +364,10 @@ docker compose up -d
 ## Testing
 
 ```bash
-# Unit tests
-npm test
-
-# Unit tests (watch)
-npm run test:watch
-
-# Coverage
-npm run test:cov
-
-# E2E tests (butuh DB + Redis)
-npm run test:e2e
+npm test                 # unit tests
+npm run test:watch       # watch mode
+npm run test:cov         # coverage
+npm run test:e2e         # E2E (butuh DB + Redis)
 
 # Load test (butuh k6)
 k6 run test/load/exam-download.k6.js
@@ -391,40 +386,6 @@ k6 run test/load/sync-stress.k6.js
 
 ---
 
-## Deployment
-
-### PM2 (Cluster Mode)
-
-```bash
-npm run build
-pm2 start ecosystem.config.js
-```
-
-### Production Checklist
-
-- [ ] `JWT_ACCESS_SECRET` & `JWT_REFRESH_SECRET` — min 32 chars, random, berbeda
-- [ ] `ENCRYPTION_KEY` — 64 hex chars (`openssl rand -hex 32`), bukan default
-- [ ] `DATABASE_URL` → PgBouncer (port 6432, transaction mode)
-- [ ] `DATABASE_DIRECT_URL` → Postgres langsung (port 5432, hanya untuk migrasi)
-- [ ] MinIO credentials diganti dari default, bucket policy: **private**
-- [ ] `REDIS_PASSWORD` diset
-- [ ] `SENTRY_DSN` diset untuk error tracking
-- [ ] `npm run db:migrate` dan `npm run db:rls` dijalankan
-- [ ] Backup PostgreSQL terjadwal dan restore diverifikasi
-- [ ] Health check `GET /api/health` diverifikasi oleh load balancer
-- [ ] `NODE_ENV=production` di-set (disable Swagger, enable file log rotation)
-
-### Rotasi Encryption Key
-
-```bash
-# Re-enkripsi semua correctAnswer dengan key baru
-OLD_KEY=<64hex> NEW_KEY=<64hex> ts-node scripts/rotate-keys.ts
-
-# Setelah 0 kegagalan: update ENCRYPTION_KEY di .env dan restart API
-```
-
----
-
 ## Scripts Utilitas
 
 | Script | Deskripsi |
@@ -432,49 +393,21 @@ OLD_KEY=<64hex> NEW_KEY=<64hex> ts-node scripts/rotate-keys.ts
 | `scripts/backup.sh` | Backup PostgreSQL ke file |
 | `scripts/restore.sh` | Restore dari backup |
 | `scripts/cleanup-media.sh` | Hapus media orphan dari MinIO (>7 hari, tidak ada di DB) |
-| `scripts/rotate-keys.ts` | Rotasi ENCRYPTION_KEY — re-enkripsi semua correctAnswer |
+| `scripts/rotate-keys.ts` | Rotasi `ENCRYPTION_KEY` — re-enkripsi semua `correctAnswer` |
 | `scripts/seed.sh` | Jalankan seed database |
 
 ---
 
-## Konfigurasi Lanjutan
+## Production Checklist
 
-### Multi-Tenant via Subdomain
-
-`SubdomainMiddleware` meng-resolve `tenantId` dari subdomain request:
-
-```
-smkn1.exam.app → tenant.subdomain = 'smkn1' → tenantId = 'cuid...'
-```
-
-Untuk akses via IP langsung (SUPERADMIN), `tenantId` diambil dari JWT payload.
-
-### Socket.IO Monitoring
-
-Supervisors / operator connect ke namespace `/monitoring`:
-
-```javascript
-const socket = io('https://api.yourdomain.com/monitoring', {
-  auth: { token: accessToken }
-});
-socket.emit('join-session', { sessionId: 'sess-abc' });
-socket.on('student-update', (data) => { /* live status */ });
-socket.on('activity-log', (log) => { /* tab blur, paste, idle */ });
-```
-
-### PowerSync Endpoint
-
-Endpoint `/api/powersync/data` menerima batch mutations dari klien PowerSync untuk offline recovery:
-
-```json
-{
-  "batch": [
-    {
-      "type": "SUBMIT_ANSWER",
-      "attemptId": "att-abc",
-      "idempotencyKey": "uuid-v4",
-      "payload": { "questionId": "q-1", "answer": "a" }
-    }
-  ]
-}
-```
+- [ ] `ENCRYPTION_KEY` — 64 hex chars (`openssl rand -hex 32`), bukan default
+- [ ] `JWT_ACCESS_SECRET` & `JWT_REFRESH_SECRET` — min 32 chars, random, berbeda
+- [ ] `DATABASE_URL` → PgBouncer (port 6432, transaction mode)
+- [ ] `DATABASE_DIRECT_URL` → Postgres langsung (port 5432, hanya untuk migrasi)
+- [ ] MinIO bucket policy: **private**; credentials bukan default
+- [ ] `REDIS_PASSWORD` diset
+- [ ] `SENTRY_DSN` dikonfigurasi; test error terkirim
+- [ ] `npm run db:migrate` dan `npm run db:rls` dijalankan
+- [ ] `NODE_ENV=production` di-set (disable Swagger, enable file log rotation)
+- [ ] Health check `GET /api/health` diverifikasi oleh load balancer
+- [ ] Backup PostgreSQL terjadwal dan restore diverifikasi
