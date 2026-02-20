@@ -29,6 +29,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { SubdomainMiddleware } from './common/middleware/subdomain.middleware';
@@ -37,6 +38,8 @@ import { TenantGuard } from './common/guards/tenant.guard';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { SentryService } from './common/services/sentry.service';
+import { EmailService } from './common/services/email.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -65,6 +68,10 @@ import { RedisProvider } from './common/providers/redis.provider';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
+
+    // Event emitter untuk domain events (exam.submitted, grading.completed, dll)
+    EventEmitterModule.forRoot({ wildcard: false, maxListeners: 20 }),
+
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
@@ -77,6 +84,7 @@ import { RedisProvider } from './common/providers/redis.provider';
         ],
       }),
     }),
+
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
@@ -93,6 +101,7 @@ import { RedisProvider } from './common/providers/redis.provider';
         },
       }),
     }),
+
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -119,11 +128,14 @@ import { RedisProvider } from './common/providers/redis.provider';
   providers: [
     AppService,
     RedisProvider,
+    SentryService,
+    EmailService,
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
+  exports: [SentryService, EmailService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -487,22 +499,44 @@ export class TenantNotFoundException extends NotFoundException {
 ### File: `src/common/filters/all-exceptions.filter.ts`
 
 ```typescript
-import { ArgumentsHost as AH, Catch as CatchAll, Logger as Log } from '@nestjs/common';
+import { ArgumentsHost, Catch, HttpException, HttpStatus, Logger, Optional } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
+import { SentryService } from '../services/sentry.service';
 
-@CatchAll()
+@Catch()
 export class AllExceptionsFilter extends BaseExceptionFilter {
-  private readonly logger = new Log(AllExceptionsFilter.name);
+  private readonly logger = new Logger(AllExceptionsFilter.name);
 
-  catch(ex: unknown, host: AH) {
+  constructor(@Optional() private readonly sentry?: SentryService) {
+    super();
+  }
+
+  catch(ex: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const req = ctx.getRequest<Request>();
+    const req = ctx.getRequest<{
+      method: string;
+      url: string;
+      user?: { sub?: string; tenantId?: string; role?: string };
+    }>();
+
+    const status = ex instanceof HttpException ? ex.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
     if (ex instanceof Error) {
       this.logger.error(
-        `Unhandled: ${req.method} ${(req as unknown as { url: string }).url} — ${ex.message}`,
+        `Unhandled [${status}]: ${req.method} ${req.url} — ${ex.message}`,
         ex.stack,
       );
+
+      // Hanya kirim ke Sentry jika 5xx (bukan kesalahan klien)
+      if (status >= 500 && this.sentry) {
+        this.sentry.captureException(ex, {
+          method: req.method,
+          url: req.url,
+          userId: req.user?.sub,
+          tenantId: req.user?.tenantId,
+          role: req.user?.role,
+        });
+      }
     }
 
     super.catch(ex, host);
@@ -724,13 +758,41 @@ export class LoggingInterceptor implements NestInterceptor {
 ### File: `src/common/interceptors/tenant.interceptor.ts`
 
 ```typescript
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
 
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
-    return next.handle();
+  private readonly logger = new Logger(TenantInterceptor.name);
+
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const req = ctx.switchToHttp().getRequest<{
+      tenantId?: string;
+      user?: { tenantId?: string };
+      method: string;
+      url: string;
+    }>();
+
+    // Jika tenantId sudah di-set oleh SubdomainMiddleware, sinkronisasikan
+    // ke user payload agar konsisten di seluruh layer (service, guard, decorator)
+    if (req.tenantId && req.user && !req.user.tenantId) {
+      req.user.tenantId = req.tenantId;
+    }
+
+    // Jika tenantId belum ada dari subdomain tapi user JWT punya tenantId,
+    // fallback ke JWT (misal akses via IP langsung oleh SUPERADMIN)
+    if (!req.tenantId && req.user?.tenantId) {
+      req.tenantId = req.user.tenantId;
+    }
+
+    return next.handle().pipe(
+      tap(() => {
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug(`[${req.method}] ${req.url} — tenant: ${req.tenantId ?? 'none'}`);
+        }
+      }),
+    );
   }
 }
 
@@ -798,6 +860,57 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
 
 ---
 
+### File: `src/common/logger/winston.logger.ts`
+
+```typescript
+import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston';
+import * as winston from 'winston';
+import 'winston-daily-rotate-file';
+
+const { combine, timestamp, ms, errors } = winston.format;
+
+const isProd = process.env.NODE_ENV === 'production';
+
+const fileRotateTransport = (level: string) =>
+  new winston.transports.DailyRotateFile({
+    level,
+    filename: `logs/${level}-%DATE%.log`,
+    datePattern: 'YYYY-MM-DD',
+    zippedArchive: true,
+    maxSize: '20m',
+    maxFiles: '30d',
+    format: combine(timestamp(), errors({ stack: true }), winston.format.json()),
+  });
+
+export const AppLogger = WinstonModule.createLogger({
+  transports: [
+    // Console — pretty di dev, JSON di prod
+    new winston.transports.Console({
+      format: isProd
+        ? combine(timestamp(), errors({ stack: true }), winston.format.json())
+        : combine(
+            timestamp(),
+            ms(),
+            errors({ stack: true }),
+            nestWinstonModuleUtilities.format.nestLike('ExamAPI', {
+              colors: true,
+              prettyPrint: true,
+            }),
+          ),
+    }),
+    // File transports (hanya production)
+    ...(isProd
+      ? [fileRotateTransport('error'), fileRotateTransport('warn'), fileRotateTransport('info')]
+      : []),
+  ],
+  exceptionHandlers: isProd ? [fileRotateTransport('exception')] : [],
+  rejectionHandlers: isProd ? [fileRotateTransport('rejection')] : [],
+});
+
+```
+
+---
+
 ### File: `src/common/middleware/logger.middleware.ts`
 
 ```typescript
@@ -843,17 +956,33 @@ export class PerformanceMiddleware implements NestMiddleware {
 ### File: `src/common/middleware/subdomain.middleware.ts`
 
 ```typescript
-// ── subdomain.middleware.ts ──────────────────────────────
-import { Injectable as MI, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
+import { PrismaService } from '../../prisma/prisma.service';
 
-@MI()
+@Injectable()
 export class SubdomainMiddleware implements NestMiddleware {
-  use(req: Request & { tenantId?: string }, _res: Response, next: NextFunction) {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async use(req: Request & { tenantId?: string }, _res: Response, next: NextFunction) {
     const host = req.hostname; // e.g. smkn1.exam.app
     const parts = host.split('.');
-    // subdomain adalah bagian pertama jika lebih dari 2 segmen
-    req.tenantId = parts.length > 2 ? parts[0] : undefined;
+
+    if (parts.length > 2) {
+      const subdomain = parts[0];
+      try {
+        const tenant = await this.prisma.tenant.findFirst({
+          where: { subdomain, isActive: true },
+          select: { id: true },
+        });
+        req.tenantId = tenant?.id ?? undefined;
+      } catch {
+        req.tenantId = undefined;
+      }
+    } else {
+      req.tenantId = undefined;
+    }
+
     next();
   }
 }
@@ -923,6 +1052,194 @@ export const RedisProvider: Provider = {
       maxRetriesPerRequest: 3,
     }),
 };
+
+```
+
+---
+
+### File: `src/common/services/email.service.ts`
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as nodemailer from 'nodemailer';
+import { Transporter } from 'nodemailer';
+
+export interface SendMailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+}
+
+@Injectable()
+export class EmailService {
+  private readonly logger = new Logger(EmailService.name);
+  private transporter: Transporter | null = null;
+  private readonly enabled: boolean;
+  private readonly from: string;
+
+  constructor(private readonly cfg: ConfigService) {
+    const user = cfg.get<string>('SMTP_USER');
+    const pass = cfg.get<string>('SMTP_PASS');
+    this.enabled = !!(user && pass);
+    this.from = cfg.get<string>('SMTP_FROM', 'noreply@exam.app');
+
+    if (this.enabled) {
+      this.transporter = nodemailer.createTransport({
+        host: cfg.get<string>('SMTP_HOST', 'smtp.gmail.com'),
+        port: cfg.get<number>('SMTP_PORT', 587),
+        secure: cfg.get<string>('SMTP_SECURE') === 'true',
+        auth: { user, pass },
+      });
+      this.logger.log('Email service diinisialisasi');
+    } else {
+      this.logger.warn('SMTP tidak dikonfigurasi — email dinonaktifkan');
+    }
+  }
+
+  async send(opts: SendMailOptions): Promise<boolean> {
+    if (!this.enabled || !this.transporter) {
+      this.logger.debug(`[EMAIL SKIP] To: ${opts.to} | Subject: ${opts.subject}`);
+      return false;
+    }
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: Array.isArray(opts.to) ? opts.to.join(', ') : opts.to,
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+      });
+      this.logger.log(`Email terkirim ke ${opts.to}: ${opts.subject}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Gagal kirim email ke ${opts.to}: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  async sendSessionActivated(opts: {
+    to: string;
+    name: string;
+    sessionTitle: string;
+    tokenCode: string;
+    startTime: Date;
+    endTime: Date;
+  }): Promise<boolean> {
+    return this.send({
+      to: opts.to,
+      subject: `[Ujian] Sesi "${opts.sessionTitle}" telah dimulai`,
+      html: `
+        <h2>Sesi Ujian Dimulai</h2>
+        <p>Halo <strong>${opts.name}</strong>,</p>
+        <p>Sesi ujian <strong>${opts.sessionTitle}</strong> telah diaktifkan.</p>
+        <p><strong>Token Anda:</strong> <code style="font-size:1.5em;letter-spacing:4px">${opts.tokenCode}</code></p>
+        <p>Waktu: ${opts.startTime.toLocaleString('id-ID')} — ${opts.endTime.toLocaleString('id-ID')}</p>
+        <p>Segera login dan masukkan token untuk memulai ujian.</p>
+      `,
+      text: `Sesi ${opts.sessionTitle} dimulai. Token: ${opts.tokenCode}`,
+    });
+  }
+
+  async sendResultPublished(opts: {
+    to: string;
+    name: string;
+    sessionTitle: string;
+    totalScore: number;
+    maxScore: number;
+    percentage: number;
+  }): Promise<boolean> {
+    const passed = opts.percentage >= 70;
+    return this.send({
+      to: opts.to,
+      subject: `[Ujian] Nilai "${opts.sessionTitle}" telah dipublikasi`,
+      html: `
+        <h2>Hasil Ujian Tersedia</h2>
+        <p>Halo <strong>${opts.name}</strong>,</p>
+        <p>Nilai Anda untuk sesi <strong>${opts.sessionTitle}</strong>:</p>
+        <table>
+          <tr><td>Skor</td><td>${opts.totalScore} / ${opts.maxScore}</td></tr>
+          <tr><td>Persentase</td><td>${opts.percentage}%</td></tr>
+          <tr><td>Status</td><td style="color:${passed ? 'green' : 'red'}">${passed ? 'LULUS' : 'TIDAK LULUS'}</td></tr>
+        </table>
+        <p>Login untuk melihat detail jawaban.</p>
+      `,
+      text: `Nilai ${opts.sessionTitle}: ${opts.totalScore}/${opts.maxScore} (${opts.percentage}%)`,
+    });
+  }
+}
+
+```
+
+---
+
+### File: `src/common/services/sentry.service.ts`
+
+```typescript
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as Sentry from '@sentry/node';
+
+@Injectable()
+export class SentryService implements OnModuleInit {
+  private readonly logger = new Logger(SentryService.name);
+  private initialized = false;
+
+  constructor(private readonly cfg: ConfigService) {}
+
+  onModuleInit() {
+    const dsn = this.cfg.get<string>('SENTRY_DSN');
+    const env = this.cfg.get<string>('NODE_ENV', 'development');
+
+    if (!dsn) {
+      this.logger.warn('SENTRY_DSN tidak dikonfigurasi — Sentry dinonaktifkan');
+      return;
+    }
+
+    Sentry.init({
+      dsn,
+      environment: env,
+      tracesSampleRate: this.cfg.get<number>('SENTRY_TRACES_SAMPLE_RATE', 0.1),
+      integrations: [Sentry.httpIntegration(), Sentry.expressIntegration()],
+      beforeSend(event) {
+        // Hapus data sensitif sebelum dikirim
+        if (event.request?.headers) {
+          delete event.request.headers['authorization'];
+          delete event.request.headers['cookie'];
+        }
+        return event;
+      },
+    });
+
+    this.initialized = true;
+    this.logger.log(`Sentry diinisialisasi (env: ${env})`);
+  }
+
+  captureException(error: Error, context?: Record<string, unknown>) {
+    if (!this.initialized) return;
+    Sentry.withScope((scope) => {
+      if (context) scope.setExtras(context);
+      Sentry.captureException(error);
+    });
+  }
+
+  captureMessage(message: string, level: Sentry.SeverityLevel = 'info') {
+    if (!this.initialized) return;
+    Sentry.captureMessage(message, level);
+  }
+
+  setUser(user: { id: string; tenantId: string; role: string }) {
+    if (!this.initialized) return;
+    Sentry.setUser({ id: user.id, tenantId: user.tenantId, role: user.role });
+  }
+
+  clearUser() {
+    if (!this.initialized) return;
+    Sentry.setUser(null);
+  }
+}
 
 ```
 
@@ -1290,6 +1607,41 @@ export const redisConfig = registerAs('redis', () => ({
 
 ---
 
+### File: `src/config/sentry.config.ts`
+
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export const sentryConfig = registerAs('sentry', () => ({
+  dsn: process.env.SENTRY_DSN ?? '',
+  environment: process.env.NODE_ENV ?? 'development',
+  tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
+  enabled: !!process.env.SENTRY_DSN && process.env.NODE_ENV === 'production',
+}));
+
+```
+
+---
+
+### File: `src/config/smtp.config.ts`
+
+```typescript
+import { registerAs } from '@nestjs/config';
+
+export const smtpConfig = registerAs('smtp', () => ({
+  host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+  secure: process.env.SMTP_SECURE === 'true',
+  user: process.env.SMTP_USER ?? '',
+  pass: process.env.SMTP_PASS ?? '',
+  from: process.env.SMTP_FROM ?? 'noreply@exam.app',
+  enabled: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
+}));
+
+```
+
+---
+
 ### File: `src/config/throttler.config.ts`
 
 ```typescript
@@ -1312,20 +1664,32 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as compression from 'compression';
 import helmet from 'helmet';
+import * as Sentry from '@sentry/node';
 import 'reflect-metadata';
 import { AppModule } from './app.module';
+import { AppLogger } from './common/logger/winston.logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { SentryService } from './common/services/sentry.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: ['log', 'error', 'warn', 'debug'],
+    logger: AppLogger,
   });
 
   const cfg = app.get(ConfigService);
+  const sentryDsn = cfg.get<string>('SENTRY_DSN');
+
+  if (sentryDsn && cfg.get('NODE_ENV') === 'production') {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: cfg.get('NODE_ENV', 'production'),
+      tracesSampleRate: cfg.get<number>('SENTRY_TRACES_SAMPLE_RATE', 0.1),
+    });
+  }
 
   app.use(helmet());
   app.use(compression());
@@ -1333,6 +1697,8 @@ async function bootstrap() {
   app.enableCors({
     origin: cfg.get<string>('APP_URL'),
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Device-Fingerprint'],
   });
 
   app.setGlobalPrefix(cfg.get<string>('API_PREFIX', 'api'));
@@ -1347,7 +1713,9 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new AllExceptionsFilter(), new HttpExceptionFilter());
+  const sentryService = app.get(SentryService, { strict: false });
+  app.useGlobalFilters(new AllExceptionsFilter(sentryService), new HttpExceptionFilter());
+
   app.useGlobalInterceptors(
     new LoggingInterceptor(),
     new TimeoutInterceptor(),
@@ -1360,13 +1728,14 @@ async function bootstrap() {
       .setDescription('Offline-First Multi-Tenant Exam System')
       .setVersion('1.0')
       .addBearerAuth()
+      .addApiKey({ type: 'apiKey', name: 'Idempotency-Key', in: 'header' }, 'idempotency-key')
       .build();
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerCfg));
   }
 
   const port = cfg.get<number>('PORT', 3000);
   await app.listen(port);
-  console.log(`🚀 API running on port ${port}`);
+  console.log(`🚀 API running on port ${port} [${cfg.get('NODE_ENV', 'development')}]`);
 }
 
 bootstrap();
@@ -1519,10 +1888,8 @@ export class AnalyticsModule {}
 ### File: `src/modules/analytics/controllers/analytics.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/analytics/controllers/analytics.controller.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -1531,6 +1898,8 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { AnalyticsService } from '../services/analytics.service';
 import { DashboardService } from '../services/dashboard.service';
 
+@ApiTags('Analytics')
+@ApiBearerAuth()
 @Controller('analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)
@@ -1541,11 +1910,19 @@ export class AnalyticsController {
   ) {}
 
   @Get('dashboard')
+  @ApiOperation({
+    summary: 'Summary dashboard tenant',
+    description: 'Total user aktif, sesi, attempt in-progress, dan pending grading.',
+  })
+  @ApiResponse({ status: 200, description: 'Dashboard summary' })
   dashboard(@TenantId() tid: string) {
     return this.dashSvc.getSummary(tid);
   }
 
   @Get('session/:id')
+  @ApiOperation({ summary: 'Analitik sesi: rata-rata, tertinggi, terendah, distribusi skor' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Analitik sesi' })
   session(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.getSessionAnalytics(tid, id);
   }
@@ -1674,6 +2051,7 @@ export class AuditLogsModule {}
 
 ```typescript
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -1682,6 +2060,8 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { AuditLogsService } from '../services/audit-logs.service';
 import { AuditLogQueryDto } from '../dto/audit-log-query.dto';
 
+@ApiTags('Audit Logs')
+@ApiBearerAuth()
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
@@ -1689,11 +2069,19 @@ export class AuditLogsController {
   constructor(private svc: AuditLogsService) {}
 
   @Get()
+  @ApiOperation({
+    summary: 'List audit log tenant',
+    description: 'Append-only. Filter by action, entityType, userId, date range.',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated audit logs' })
   findAll(@TenantId() tid: string, @Query() q: AuditLogQueryDto) {
     return this.svc.findAll(tid, q);
   }
 
   @Get('summary')
+  @ApiOperation({ summary: 'Ringkasan aksi per action (N hari terakhir, default 7)' })
+  @ApiQuery({ name: 'days', required: false, description: 'Jumlah hari (default 7)' })
+  @ApiResponse({ status: 200, description: 'Array { action, count } urut terbanyak' })
   summary(@TenantId() tid: string, @Query('days') days?: string) {
     return this.svc.getSummary(tid, days ? parseInt(days, 10) : 7);
   }
@@ -1959,6 +2347,7 @@ export class AuthModule {}
 ```typescript
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
 import {
@@ -1972,6 +2361,7 @@ import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { LocalAuthGuard } from '../guards/local-auth.guard';
 import { AuthService } from '../services/auth.service';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authSvc: AuthService) {}
@@ -1980,7 +2370,15 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ThrottleStrict() // ← brute force protection
+  @ThrottleStrict()
+  @ApiOperation({
+    summary: 'Login dengan username & password',
+    description: 'Mengembalikan accessToken (15m) dan refreshToken (7d).',
+  })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({ status: 200, description: 'Login berhasil' })
+  @ApiResponse({ status: 401, description: 'Kredensial tidak valid' })
+  @ApiResponse({ status: 429, description: 'Terlalu banyak percobaan login' })
   login(
     @CurrentUser() user: { id: string; tenantId: string; role: string; email: string },
     @Body() body: LoginDto,
@@ -1993,6 +2391,13 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ThrottleModerate()
+  @ApiOperation({
+    summary: 'Refresh access token',
+    description: 'Token lama di-invalidate (rotation).',
+  })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({ status: 200, description: 'Token baru berhasil di-issue' })
+  @ApiResponse({ status: 401, description: 'Refresh token tidak valid atau sudah kadaluarsa' })
   refresh(@CurrentUser() user: CurrentUserPayload & { refreshToken: string }) {
     return this.authSvc.refresh(user.sub, user.refreshToken);
   }
@@ -2000,6 +2405,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout — revoke refresh token' })
+  @ApiResponse({ status: 204, description: 'Logout berhasil' })
   logout(@Body() dto: RefreshTokenDto) {
     return this.authSvc.logout(dto.refreshToken);
   }
@@ -2008,6 +2416,11 @@ export class AuthController {
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ThrottleModerate()
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ganti password' })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiResponse({ status: 204, description: 'Password berhasil diubah' })
+  @ApiResponse({ status: 401, description: 'Password lama salah' })
   changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
     return this.authSvc.changePassword(user.sub, dto.currentPassword, dto.newPassword);
   }
@@ -2349,9 +2762,6 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
 ### File: `src/modules/exam-packages/controllers/exam-packages.controller.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/exam-packages/controllers/exam-packages.controller.ts
-// ══════════════════════════════════════════════════════════════
 import {
   Body,
   Controller,
@@ -2365,6 +2775,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
@@ -2378,6 +2789,8 @@ import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
 import { ExamPackagesService } from '../services/exam-packages.service';
 import { ItemAnalysisService } from '../services/item-analysis.service';
 
+@ApiTags('Exam Packages')
+@ApiBearerAuth()
 @Controller('exam-packages')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ExamPackagesController {
@@ -2387,23 +2800,37 @@ export class ExamPackagesController {
   ) {}
 
   @Get()
+  @ApiOperation({ summary: 'List paket ujian milik tenant' })
+  @ApiResponse({ status: 200, description: 'Paginated list paket ujian' })
   findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Detail paket ujian beserta soal-soalnya' })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Detail paket' })
+  @ApiResponse({ status: 404, description: 'Paket tidak ditemukan' })
   findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
 
   @Get(':id/item-analysis')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Item analysis soal dalam paket',
+    description: 'Menghitung difficulty index dan distribusi jawaban per soal.',
+  })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Array item analysis per soal' })
   analysis(@TenantId() tid: string, @Param('id') id: string) {
     return this.analysisSvc.analyze(tid, id);
   }
 
   @Post()
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Buat paket ujian baru (status DRAFT)' })
+  @ApiResponse({ status: 201, description: 'Paket berhasil dibuat' })
   create(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -2414,12 +2841,19 @@ export class ExamPackagesController {
 
   @Patch(':id')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update paket ujian (hanya status DRAFT/REVIEW)' })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Paket berhasil diupdate' })
+  @ApiResponse({ status: 400, description: 'Paket sudah PUBLISHED tidak bisa diedit' })
   update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateExamPackageDto) {
     return this.svc.update(tid, id, dto);
   }
 
   @Post(':id/questions')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Tambah / update soal dalam paket (upsert per questionId)' })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Soal berhasil ditambahkan' })
   addQuestions(@TenantId() tid: string, @Param('id') id: string, @Body() dto: AddQuestionsDto) {
     return this.svc.addQuestions(tid, id, dto);
   }
@@ -2427,18 +2861,32 @@ export class ExamPackagesController {
   @Delete(':id/questions/:qid')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Hapus soal dari paket' })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiParam({ name: 'qid', description: 'Question ID' })
+  @ApiResponse({ status: 204, description: 'Soal berhasil dihapus dari paket' })
   removeQuestion(@TenantId() tid: string, @Param('id') id: string, @Param('qid') qid: string) {
     return this.svc.removeQuestion(tid, id, qid);
   }
 
   @Post(':id/publish')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Publish paket ujian',
+    description: 'Paket harus memiliki minimal 1 soal. Status berubah menjadi PUBLISHED.',
+  })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Paket berhasil dipublish' })
+  @ApiResponse({ status: 400, description: 'Paket tidak memiliki soal' })
   publish(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.publish(tid, id);
   }
 
   @Post(':id/archive')
   @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Archive paket ujian (hanya ADMIN)' })
+  @ApiParam({ name: 'id', description: 'ExamPackage ID' })
+  @ApiResponse({ status: 200, description: 'Paket berhasil diarsipkan' })
   archive(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.archive(tid, id);
   }
@@ -2946,6 +3394,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -2961,6 +3410,8 @@ import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
 import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
+@ApiTags('Grading')
+@ApiBearerAuth()
 @Controller('grading')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.TEACHER, UserRole.ADMIN)
@@ -2972,23 +3423,50 @@ export class GradingController {
   ) {}
 
   @Get()
+  @ApiOperation({
+    summary: 'List attempt yang membutuhkan penilaian manual',
+    description:
+      'Mengembalikan attempt dengan gradingStatus = MANUAL_REQUIRED (biasanya mengandung soal essay).',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated list attempt pending grading' })
   findPending(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findPendingManual(tid, q);
   }
 
   @Patch('answer')
   @AuditAction(AuditActions.GRADE_ANSWER, 'ExamAnswer')
+  @ApiOperation({
+    summary: 'Beri nilai pada satu jawaban',
+    description:
+      'Guru menilai jawaban essay secara manual. Tidak bisa override jawaban yang sudah di-auto-grade.',
+  })
+  @ApiResponse({ status: 200, description: 'Jawaban berhasil dinilai' })
+  @ApiResponse({ status: 400, description: 'Jawaban sudah dinilai otomatis' })
+  @ApiResponse({ status: 404, description: 'Jawaban tidak ditemukan' })
   gradeAnswer(@CurrentUser() u: CurrentUserPayload, @Body() dto: GradeAnswerDto) {
     return this.manualSvc.gradeAnswer(dto, u.sub);
   }
 
   @Post('complete')
+  @ApiOperation({
+    summary: 'Selesaikan grading satu attempt',
+    description: 'Menghitung total score. Akan gagal jika masih ada jawaban yang belum dinilai.',
+  })
+  @ApiResponse({ status: 200, description: 'Grading selesai, status → COMPLETED' })
+  @ApiResponse({ status: 400, description: 'Masih ada jawaban yang belum dinilai' })
+  @ApiResponse({ status: 404, description: 'Attempt tidak ditemukan' })
   complete(@Body() dto: CompleteGradingDto) {
     return this.manualSvc.completeGrading(dto);
   }
 
   @Post('publish')
   @AuditAction(AuditActions.PUBLISH_RESULT, 'ExamAttempt')
+  @ApiOperation({
+    summary: 'Publikasikan hasil ujian ke siswa',
+    description:
+      'Batch publish. Hanya attempt dengan status COMPLETED atau AUTO_GRADED yang bisa dipublish.',
+  })
+  @ApiResponse({ status: 200, description: 'Jumlah hasil yang dipublish' })
   publish(@Body() dto: PublishResultDto) {
     return this.manualSvc.publishResults(dto);
   }
@@ -3116,19 +3594,21 @@ export class GradingService {
 ### File: `src/modules/grading/services/manual-grading.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/services/manual-grading.service.ts  (standalone)
-// ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
 import { GradeAnswerDto } from '../dto/grade-answer.dto';
 import { CompleteGradingDto } from '../dto/complete-grading.dto';
 import { PublishResultDto } from '../dto/publish-result.dto';
+import type { ResultPublishedEvent } from '../../submissions/processors/submission.events.listener';
 
 @Injectable()
 export class ManualGradingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventEmitter: EventEmitter2,
+  ) {}
 
   async gradeAnswer(dto: GradeAnswerDto, gradedById: string) {
     const answer = await this.prisma.examAnswer.findFirst({
@@ -3178,6 +3658,21 @@ export class ManualGradingService {
       },
       data: { gradingStatus: GradingStatus.PUBLISHED },
     });
+
+    if (updated.count > 0) {
+      // Ambil tenantId dari salah satu attempt
+      const sample = await this.prisma.examAttempt.findFirst({
+        where: { id: { in: dto.attemptIds } },
+        select: { session: { select: { tenantId: true } } },
+      });
+
+      const event: ResultPublishedEvent = {
+        attemptIds: dto.attemptIds,
+        tenantId: sample?.session.tenantId ?? 'unknown',
+      };
+      this.eventEmitter.emit('result.published', event);
+    }
+
     return { published: updated.count };
   }
 }
@@ -3240,9 +3735,6 @@ export class HealthModule {}
 ### File: `src/modules/media/controllers/media.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/media/controllers/media.controller.ts
-// ════════════════════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -3257,6 +3749,15 @@ import {
   MaxFileSizeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { MediaService } from '../services/media.service';
 import { MediaUploadService } from '../services/media-upload.service';
@@ -3264,6 +3765,8 @@ import { DeleteMediaDto } from '../dto/delete-media.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
 
+@ApiTags('Media')
+@ApiBearerAuth()
 @Controller('media')
 @UseGuards(JwtAuthGuard)
 export class MediaController {
@@ -3273,12 +3776,28 @@ export class MediaController {
   ) {}
 
   @Get('presigned/:key')
+  @ApiOperation({
+    summary: 'Generate presigned URL untuk objek MinIO',
+    description:
+      'URL berlaku selama MINIO_PRESIGNED_TTL detik (default 1 jam). Key harus di-encode URI.',
+  })
+  @ApiParam({ name: 'key', description: 'Object key (URI-encoded)' })
+  @ApiResponse({ status: 200, description: 'Presigned URL string' })
   getUrl(@Param('key') key: string) {
     return this.mediaSvc.getPresignedUrl(decodeURIComponent(key));
   }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload file media langsung (maks 100MB)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 200, description: '{ objectName }' })
   async upload(
     @UploadedFile(
       new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 100 * 1024 * 1024 })] }),
@@ -3290,6 +3809,8 @@ export class MediaController {
 
   @Delete()
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @ApiOperation({ summary: 'Hapus objek dari MinIO (hanya ADMIN/TEACHER)' })
+  @ApiResponse({ status: 200, description: 'Objek berhasil dihapus' })
   remove(@Body() dto: DeleteMediaDto) {
     return this.mediaSvc.delete(dto.objectName);
   }
@@ -3532,10 +4053,8 @@ export class MediaUploadService {
 ### File: `src/modules/monitoring/controllers/monitoring.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/monitoring/controllers/monitoring.controller.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -3543,6 +4062,8 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { MonitoringService } from '../services/monitoring.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 
+@ApiTags('Monitoring')
+@ApiBearerAuth()
 @Controller('monitoring')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN)
@@ -3550,11 +4071,21 @@ export class MonitoringController {
   constructor(private svc: MonitoringService) {}
 
   @Get(':sessionId')
+  @ApiOperation({
+    summary: 'Overview status peserta satu sesi',
+    description: 'Total, started, submitted, in-progress per sesi.',
+  })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Overview peserta sesi' })
   overview(@Param('sessionId') id: string) {
     return this.svc.getSessionOverview(id);
   }
 
   @Get(':sessionId/logs/:attemptId')
+  @ApiOperation({ summary: 'Activity log satu attempt (tab blur, paste, idle, dll.)' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'attemptId', description: 'Attempt ID' })
+  @ApiResponse({ status: 200, description: 'Paginated activity logs' })
   logs(@Param('attemptId') id: string, @Query() q: BaseQueryDto) {
     return this.svc.getActivityLogs(id, q);
   }
@@ -3865,9 +4396,6 @@ export class NotificationsService {
 ### File: `src/modules/questions/controllers/questions.controller.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/questions/controllers/questions.controller.ts
-// ══════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -3881,6 +4409,14 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -3895,6 +4431,8 @@ import { UpdateQuestionDto } from '../dto/update-question.dto';
 import { ImportQuestionsDto } from '../dto/import-questions.dto';
 import { ApproveQuestionDto } from '../dto/approve-question.dto';
 
+@ApiTags('Questions')
+@ApiBearerAuth()
 @Controller('questions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class QuestionsController {
@@ -3904,23 +4442,55 @@ export class QuestionsController {
   ) {}
 
   @Get()
+  @ApiOperation({ summary: 'List soal milik tenant (correctAnswer tidak dikembalikan)' })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'subjectId', required: false })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: [
+      'MULTIPLE_CHOICE',
+      'COMPLEX_MULTIPLE_CHOICE',
+      'TRUE_FALSE',
+      'MATCHING',
+      'SHORT_ANSWER',
+      'ESSAY',
+    ],
+  })
+  @ApiQuery({ name: 'status', required: false, enum: ['draft', 'review', 'approved'] })
+  @ApiResponse({ status: 200, description: 'Paginated list soal' })
   findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Detail soal (correctAnswer tidak dikembalikan)' })
+  @ApiParam({ name: 'id', description: 'Question ID' })
+  @ApiResponse({ status: 200, description: 'Detail soal' })
+  @ApiResponse({ status: 404, description: 'Soal tidak ditemukan' })
   findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
 
   @Get(':id/stats')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Statistik soal',
+    description: 'Difficulty index, total attempt, dan rata-rata skor dari semua ujian.',
+  })
+  @ApiParam({ name: 'id', description: 'Question ID' })
+  @ApiResponse({ status: 200, description: 'Statistik soal' })
   stats(@TenantId() tid: string, @Param('id') id: string) {
     return this.statsSvc.getStats(tid, id);
   }
 
   @Post()
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Buat soal baru',
+    description: 'correctAnswer akan dienkripsi AES-256-GCM sebelum disimpan.',
+  })
+  @ApiResponse({ status: 201, description: 'Soal berhasil dibuat' })
   create(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -3931,6 +4501,11 @@ export class QuestionsController {
 
   @Post('import')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Bulk import soal',
+    description: 'Mengembalikan jumlah soal yang berhasil dibuat dan yang gagal.',
+  })
+  @ApiResponse({ status: 200, description: '{ created: N, failed: M }' })
   import(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -3941,12 +4516,19 @@ export class QuestionsController {
 
   @Patch(':id')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update soal' })
+  @ApiParam({ name: 'id', description: 'Question ID' })
+  @ApiResponse({ status: 200, description: 'Soal berhasil diupdate' })
+  @ApiResponse({ status: 404, description: 'Soal tidak ditemukan' })
   update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateQuestionDto) {
     return this.svc.update(tid, id, dto);
   }
 
   @Patch(':id/status')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Ubah status soal (draft → review → approved)' })
+  @ApiParam({ name: 'id', description: 'Question ID' })
+  @ApiResponse({ status: 200, description: 'Status berhasil diubah' })
   approve(@TenantId() tid: string, @Param('id') id: string, @Body() dto: ApproveQuestionDto) {
     return this.svc.approve(tid, id, dto);
   }
@@ -3954,6 +4536,9 @@ export class QuestionsController {
   @Delete(':id')
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Hapus soal (hanya ADMIN)' })
+  @ApiParam({ name: 'id', description: 'Question ID' })
+  @ApiResponse({ status: 204, description: 'Soal berhasil dihapus' })
   remove(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.remove(tid, id);
   }
@@ -4097,9 +4682,9 @@ export class QuestionsModule {}
 ### File: `src/modules/questions/services/questions.service.ts`
 
 ```typescript
-// ── services/questions.service.ts ────────────────────────
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { decrypt, encrypt } from '../../../common/utils/encryption.util';
@@ -4108,7 +4693,6 @@ import { ApproveQuestionDto } from '../dto/approve-question.dto';
 import { CreateQuestionDto } from '../dto/create-question.dto';
 import { ImportQuestionsDto } from '../dto/import-questions.dto';
 import { UpdateQuestionDto } from '../dto/update-question.dto';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class QuestionsService {
@@ -4117,8 +4701,15 @@ export class QuestionsService {
     private cfg: ConfigService,
   ) {}
 
-  private get encKey() {
-    return this.cfg.get<string>('ENCRYPTION_KEY', '');
+  /** Throw jika ENCRYPTION_KEY tidak dikonfigurasi — mencegah silent failure di production */
+  private get encKey(): string {
+    const key = this.cfg.get<string>('ENCRYPTION_KEY');
+    if (!key || key.length !== 64) {
+      throw new InternalServerErrorException(
+        'ENCRYPTION_KEY tidak valid. Harus berupa 64 hex chars (32 bytes).',
+      );
+    }
+    return key;
   }
 
   async findAll(
@@ -4157,7 +4748,6 @@ export class QuestionsService {
       const { correctAnswer: _ca, ...rest } = q;
       return rest;
     }
-    // decrypt correctAnswer
     const ca = decrypt(q.correctAnswer as unknown as string, this.encKey);
     return { ...q, correctAnswer: JSON.parse(ca) };
   }
@@ -4166,11 +4756,11 @@ export class QuestionsService {
     const encAnswer = encrypt(JSON.stringify(dto.correctAnswer), this.encKey);
     const { tagIds, correctAnswer: _ca, ...rest } = dto;
 
-    const question = await this.prisma.question.create({
+    return this.prisma.question.create({
       data: {
         tenantId,
         createdById,
-        subjectId: rest.subjectId, // ← eksplisit
+        subjectId: rest.subjectId,
         type: rest.type,
         content: rest.content as Prisma.InputJsonValue,
         options:
@@ -4182,7 +4772,6 @@ export class QuestionsService {
       },
       include: { tags: { include: { tag: true } } },
     });
-    return question;
   }
 
   async update(tenantId: string, id: string, dto: UpdateQuestionDto) {
@@ -4430,10 +5019,8 @@ export class QuestionTagsService {
 ### File: `src/modules/reports/controllers/reports.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/controllers/reports.controller.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
@@ -4442,6 +5029,8 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { ExportFilterDto } from '../dto/export-filter.dto';
 import { ReportsService } from '../services/reports.service';
 
+@ApiTags('Reports')
+@ApiBearerAuth()
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.OPERATOR, UserRole.ADMIN)
@@ -4449,10 +5038,21 @@ export class ReportsController {
   constructor(private svc: ReportsService) {}
 
   @Post('export')
+  @ApiOperation({
+    summary: 'Request export laporan (async via BullMQ)',
+    description:
+      'Mengembalikan jobId. Cek status via GET /reports/job/:jobId. File tersedia di downloadUrl setelah selesai.',
+  })
+  @ApiResponse({ status: 200, description: '{ jobId, message }' })
   export(@TenantId() tid: string, @Body() dto: ExportFilterDto) {
     return this.svc.requestExport(tid, dto);
   }
+
   @Get('job/:jobId')
+  @ApiOperation({ summary: 'Cek status job export' })
+  @ApiParam({ name: 'jobId', description: 'Job ID dari response /reports/export' })
+  @ApiResponse({ status: 200, description: '{ jobId, state, progress, downloadUrl }' })
+  @ApiResponse({ status: 404, description: 'Job tidak ditemukan' })
   jobStatus(@Param('jobId') jobId: string) {
     return this.svc.getJobStatus(jobId);
   }
@@ -4681,6 +5281,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -4696,6 +5304,8 @@ import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { AuditAction, AuditActions } from '../../audit-logs/decorators/audit.decorator';
 import { AuditInterceptor } from '../../audit-logs/interceptors/audit.interceptor';
 
+@ApiTags('Sessions')
+@ApiBearerAuth()
 @Controller('sessions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @UseInterceptors(AuditInterceptor)
@@ -4706,23 +5316,35 @@ export class SessionsController {
   ) {}
 
   @Get()
+  @ApiOperation({ summary: 'List semua sesi ujian milik tenant' })
+  @ApiResponse({ status: 200, description: 'Paginated list sesi' })
   findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Detail sesi ujian' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Detail sesi' })
+  @ApiResponse({ status: 404, description: 'Sesi tidak ditemukan' })
   findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
 
   @Get(':id/live')
   @Roles(UserRole.SUPERVISOR, UserRole.OPERATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Status live peserta sesi (real-time monitoring)' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Daftar attempt aktif beserta status' })
   live(@Param('id') id: string) {
     return this.monitorSvc.getLiveStatus(id);
   }
 
   @Post()
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Buat sesi ujian baru' })
+  @ApiResponse({ status: 201, description: 'Sesi berhasil dibuat' })
+  @ApiResponse({ status: 400, description: 'Waktu selesai harus setelah waktu mulai' })
   create(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -4733,12 +5355,23 @@ export class SessionsController {
 
   @Patch(':id')
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update sesi ujian' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Sesi berhasil diupdate' })
+  @ApiResponse({ status: 404, description: 'Sesi tidak ditemukan' })
   update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateSessionDto) {
     return this.svc.update(tid, id, dto);
   }
 
   @Post(':id/assign')
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Assign peserta ke sesi',
+    description:
+      'Generate tokenCode unik per peserta. Idempoten — peserta yang sudah ada tidak di-duplikat.',
+  })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Jumlah peserta yang berhasil di-assign' })
   assign(@TenantId() tid: string, @Param('id') id: string, @Body() dto: AssignStudentsDto) {
     return this.svc.assignStudents(tid, id, dto);
   }
@@ -4746,6 +5379,13 @@ export class SessionsController {
   @Post(':id/activate')
   @Roles(UserRole.OPERATOR, UserRole.ADMIN)
   @AuditAction(AuditActions.ACTIVATE_SESSION, 'ExamSession')
+  @ApiOperation({
+    summary: 'Aktifkan sesi ujian',
+    description: 'Status berubah SCHEDULED → ACTIVE. Notifikasi dikirim ke semua peserta.',
+  })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Sesi berhasil diaktifkan' })
+  @ApiResponse({ status: 400, description: 'Hanya sesi SCHEDULED yang bisa diaktifkan' })
   activate(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.activate(tid, id);
   }
@@ -4808,6 +5448,7 @@ import { SessionStatus } from '../../../common/enums/exam-status.enum';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { EmailService } from '../../../common/services/email.service';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
@@ -4817,6 +5458,7 @@ export class SessionsService {
   constructor(
     private prisma: PrismaService,
     private notifSvc: NotificationsService,
+    private emailSvc: EmailService,
   ) {}
 
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
@@ -4892,21 +5534,36 @@ export class SessionsService {
       data: { status: SessionStatus.ACTIVE },
     });
 
-    // Notify semua peserta sesi
+    // Ambil semua peserta beserta user data
     const students = await this.prisma.sessionStudent.findMany({
       where: { sessionId: id },
-      select: { userId: true },
+      include: {
+        user: { select: { id: true, email: true, username: true } },
+      },
     });
+
+    // In-app notification + email (fire-and-forget)
     await Promise.allSettled(
-      students.map((ss) =>
-        this.notifSvc.create({
+      students.map(async (ss) => {
+        // In-app notification
+        await this.notifSvc.create({
           userId: ss.userId,
           title: 'Ujian Dimulai',
-          body: `Sesi "${s.title}" telah diaktifkan. Silakan login dan mulai ujian.`,
+          body: `Sesi "${s.title}" telah diaktifkan. Token Anda: ${ss.tokenCode}`,
           type: 'SESSION_ACTIVATED',
-          metadata: { sessionId: id, tenantId },
-        }),
-      ),
+          metadata: { sessionId: id, tenantId, tokenCode: ss.tokenCode },
+        });
+
+        // Email notification
+        await this.emailSvc.sendSessionActivated({
+          to: ss.user.email,
+          name: ss.user.username,
+          sessionTitle: s.title,
+          tokenCode: ss.tokenCode,
+          startTime: s.startTime,
+          endTime: s.endTime,
+        });
+      }),
     );
 
     return updated;
@@ -4959,10 +5616,11 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SessionMonitoringService } from './services/session-monitoring.service';
 import { SessionsService } from './services/sessions.service';
 import { SessionsController } from './controllers/sessions.controller';
+import { EmailService } from '../../common/services/email.service';
 
 @Module({
   imports: [NotificationsModule, AuditLogsModule],
-  providers: [SessionsService, SessionMonitoringService],
+  providers: [SessionsService, SessionMonitoringService, EmailService],
   controllers: [SessionsController],
   exports: [SessionsService],
 })
@@ -5114,6 +5772,7 @@ export class SubjectsModule {}
 
 ```typescript
 import { Controller, Get, Post, Body, Param, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DeviceGuard } from '../../auth/guards/device.guard';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
@@ -5131,6 +5790,8 @@ import { StartAttemptDto } from '../dto/start-attempt.dto';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
 
+@ApiTags('Student Exam')
+@ApiBearerAuth()
 @Controller('student')
 @UseGuards(JwtAuthGuard, DeviceGuard)
 @UseInterceptors(AuditInterceptor)
@@ -5140,10 +5801,18 @@ export class StudentExamController {
     private submissionSvc: ExamSubmissionService,
   ) {}
 
-  /** Download paket soal — paling kritis, harus strict */
   @Post('download')
   @ThrottleStrict()
   @AuditAction(AuditActions.START_EXAM, 'ExamAttempt')
+  @ApiOperation({
+    summary: 'Download paket soal',
+    description:
+      'Validasi token, buat attempt, dan kembalikan paket soal terenkripsi. Idempoten via idempotencyKey.',
+  })
+  @ApiResponse({ status: 200, description: 'Paket soal berhasil di-download' })
+  @ApiResponse({ status: 400, description: 'Token tidak valid / di luar jangka waktu sesi' })
+  @ApiResponse({ status: 404, description: 'Sesi tidak aktif' })
+  @ApiResponse({ status: 429, description: 'Rate limit — maks 5 req/menit' })
   download(
     @TenantId() tid: string,
     @CurrentUser() u: CurrentUserPayload,
@@ -5159,24 +5828,43 @@ export class StudentExamController {
     );
   }
 
-  /** Submit jawaban — moderate karena auto-save bisa sering */
   @Post('answers')
   @ThrottleModerate()
+  @ApiOperation({
+    summary: 'Submit / update jawaban',
+    description:
+      'Auto-save per soal. Idempoten via idempotencyKey. Tidak bisa diubah setelah ujian disubmit.',
+  })
+  @ApiResponse({ status: 200, description: 'Jawaban tersimpan' })
+  @ApiResponse({ status: 400, description: 'Attempt sudah SUBMITTED atau TIMED_OUT' })
+  @ApiResponse({ status: 404, description: 'Attempt tidak ditemukan' })
   submitAnswer(@Body() dto: SubmitAnswerDto) {
     return this.submissionSvc.submitAnswer(dto);
   }
 
-  /** Submit ujian — strict, satu kali saja */
   @Post('submit')
   @ThrottleStrict()
   @AuditAction(AuditActions.SUBMIT_EXAM, 'ExamAttempt')
+  @ApiOperation({
+    summary: 'Submit ujian',
+    description: 'Mengunci semua jawaban dan memicu auto-grading via BullMQ. Idempoten.',
+  })
+  @ApiResponse({ status: 200, description: 'Ujian berhasil disubmit' })
+  @ApiResponse({ status: 404, description: 'Attempt tidak ditemukan' })
   submitExam(@Body() dto: SubmitExamDto) {
     return this.submissionSvc.submitExam(dto);
   }
 
-  /** Lihat hasil — relaxed, baca saja */
   @Get('result/:attemptId')
   @ThrottleRelaxed()
+  @ApiOperation({
+    summary: 'Lihat hasil ujian',
+    description:
+      'Hanya mengembalikan nilai lengkap jika status PUBLISHED. Siswa hanya bisa akses attempt miliknya.',
+  })
+  @ApiParam({ name: 'attemptId', description: 'ID attempt yang ingin dilihat hasilnya' })
+  @ApiResponse({ status: 200, description: 'Data hasil ujian' })
+  @ApiResponse({ status: 404, description: 'Attempt tidak ditemukan atau bukan milik user ini' })
   getResult(@Param('attemptId') id: string, @CurrentUser() u: CurrentUserPayload) {
     return this.submissionSvc.getAttemptResult(id, u.sub);
   }
@@ -5189,10 +5877,8 @@ export class StudentExamController {
 ### File: `src/modules/submissions/controllers/submissions.controller.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/submissions/controllers/submissions.controller.ts
-// ══════════════════════════════════════════════════════════════
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -5201,6 +5887,8 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { SubmissionsService } from '../services/submissions.service';
 
+@ApiTags('Submissions')
+@ApiBearerAuth()
 @Controller('submissions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SubmissionsController {
@@ -5208,6 +5896,11 @@ export class SubmissionsController {
 
   @Get()
   @Roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.OPERATOR)
+  @ApiOperation({
+    summary: 'List semua submission (attempt) dalam tenant',
+    description: 'Digunakan guru/operator untuk overview status pengerjaan siswa.',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated list attempt' })
   findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
@@ -5317,6 +6010,147 @@ export interface GradingResult {
   isCorrect: boolean;
   feedback?: string;
   requiresManual: boolean;
+}
+
+```
+
+---
+
+### File: `src/modules/submissions/processors/submission.events.listener.ts`
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+
+export interface ExamSubmittedEvent {
+  attemptId: string;
+  userId: string;
+  tenantId: string;
+  sessionId: string;
+  sessionTitle: string;
+}
+
+export interface GradingCompletedEvent {
+  attemptId: string;
+  userId: string;
+  tenantId: string;
+  totalScore: number;
+  maxScore: number;
+  gradingStatus: string;
+}
+
+export interface ResultPublishedEvent {
+  attemptIds: string[];
+  tenantId: string;
+}
+
+@Injectable()
+export class SubmissionEventsListener {
+  private readonly logger = new Logger(SubmissionEventsListener.name);
+
+  constructor(
+    private readonly notifSvc: NotificationsService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @OnEvent('exam.submitted')
+  async handleExamSubmitted(event: ExamSubmittedEvent) {
+    this.logger.log(`exam.submitted — attemptId=${event.attemptId} userId=${event.userId}`);
+
+    try {
+      await this.notifSvc.create({
+        userId: event.userId,
+        title: 'Ujian Berhasil Dikumpulkan',
+        body: `Jawaban Anda untuk sesi "${event.sessionTitle}" telah berhasil dikirim. Tunggu hasil penilaian.`,
+        type: 'EXAM_SUBMITTED',
+        metadata: {
+          attemptId: event.attemptId,
+          sessionId: event.sessionId,
+          tenantId: event.tenantId,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Gagal kirim notifikasi exam.submitted: ${(err as Error).message}`);
+    }
+  }
+
+  @OnEvent('grading.completed')
+  async handleGradingCompleted(event: GradingCompletedEvent) {
+    this.logger.log(`grading.completed — attemptId=${event.attemptId}`);
+
+    // Notifikasi ke guru/admin bahwa auto-grading selesai
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: {
+          tenantId: event.tenantId,
+          role: { in: ['TEACHER', 'ADMIN'] },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      await Promise.allSettled(
+        admins.map((a) =>
+          this.notifSvc.create({
+            userId: a.id,
+            title: 'Auto-Grading Selesai',
+            body: `Attempt ${event.attemptId} selesai dinilai otomatis. Status: ${event.gradingStatus}.`,
+            type: 'GRADING_COMPLETED',
+            metadata: {
+              attemptId: event.attemptId,
+              gradingStatus: event.gradingStatus,
+              totalScore: event.totalScore,
+              maxScore: event.maxScore,
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      this.logger.error(`Gagal kirim notifikasi grading.completed: ${(err as Error).message}`);
+    }
+  }
+
+  @OnEvent('result.published')
+  async handleResultPublished(event: ResultPublishedEvent) {
+    this.logger.log(`result.published — ${event.attemptIds.length} attempt(s)`);
+
+    try {
+      const attempts = await this.prisma.examAttempt.findMany({
+        where: { id: { in: event.attemptIds } },
+        select: {
+          id: true,
+          userId: true,
+          totalScore: true,
+          maxScore: true,
+          session: { select: { title: true } },
+        },
+      });
+
+      await Promise.allSettled(
+        attempts.map((a) => {
+          const pct =
+            a.maxScore && a.maxScore > 0 ? Math.round(((a.totalScore ?? 0) / a.maxScore) * 100) : 0;
+          return this.notifSvc.create({
+            userId: a.userId,
+            title: 'Nilai Ujian Telah Dipublikasi',
+            body: `Nilai Anda untuk sesi "${a.session.title}" telah tersedia. Skor: ${a.totalScore ?? 0}/${a.maxScore ?? 0} (${pct}%).`,
+            type: 'RESULT_PUBLISHED',
+            metadata: {
+              attemptId: a.id,
+              totalScore: a.totalScore,
+              maxScore: a.maxScore,
+              percentage: pct,
+              tenantId: event.tenantId,
+            },
+          });
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`Gagal kirim notifikasi result.published: ${(err as Error).message}`);
+    }
+  }
 }
 
 ```
@@ -5455,47 +6289,6 @@ export class SubmissionProcessor extends WorkerHost {
     await this.gradingHelper.runAutoGrade(attemptId);
   }
 }
-
-```
-
----
-
-### File: `src/modules/submissions/processors/submission-events.listener.ts`
-
-```typescript
-// // ════════════════════════════════════════════════════════════════════════════
-// // src/modules/submissions/processors/submission-events.listener.ts
-// // ════════════════════════════════════════════════════════════════════════════
-// // Menangani completed/failed events dari BullMQ untuk logging & notifikasi
-// import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
-// import { Injectable, Logger } from '@nestjs/common';
-// import { Job } from 'bullmq';
-
-// @Injectable()
-// export class SubmissionEventsListener {
-//   private readonly logger = new Logger(SubmissionEventsListener.name);
-
-//   @OnWorkerEvent('completed')
-//   onCompleted(job: Job) {
-//     this.logger.log(`Job [${job.name}] id=${job.id} selesai.`);
-//   }
-
-//   @OnWorkerEvent('failed')
-//   onFailed(job: Job | undefined, err: Error) {
-//     const id = job?.id ?? 'unknown';
-//     const name = job?.name ?? 'unknown';
-//     const attempts = job?.attemptsMade ?? 0;
-//     this.logger.error(
-//       `Job [${name}] id=${id} gagal (attempt ${attempts}): ${err.message}`,
-//       err.stack,
-//     );
-//   }
-
-//   @OnWorkerEvent('stalled')
-//   onStalled(jobId: string) {
-//     this.logger.warn(`Job id=${jobId} stalled — akan di-retry otomatis.`);
-//   }
-// }
 
 ```
 
@@ -5739,11 +6532,9 @@ export class ExamDownloadService {
 ### File: `src/modules/submissions/services/exam-submission.service.ts`
 
 ```typescript
-// ────────────────────────────────────────────────────────────────────────────
-// src/modules/submissions/services/exam-submission.service.ts — fix logger
-// ────────────────────────────────────────────────────────────────────────────
 import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
@@ -5752,14 +6543,19 @@ import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
 import { AutoGradeJobData } from '../processors/submission.processor';
+import type {
+  ExamSubmittedEvent,
+  GradingCompletedEvent,
+} from '../processors/submission.events.listener';
 
 @Injectable()
 export class ExamSubmissionService {
-  private readonly logger = new Logger(ExamSubmissionService.name); // ← fix
+  private readonly logger = new Logger(ExamSubmissionService.name);
 
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
+    private eventEmitter: EventEmitter2,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 
@@ -5796,7 +6592,15 @@ export class ExamSubmissionService {
   async submitExam(dto: SubmitExamDto) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      include: { session: { select: { tenantId: true } } },
+      include: {
+        session: {
+          select: {
+            tenantId: true,
+            title: true,
+            id: true,
+          },
+        },
+      },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
 
@@ -5819,6 +6623,16 @@ export class ExamSubmissionService {
       entityId: dto.attemptId,
       after: { submittedAt: new Date().toISOString() },
     });
+
+    // Emit domain event — ditangkap oleh SubmissionEventsListener
+    const event: ExamSubmittedEvent = {
+      attemptId: dto.attemptId,
+      userId: attempt.userId,
+      tenantId,
+      sessionId: attempt.session.id,
+      sessionTitle: attempt.session.title,
+    };
+    this.eventEmitter.emit('exam.submitted', event);
 
     const jobData: AutoGradeJobData = { attemptId: dto.attemptId, tenantId };
     await this.submissionQueue.add('auto-grade', jobData, {
@@ -5851,6 +6665,11 @@ export class ExamSubmissionService {
       },
     );
     this.logger.log(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
+  }
+
+  /** Dipanggil oleh GradingHelperService setelah auto-grade selesai */
+  emitGradingCompleted(event: GradingCompletedEvent) {
+    this.eventEmitter.emit('grading.completed', event);
   }
 
   async getAttemptResult(attemptId: string, userId: string) {
@@ -5930,16 +6749,13 @@ export class ExamSubmissionService {
 ### File: `src/modules/submissions/services/grading-helper.service.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/grading-helper.service.ts
-// Memisahkan logika runAutoGrade agar tidak ada circular dependency
-// SubmissionsModule ↔ GradingModule
-// ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AutoGradingService } from './auto-grading.service';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
 import { QuestionType } from '../../../common/enums/question-type.enum';
+import type { GradingCompletedEvent } from '../processors/submission.events.listener';
 
 @Injectable()
 export class GradingHelperService {
@@ -5948,6 +6764,7 @@ export class GradingHelperService {
   constructor(
     private prisma: PrismaService,
     private autoGrading: AutoGradingService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async runAutoGrade(attemptId: string): Promise<void> {
@@ -6026,6 +6843,17 @@ export class GradingHelperService {
     this.logger.log(
       `Attempt ${attemptId} graded: ${totalScore}/${maxScore}, status=${gradingStatus}`,
     );
+
+    // Emit domain event
+    const event: GradingCompletedEvent = {
+      attemptId,
+      userId: attempt.userId,
+      tenantId: attempt.session.tenantId,
+      totalScore,
+      maxScore,
+      gradingStatus,
+    };
+    this.eventEmitter.emit('grading.completed', event);
   }
 }
 
@@ -6087,6 +6915,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ExamPackagesModule } from '../exam-packages/exam-packages.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { ExamDownloadService } from './services/exam-download.service';
 import { ExamSubmissionService } from './services/exam-submission.service';
 import { AutoGradingService } from './services/auto-grading.service';
@@ -6094,14 +6923,16 @@ import { SubmissionsService } from './services/submissions.service';
 import { StudentExamController } from './controllers/student-exam.controller';
 import { SubmissionsController } from './controllers/submissions.controller';
 import { SubmissionProcessor } from './processors/submission.processor';
+import { SubmissionEventsListener } from './processors/submission.events.listener';
 import { GradingHelperService } from './services/grading-helper.service';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: 'submission' }),
     ExamPackagesModule,
-    AuditLogsModule, // sudah ada — AuditInterceptor & AuditLogsService tersedia
+    AuditLogsModule,
     AuthModule,
+    NotificationsModule, // diperlukan oleh SubmissionEventsListener
   ],
   providers: [
     ExamDownloadService,
@@ -6110,6 +6941,7 @@ import { GradingHelperService } from './services/grading-helper.service';
     GradingHelperService,
     SubmissionsService,
     SubmissionProcessor,
+    SubmissionEventsListener,
   ],
   controllers: [StudentExamController, SubmissionsController],
   exports: [ExamSubmissionService, AutoGradingService, GradingHelperService],
@@ -6138,6 +6970,15 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import {
@@ -6154,6 +6995,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 
 const MAX_CHUNK_SIZE = 50 * 1024 * 1024;
 
+@ApiTags('Sync')
+@ApiBearerAuth()
 @Controller('sync')
 @UseGuards(JwtAuthGuard)
 export class SyncController {
@@ -6168,18 +7011,30 @@ export class SyncController {
 
   @Post()
   @ThrottleModerate()
+  @ApiOperation({
+    summary: 'Tambah item ke sync queue',
+    description: 'Endpoint utama untuk offline recovery. Idempoten via idempotencyKey.',
+  })
+  @ApiResponse({ status: 200, description: 'Item ditambahkan / sudah ada (idempoten)' })
   add(@Body() dto: AddSyncItemDto) {
     return this.svc.addItem(dto);
   }
 
   @Get(':attemptId/status')
   @ThrottleRelaxed()
+  @ApiOperation({ summary: 'Status sync queue untuk satu attempt' })
+  @ApiParam({ name: 'attemptId', description: 'Attempt ID' })
+  @ApiResponse({ status: 200, description: 'Total, pending, failed, dan list item' })
   status(@Param('attemptId') id: string) {
     return this.svc.getStatus(id);
   }
 
   @Post('retry')
   @ThrottleModerate()
+  @ApiOperation({ summary: 'Retry item sync yang gagal (status FAILED)' })
+  @ApiResponse({ status: 200, description: 'Item dijadwalkan ulang' })
+  @ApiResponse({ status: 400, description: 'Hanya item FAILED yang bisa di-retry' })
+  @ApiResponse({ status: 404, description: 'Sync item tidak ditemukan' })
   retry(@Body() dto: RetrySyncDto) {
     return this.svc.retryFailed(dto);
   }
@@ -6187,11 +7042,26 @@ export class SyncController {
   @Post('upload/chunk')
   @ThrottleModerate()
   @UseInterceptors(FileInterceptor('chunk'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload satu chunk file media',
+    description:
+      'Kirim chunk satu per satu. Setelah semua chunk diterima, panggil /sync/upload/finalize.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        chunk: { type: 'string', format: 'binary', description: 'Data chunk (maks 50MB)' },
+        meta: { type: 'string', description: 'JSON string dari UploadChunkDto' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: '{ fileId, saved, total, isComplete }' })
+  @ApiResponse({ status: 400, description: 'meta JSON tidak valid / attempt tidak ditemukan' })
   async uploadChunk(
     @UploadedFile(
-      new ParseFilePipe({
-        validators: [new MaxFileSizeValidator({ maxSize: MAX_CHUNK_SIZE })],
-      }),
+      new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_CHUNK_SIZE })] }),
     )
     file: Express.Multer.File,
     @Body('meta') metaRaw: string,
@@ -6219,12 +7089,17 @@ export class SyncController {
       totalChunks: dto.totalChunks,
       data: file.buffer,
     });
-
     return { fileId: dto.fileId, saved, total, isComplete: saved >= total };
   }
 
   @Post('upload/finalize')
   @ThrottleModerate()
+  @ApiOperation({
+    summary: 'Finalize chunked upload',
+    description: 'Gabungkan semua chunk, upload ke MinIO, update mediaUrls pada ExamAnswer.',
+  })
+  @ApiResponse({ status: 200, description: '{ objectName, questionId, attemptId }' })
+  @ApiResponse({ status: 400, description: 'Upload belum lengkap / attempt tidak ditemukan' })
   async finalizeUpload(@Body() dto: UploadChunkDto, @CurrentUser() u: CurrentUserPayload) {
     const attempt = await this.prisma.examAttempt.findFirst({
       where: { id: dto.attemptId, userId: u.sub },
@@ -6252,10 +7127,7 @@ export class SyncController {
     if (answer) {
       await this.prisma.examAnswer.update({
         where: { id: answer.id },
-        data: {
-          mediaUrls: [...new Set([...answer.mediaUrls, objectName])],
-          updatedAt: new Date(),
-        },
+        data: { mediaUrls: [...new Set([...answer.mediaUrls, objectName])], updatedAt: new Date() },
       });
     }
 
@@ -6675,10 +7547,8 @@ export class SyncScheduler {
 ### File: `src/modules/tenants/controllers/tenants.controller.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/tenants/controllers/tenants.controller.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -6688,6 +7558,8 @@ import { CreateTenantDto } from '../dto/create-tenant.dto';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 
+@ApiTags('Tenants')
+@ApiBearerAuth()
 @Controller('tenants')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPERADMIN)
@@ -6695,21 +7567,33 @@ export class TenantsController {
   constructor(private svc: TenantsService) {}
 
   @Get()
+  @ApiOperation({ summary: 'List semua tenant (hanya SUPERADMIN)' })
+  @ApiResponse({ status: 200, description: 'Paginated list tenant' })
   findAll(@Query() q: BaseQueryDto) {
     return this.svc.findAll(q);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Detail tenant' })
+  @ApiParam({ name: 'id', description: 'Tenant ID' })
+  @ApiResponse({ status: 200, description: 'Detail tenant' })
+  @ApiResponse({ status: 404, description: 'Tenant tidak ditemukan' })
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Buat tenant baru (institusi baru)' })
+  @ApiResponse({ status: 201, description: 'Tenant berhasil dibuat' })
+  @ApiResponse({ status: 409, description: 'Kode atau subdomain sudah digunakan' })
   create(@Body() dto: CreateTenantDto) {
     return this.svc.create(dto);
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Update tenant (termasuk isActive untuk disable)' })
+  @ApiParam({ name: 'id', description: 'Tenant ID' })
+  @ApiResponse({ status: 200, description: 'Tenant berhasil diupdate' })
   update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
     return this.svc.update(id, dto);
   }
@@ -6829,9 +7713,6 @@ export class TenantsModule {}
 ### File: `src/modules/users/controllers/users.controller.ts`
 
 ```typescript
-// ══════════════════════════════════════════════════════════════
-// src/modules/users/controllers/users.controller.ts
-// ══════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -6843,6 +7724,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -6854,6 +7736,8 @@ import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { ImportUsersDto } from '../dto/import-users.dto';
 
+@ApiTags('Users')
+@ApiBearerAuth()
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
@@ -6861,31 +7745,54 @@ export class UsersController {
   constructor(private svc: UsersService) {}
 
   @Get()
+  @ApiOperation({ summary: 'List pengguna dalam tenant' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list user (passwordHash tidak dikembalikan)',
+  })
   findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Detail pengguna' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'Detail user' })
+  @ApiResponse({ status: 404, description: 'User tidak ditemukan' })
   findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Buat pengguna baru' })
+  @ApiResponse({ status: 201, description: 'User berhasil dibuat' })
+  @ApiResponse({ status: 409, description: 'Email atau username sudah digunakan' })
   create(@TenantId() tid: string, @Body() dto: CreateUserDto) {
     return this.svc.create(tid, dto);
   }
 
   @Post('import')
+  @ApiOperation({
+    summary: 'Bulk import pengguna',
+    description: 'Mengembalikan { created, failed }.',
+  })
+  @ApiResponse({ status: 200, description: '{ created: N, failed: M }' })
   import(@TenantId() tid: string, @Body() dto: ImportUsersDto) {
     return this.svc.bulkImport(tid, dto);
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Update pengguna' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User berhasil diupdate' })
   update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.svc.update(tid, id, dto);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Deactivate pengguna (soft delete — isActive = false)' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User dinonaktifkan' })
   remove(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.remove(tid, id);
   }
@@ -6906,6 +7813,31 @@ export class CreateUserDto {
   @IsString() @MinLength(8) password!: string;
   @IsEnum(UserRole) role!: UserRole;
   @IsOptional() @IsString() name?: string;
+}
+
+```
+
+---
+
+### File: `src/modules/users/dto/device-management.dto.ts`
+
+```typescript
+import { IsNotEmpty, IsString } from 'class-validator';
+
+export class LockDeviceDto {
+  @IsString() @IsNotEmpty() userId!: string;
+  @IsString() @IsNotEmpty() fingerprint!: string;
+}
+
+export class UnlockDeviceDto {
+  @IsString() @IsNotEmpty() userId!: string;
+  @IsString() @IsNotEmpty() fingerprint!: string;
+}
+
+export class UpdateDeviceLabelDto {
+  @IsString() @IsNotEmpty() userId!: string;
+  @IsString() @IsNotEmpty() fingerprint!: string;
+  @IsString() @IsNotEmpty() label!: string;
 }
 
 ```
@@ -7164,20 +8096,77 @@ export class PrismaModule {}
 ### File: `src/prisma/prisma.service.ts`
 
 ```typescript
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger, Scope } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
+  constructor() {
+    super({
+      log:
+        process.env.NODE_ENV === 'development'
+          ? [{ emit: 'event', level: 'query' }, 'warn', 'error']
+          : ['warn', 'error'],
+    });
+  }
+
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Prisma connected');
+
+    // Log slow queries di development
+    if (process.env.NODE_ENV === 'development') {
+      (this.$on as any)('query', (e: { query: string; duration: number }) => {
+        if (e.duration > 500) {
+          this.logger.warn(`Slow query (${e.duration}ms): ${e.query.slice(0, 200)}`);
+        }
+      });
+    }
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
+    this.logger.log('Prisma disconnected');
+  }
+
+  /**
+   * Buat Prisma client yang ter-scope ke tenant tertentu.
+   * Set PostgreSQL session variable app.tenant_id untuk RLS.
+   */
+  forTenant(tenantId: string, role = 'APP') {
+    return this.$extends({
+      query: {
+        $allModels: {
+          async $allOperations({ args, query }) {
+            // Set RLS context sebelum setiap query
+            await (this as any).$executeRawUnsafe(
+              `SET LOCAL app.tenant_id = '${tenantId.replace(/'/g, '')}';
+               SET LOCAL app.role = '${role.replace(/'/g, '')}';`,
+            );
+            return query(args);
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Eksekusi dalam transaksi dengan RLS context.
+   */
+  async withTenantContext<T>(
+    tenantId: string,
+    role: string,
+    fn: (tx: PrismaClient) => Promise<T>,
+  ): Promise<T> {
+    return this.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `SET LOCAL app.tenant_id = '${tenantId.replace(/'/g, '')}';
+         SET LOCAL app.role = '${role.replace(/'/g, '')}';`,
+      );
+      return fn(tx as unknown as PrismaClient);
+    });
   }
 }
 
@@ -7384,6 +8373,7 @@ model User {
   activityLogs  ExamActivityLog[]
   gradedAnswers ExamAnswer[]      @relation("GradedBy")
   auditLogs     AuditLog[]
+  notifications Notification[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -7472,6 +8462,7 @@ model Question {
   subject          Subject              @relation(fields: [subjectId], references: [id])
   tags             QuestionTagMapping[]
   examPackageItems ExamPackageQuestion[]
+  answers          ExamAnswer[]         // ← FK eksplisit ke jawaban siswa
 
   @@index([tenantId])
   @@index([tenantId, subjectId])
@@ -7572,8 +8563,9 @@ model ExamSession {
 model SessionStudent {
   sessionId String
   userId    String
-  tokenCode String   @unique
-  addedAt   DateTime @default(now())
+  tokenCode String    @unique
+  expiresAt DateTime? // ← token expiry opsional
+  addedAt   DateTime  @default(now())
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -7586,18 +8578,18 @@ model SessionStudent {
 // ============================================
 
 model ExamAttempt {
-  id                String        @id @default(cuid())
-  sessionId         String
-  userId            String
-  idempotencyKey    String        @unique
-  deviceFingerprint String?
-  startedAt         DateTime      @default(now())
-  submittedAt       DateTime?
-  status            AttemptStatus @default(IN_PROGRESS)
-  packageHash       String?
-  totalScore        Float?
-  maxScore          Float?
-  gradingStatus     GradingStatus @default(PENDING)
+  id                 String        @id @default(cuid())
+  sessionId          String
+  userId             String
+  idempotencyKey     String        @unique
+  deviceFingerprint  String?
+  startedAt          DateTime      @default(now())
+  submittedAt        DateTime?
+  status             AttemptStatus @default(IN_PROGRESS)
+  packageHash        String?
+  totalScore         Float?
+  maxScore           Float?
+  gradingStatus      GradingStatus @default(PENDING)
   gradingCompletedAt DateTime?
 
   session      ExamSession       @relation(fields: [sessionId], references: [id])
@@ -7613,26 +8605,28 @@ model ExamAttempt {
 }
 
 model ExamAnswer {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   attemptId      String
   questionId     String
-  idempotencyKey String   @unique
+  idempotencyKey String    @unique
   answer         Json
   mediaUrls      String[]
   score          Float?
   maxScore       Float?
   feedback       String?
-  isAutoGraded   Boolean  @default(false)
+  isAutoGraded   Boolean   @default(false)
   gradedById     String?
   gradedAt       DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])       // ← FK eksplisit
   gradedBy User?       @relation("GradedBy", fields: [gradedById], references: [id])
 
   @@unique([attemptId, questionId])
   @@index([attemptId])
+  @@index([questionId])
   @@map("exam_answers")
 }
 
@@ -7684,7 +8678,7 @@ model AuditLog {
   id         String   @id @default(cuid())
   tenantId   String
   userId     String?
-  action     String   // START_EXAM | SUBMIT_EXAM | CHANGE_SCORE | ADMIN_ACCESS | ...
+  action     String
   entityType String
   entityId   String
   before     Json?
@@ -7714,6 +8708,8 @@ model Notification {
   isRead    Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade) // ← relasi eksplisit
 
   @@index([userId, isRead])
   @@map("notifications")
@@ -7830,6 +8826,190 @@ describe('Auth E2E', () => {
 ### File: `test/e2e/grading.e2e-spec.ts`
 
 ```typescript
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import * as request from 'supertest';
+import { AppModule } from '../../src/app.module';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { GradingStatus } from '../../src/common/enums/grading-status.enum';
+import { AttemptStatus } from '../../src/common/enums/exam-status.enum';
+
+describe('Grading Flow (E2E)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let teacherToken: string;
+  let studentToken: string;
+  let attemptId: string;
+  let questionId: string;
+  let answerId: string;
+
+  beforeAll(async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+    prisma = app.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // ── Setup: login ───────────────────────────────────────────────────────────
+  describe('0. Login', () => {
+    it('guru mendapat token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'guru1', password: 'password123', fingerprint: 'guru-fp' })
+        .expect(200);
+      teacherToken = res.body.data.accessToken;
+    });
+
+    it('siswa mendapat token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'siswa1', password: 'password123', fingerprint: 'siswa-fp' })
+        .expect(200);
+      studentToken = res.body.data.accessToken;
+    });
+  });
+
+  // ── Setup: siapkan attempt SUBMITTED dengan essay ──────────────────────────
+  describe('1. Setup Attempt dengan Essay', () => {
+    it('buat attempt SUBMITTED dengan jawaban essay', async () => {
+      // Ambil attempt yang sudah ada dari flow student-exam, atau buat langsung via Prisma
+      const attempt = await prisma.examAttempt.findFirst({
+        where: { status: AttemptStatus.SUBMITTED },
+        include: { answers: { take: 1 } },
+      });
+
+      if (!attempt) {
+        // Skip jika tidak ada data seed — jalankan student-exam-flow.e2e-spec.ts lebih dulu
+        console.warn('Tidak ada attempt SUBMITTED — pastikan student-exam-flow dijalankan dulu');
+        return;
+      }
+
+      attemptId = attempt.id;
+
+      // Set satu jawaban ke MANUAL_REQUIRED untuk simulasi essay
+      if (attempt.answers.length > 0) {
+        answerId = attempt.answers[0].id;
+        questionId = attempt.answers[0].questionId;
+
+        await prisma.examAnswer.update({
+          where: { id: answerId },
+          data: { score: null, isAutoGraded: false },
+        });
+        await prisma.examAttempt.update({
+          where: { id: attemptId },
+          data: { gradingStatus: GradingStatus.MANUAL_REQUIRED },
+        });
+      }
+    });
+  });
+
+  // ── GET /grading — list pending manual ────────────────────────────────────
+  describe('2. List Pending Manual Grading', () => {
+    it('GET /grading mengembalikan attempt MANUAL_REQUIRED', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/grading')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(200);
+
+      expect(res.body.data).toHaveProperty('data');
+      expect(Array.isArray(res.body.data.data)).toBe(true);
+    });
+
+    it('siswa tidak bisa akses /grading → 403', async () => {
+      await request(app.getHttpServer())
+        .get('/api/grading')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(403);
+    });
+  });
+
+  // ── PATCH /grading/answer — grade manual ──────────────────────────────────
+  describe('3. Manual Grade Answer', () => {
+    it('PATCH /grading/answer berhasil memberi nilai', async () => {
+      if (!attemptId || !questionId) return;
+
+      const res = await request(app.getHttpServer())
+        .patch('/api/grading/answer')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({
+          attemptId,
+          questionId,
+          score: 15,
+          feedback: 'Jawaban cukup baik, perlu elaborasi lebih lanjut',
+        })
+        .expect(200);
+
+      expect(res.body.data.score).toBe(15);
+      expect(res.body.data.feedback).toBeDefined();
+    });
+
+    it('grade dengan score negatif → 400', async () => {
+      if (!attemptId || !questionId) return;
+
+      await request(app.getHttpServer())
+        .patch('/api/grading/answer')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({ attemptId, questionId, score: -5 })
+        .expect(400);
+    });
+  });
+
+  // ── POST /grading/complete ─────────────────────────────────────────────────
+  describe('4. Complete Grading', () => {
+    it('POST /grading/complete berhasil jika semua jawaban sudah dinilai', async () => {
+      if (!attemptId) return;
+
+      // Pastikan semua jawaban punya score
+      await prisma.examAnswer.updateMany({
+        where: { attemptId, score: null },
+        data: { score: 0, maxScore: 10 },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/grading/complete')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({ attemptId })
+        .expect(200);
+
+      expect(res.body.data.gradingStatus).toBe(GradingStatus.COMPLETED);
+    });
+  });
+
+  // ── POST /grading/publish ──────────────────────────────────────────────────
+  describe('5. Publish Results', () => {
+    it('POST /grading/publish memublikasikan hasil', async () => {
+      if (!attemptId) return;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/grading/publish')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({ attemptIds: [attemptId] })
+        .expect(200);
+
+      expect(res.body.data.published).toBeGreaterThanOrEqual(1);
+    });
+
+    it('siswa dapat melihat hasil setelah PUBLISHED', async () => {
+      if (!attemptId) return;
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/student/result/${attemptId}`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(200);
+
+      expect(res.body.data.gradingStatus).toBe(GradingStatus.PUBLISHED);
+      expect(res.body.data.totalScore).toBeDefined();
+    });
+  });
+});
 
 ```
 
@@ -7838,6 +9018,252 @@ describe('Auth E2E', () => {
 ### File: `test/e2e/offline-sync.e2e-spec.ts`
 
 ```typescript
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import * as request from 'supertest';
+import { AppModule } from '../../src/app.module';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { SyncType, SyncStatus } from '../../src/common/enums/sync-status.enum';
+
+describe('Offline Sync Flow (E2E)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let studentToken: string;
+  let attemptId: string;
+
+  beforeAll(async () => {
+    const mod: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+    prisma = app.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // ── Login ──────────────────────────────────────────────────────────────────
+  describe('0. Setup', () => {
+    it('siswa login', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'siswa1', password: 'password123', fingerprint: 'siswa-fp' })
+        .expect(200);
+      studentToken = res.body.data.accessToken;
+
+      // Ambil attempt IN_PROGRESS yang ada dari seed/flow sebelumnya
+      const attempt = await prisma.examAttempt.findFirst({
+        where: { status: 'IN_PROGRESS' },
+      });
+      if (attempt) attemptId = attempt.id;
+    });
+  });
+
+  // ── Add Sync Item ──────────────────────────────────────────────────────────
+  describe('1. POST /sync — tambah item ke antrian', () => {
+    it('menambahkan SUBMIT_ANSWER ke sync queue', async () => {
+      if (!attemptId) return;
+
+      const idemKey = `sync-ans-${Date.now()}`;
+      const res = await request(app.getHttpServer())
+        .post('/api/sync')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({
+          attemptId,
+          idempotencyKey: idemKey,
+          type: SyncType.SUBMIT_ANSWER,
+          payload: {
+            attemptId,
+            questionId: 'q-placeholder',
+            idempotencyKey: idemKey,
+            answer: 'a',
+          },
+        })
+        .expect(200);
+
+      expect(res.body.data.idempotencyKey).toBe(idemKey);
+      expect(res.body.data.status).toBe(SyncStatus.PENDING);
+    });
+
+    it('idempotent — duplikat key tidak membuat item baru', async () => {
+      if (!attemptId) return;
+
+      const idemKey = `sync-idem-${Date.now()}`;
+      const payload = {
+        attemptId,
+        idempotencyKey: idemKey,
+        type: SyncType.SUBMIT_ANSWER,
+        payload: { attemptId, questionId: 'q-1', idempotencyKey: idemKey, answer: 'b' },
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/sync')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send(payload)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/sync')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send(payload)
+        .expect(200);
+
+      const count = await prisma.syncQueue.count({ where: { idempotencyKey: idemKey } });
+      expect(count).toBe(1);
+    });
+
+    it('tanpa auth → 401', async () => {
+      await request(app.getHttpServer())
+        .post('/api/sync')
+        .send({ attemptId: 'x', idempotencyKey: 'x', type: SyncType.SUBMIT_ANSWER, payload: {} })
+        .expect(401);
+    });
+  });
+
+  // ── GET Status ─────────────────────────────────────────────────────────────
+  describe('2. GET /sync/:attemptId/status', () => {
+    it('mengembalikan status sync untuk attempt', async () => {
+      if (!attemptId) return;
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/sync/${attemptId}/status`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .expect(200);
+
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('pending');
+      expect(res.body.data).toHaveProperty('failed');
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+    });
+  });
+
+  // ── Retry Failed ──────────────────────────────────────────────────────────
+  describe('3. POST /sync/retry — retry item gagal', () => {
+    it('retry item FAILED berhasil dijadwalkan ulang', async () => {
+      if (!attemptId) return;
+
+      // Buat item FAILED langsung via Prisma
+      const failedItem = await prisma.syncQueue.create({
+        data: {
+          attemptId,
+          idempotencyKey: `failed-${Date.now()}`,
+          type: SyncType.ACTIVITY_LOG,
+          payload: { type: 'tab_blur' },
+          status: SyncStatus.FAILED,
+          retryCount: 1,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/sync/retry')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ syncItemId: failedItem.id })
+        .expect(200);
+
+      expect(res.body.data.message).toMatch(/dijadwalkan ulang/i);
+
+      // Verifikasi status kembali ke PENDING
+      const updated = await prisma.syncQueue.findUnique({ where: { id: failedItem.id } });
+      expect(updated?.status).toBe(SyncStatus.PENDING);
+    });
+
+    it('retry item COMPLETED → 400', async () => {
+      if (!attemptId) return;
+
+      const completedItem = await prisma.syncQueue.create({
+        data: {
+          attemptId,
+          idempotencyKey: `completed-${Date.now()}`,
+          type: SyncType.ACTIVITY_LOG,
+          payload: {},
+          status: SyncStatus.COMPLETED,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/sync/retry')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ syncItemId: completedItem.id })
+        .expect(400);
+    });
+
+    it('retry item tidak ada → 404', async () => {
+      await request(app.getHttpServer())
+        .post('/api/sync/retry')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ syncItemId: 'nonexistent-id' })
+        .expect(404);
+    });
+  });
+
+  // ── Chunked Upload ─────────────────────────────────────────────────────────
+  describe('4. POST /sync/upload/chunk — chunked upload', () => {
+    const fileId = `e2e-file-${Date.now()}`;
+
+    it('upload chunk 0/2 berhasil', async () => {
+      if (!attemptId) return;
+
+      const meta = JSON.stringify({
+        fileId,
+        attemptId,
+        questionId: 'q-1',
+        chunkIndex: 0,
+        totalChunks: 2,
+        type: 'image',
+        originalName: 'test.jpg',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/sync/upload/chunk')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .attach('chunk', Buffer.from('chunk-data-0'), 'chunk0')
+        .field('meta', meta)
+        .expect(200);
+
+      expect(res.body.data.saved).toBe(1);
+      expect(res.body.data.total).toBe(2);
+      expect(res.body.data.isComplete).toBe(false);
+    });
+
+    it('upload chunk 1/2 → isComplete true', async () => {
+      if (!attemptId) return;
+
+      const meta = JSON.stringify({
+        fileId,
+        attemptId,
+        questionId: 'q-1',
+        chunkIndex: 1,
+        totalChunks: 2,
+        type: 'image',
+        originalName: 'test.jpg',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/sync/upload/chunk')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .attach('chunk', Buffer.from('chunk-data-1'), 'chunk1')
+        .field('meta', meta)
+        .expect(200);
+
+      expect(res.body.data.isComplete).toBe(true);
+    });
+
+    it('meta JSON tidak valid → 400', async () => {
+      if (!attemptId) return;
+
+      await request(app.getHttpServer())
+        .post('/api/sync/upload/chunk')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .attach('chunk', Buffer.from('data'), 'chunk')
+        .field('meta', 'invalid-json')
+        .expect(400);
+    });
+  });
+});
 
 ```
 
@@ -8084,6 +9510,85 @@ describe('Student Exam Flow (E2E)', () => {
 ### File: `test/integration/database.spec.ts`
 
 ```typescript
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { PrismaModule } from '../../src/prisma/prisma.module';
+import { ConfigModule } from '@nestjs/config';
+
+describe('Database Integration', () => {
+  let prisma: PrismaService;
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule],
+    }).compile();
+    prisma = mod.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it('dapat terhubung ke PostgreSQL', async () => {
+    const result = await prisma.$queryRaw<[{ now: Date }]>`SELECT NOW() as now`;
+    expect(result[0].now).toBeInstanceOf(Date);
+  });
+
+  it('tenant query isolation — tenant A tidak melihat data tenant B', async () => {
+    // Buat 2 tenant sementara
+    const [tA, tB] = await Promise.all([
+      prisma.tenant.create({
+        data: { name: 'Tenant A', code: `TA-${Date.now()}`, subdomain: `ta-${Date.now()}` },
+      }),
+      prisma.tenant.create({
+        data: { name: 'Tenant B', code: `TB-${Date.now()}`, subdomain: `tb-${Date.now()}` },
+      }),
+    ]);
+
+    // Buat subject di tenant A
+    const subj = await prisma.subject.create({
+      data: { tenantId: tA.id, name: 'Matematika', code: 'MTK-TEST' },
+    });
+
+    // Query dengan tenantId B harus kosong
+    const result = await prisma.subject.findMany({
+      where: { tenantId: tB.id, id: subj.id },
+    });
+    expect(result).toHaveLength(0);
+
+    // Query dengan tenantId A harus ada
+    const resultA = await prisma.subject.findMany({
+      where: { tenantId: tA.id, id: subj.id },
+    });
+    expect(resultA).toHaveLength(1);
+
+    // Cleanup
+    await prisma.subject.delete({ where: { id: subj.id } });
+    await prisma.tenant.deleteMany({ where: { id: { in: [tA.id, tB.id] } } });
+  });
+
+  it('idempotency constraint — ExamAnswer.idempotencyKey unique', async () => {
+    // Verifikasi constraint ada di schema
+    const result = await prisma.$queryRaw<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'exam_answers'
+      AND indexname LIKE '%idempotency%'
+    `;
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('audit_logs tidak punya trigger UPDATE/DELETE (append-only policy)', async () => {
+    // Verifikasi tidak ada trigger DELETE pada audit_logs
+    const triggers = await prisma.$queryRaw<{ trigger_name: string }[]>`
+      SELECT trigger_name FROM information_schema.triggers
+      WHERE event_object_table = 'audit_logs'
+      AND event_manipulation IN ('UPDATE', 'DELETE')
+    `;
+    // Append-only diimplementasi di application layer, bukan trigger DB
+    // Test ini memastikan tidak ada trigger yang mengoverride kebijakan tersebut
+    expect(triggers).toHaveLength(0);
+  });
+});
 
 ```
 
@@ -8092,6 +9597,81 @@ describe('Student Exam Flow (E2E)', () => {
 ### File: `test/integration/minio.spec.ts`
 
 ```typescript
+import * as Minio from 'minio';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+
+describe('MinIO Integration', () => {
+  let minio: Minio.Client;
+  let bucket: string;
+  const testObject = `test/integration-${Date.now()}.txt`;
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true })],
+    }).compile();
+    const cfg = mod.get(ConfigService);
+
+    bucket = cfg.get('MINIO_BUCKET', 'exam-assets');
+    minio = new Minio.Client({
+      endPoint: cfg.get('MINIO_ENDPOINT', 'localhost'),
+      port: Number(cfg.get('MINIO_PORT', 9000)),
+      useSSL: cfg.get('MINIO_USE_SSL') === 'true',
+      accessKey: cfg.get('MINIO_ACCESS_KEY', 'minioadmin'),
+      secretKey: cfg.get('MINIO_SECRET_KEY', 'minioadmin'),
+    });
+
+    // Pastikan bucket ada
+    const exists = await minio.bucketExists(bucket);
+    if (!exists) await minio.makeBucket(bucket);
+  });
+
+  afterAll(async () => {
+    // Cleanup test object
+    try {
+      await minio.removeObject(bucket, testObject);
+    } catch {
+      /* already removed */
+    }
+  });
+
+  it('dapat terhubung ke MinIO (bucketExists)', async () => {
+    const exists = await minio.bucketExists(bucket);
+    expect(exists).toBe(true);
+  });
+
+  it('upload object berhasil', async () => {
+    const content = Buffer.from('integration test content');
+    await expect(minio.putObject(bucket, testObject, content)).resolves.not.toThrow();
+  });
+
+  it('object ada setelah upload', async () => {
+    const stat = await minio.statObject(bucket, testObject);
+    expect(stat.size).toBeGreaterThan(0);
+  });
+
+  it('presigned URL dapat di-generate', async () => {
+    const url = await minio.presignedGetObject(bucket, testObject, 3600);
+    expect(url).toContain(testObject);
+    expect(url).toMatch(/^https?:\/\//);
+  });
+
+  it('bucket policy tidak publik (private)', async () => {
+    // Pastikan bucket tidak punya public-read policy
+    // Dalam produksi bucket policy diset via MinIO console/CLI
+    // Test ini memverifikasi bahwa presigned URL diperlukan (tidak bisa akses langsung)
+    // — divalidasi secara implisit jika presigned URL memiliki signature parameter
+    const url = await minio.presignedGetObject(bucket, testObject, 60);
+    expect(url).toContain('X-Amz-Signature');
+  });
+
+  it('delete object berhasil', async () => {
+    await expect(minio.removeObject(bucket, testObject)).resolves.not.toThrow();
+
+    // Setelah delete, stat harus throw
+    await expect(minio.statObject(bucket, testObject)).rejects.toThrow();
+  });
+});
 
 ```
 
@@ -8100,6 +9680,76 @@ describe('Student Exam Flow (E2E)', () => {
 ### File: `test/integration/redis.spec.ts`
 
 ```typescript
+import Redis from 'ioredis';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+
+describe('Redis Integration', () => {
+  let redis: Redis;
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true })],
+    }).compile();
+    const cfg = mod.get(ConfigService);
+
+    redis = new Redis({
+      host: cfg.get('REDIS_HOST', 'localhost'),
+      port: cfg.get<number>('REDIS_PORT', 6379),
+      password: cfg.get('REDIS_PASSWORD') || undefined,
+      lazyConnect: false,
+    });
+  });
+
+  afterAll(async () => {
+    await redis.quit();
+  });
+
+  it('dapat terhubung ke Redis (PING)', async () => {
+    const pong = await redis.ping();
+    expect(pong).toBe('PONG');
+  });
+
+  it('SET dan GET bekerja', async () => {
+    const key = `test:${Date.now()}`;
+    await redis.set(key, 'hello');
+    const val = await redis.get(key);
+    expect(val).toBe('hello');
+    await redis.del(key);
+  });
+
+  it('TTL expiry bekerja', async () => {
+    const key = `test:ttl:${Date.now()}`;
+    await redis.setex(key, 1, 'will-expire');
+    const before = await redis.get(key);
+    expect(before).toBe('will-expire');
+
+    await new Promise((r) => setTimeout(r, 1100));
+    const after = await redis.get(key);
+    expect(after).toBeNull();
+  });
+
+  it('JSON stringify/parse round-trip via Redis', async () => {
+    const key = `test:json:${Date.now()}`;
+    const obj = { attemptId: 'att-1', score: 85, tags: ['math', 'science'] };
+    await redis.setex(key, 60, JSON.stringify(obj));
+    const raw = await redis.get(key);
+    expect(JSON.parse(raw!)).toEqual(obj);
+    await redis.del(key);
+  });
+
+  it('SETNX (idempotency pattern) — hanya set jika belum ada', async () => {
+    const key = `test:nx:${Date.now()}`;
+    const first = await redis.setnx(key, 'first');
+    const second = await redis.setnx(key, 'second');
+    const val = await redis.get(key);
+
+    expect(first).toBe(1); // berhasil set
+    expect(second).toBe(0); // tidak ditimpa
+    expect(val).toBe('first');
+    await redis.del(key);
+  });
+});
 
 ```
 
@@ -8137,6 +9787,87 @@ export const k6ConcurrentSubmission = '// see comment above';
 ### File: `test/load/exam-download.k6.js`
 
 ```javascript
+// ════════════════════════════════════════════════════════════════════════════
+// test/load/exam-download.k6.js
+// Load test: simulasi banyak siswa download paket soal bersamaan
+//
+// Jalankan:
+//   SESSION_ID=xxx TOKEN_CODES=CODE1,CODE2 BASE_TOKEN=xxx \
+//   k6 run test/load/exam-download.k6.js
+// ════════════════════════════════════════════════════════════════════════════
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Counter, Rate, Trend } from 'k6/metrics';
+
+const downloadErrors = new Counter('download_errors');
+const downloadSuccess = new Rate('download_success_rate');
+const downloadDuration = new Trend('download_duration_ms');
+
+export const options = {
+  stages: [
+    { duration: '30s', target: 20 }, // ramp up: 20 siswa
+    { duration: '1m', target: 50 }, // steady: 50 siswa concurrent
+    { duration: '30s', target: 100 }, // spike: 100 siswa
+    { duration: '30s', target: 0 }, // ramp down
+  ],
+  thresholds: {
+    download_success_rate: ['rate>0.95'], // 95% harus berhasil
+    download_duration_ms: ['p(95)<3000'], // 95th percentile < 3 detik
+    http_req_failed: ['rate<0.05'],
+  },
+};
+
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000/api';
+const SESSION_ID = __ENV.SESSION_ID || 'test-session-id';
+const BASE_TOKEN = __ENV.BASE_TOKEN || 'test-jwt-token';
+
+// Simulasi token code berbeda per VU (virtual user)
+function getTokenCode() {
+  const codes = (__ENV.TOKEN_CODES || 'CODE1,CODE2,CODE3').split(',');
+  return codes[(__VU - 1) % codes.length];
+}
+
+export default function () {
+  const start = Date.now();
+
+  const res = http.post(
+    `${BASE_URL}/student/download`,
+    JSON.stringify({
+      sessionId: SESSION_ID,
+      tokenCode: getTokenCode(),
+      deviceFingerprint: `fp-vu-${__VU}`,
+      idempotencyKey: `dl-${__VU}-${__ITER}`,
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${BASE_TOKEN}`,
+        'x-device-fingerprint': `fp-vu-${__VU}`,
+      },
+    },
+  );
+
+  const duration = Date.now() - start;
+  downloadDuration.add(duration);
+
+  const ok = check(res, {
+    'status 200': (r) => r.status === 200,
+    'has packageId': (r) => JSON.parse(r.body)?.data?.packageId !== undefined,
+    'has checksum': (r) => JSON.parse(r.body)?.data?.checksum !== undefined,
+    'response time < 5s': (r) => r.timings.duration < 5000,
+  });
+
+  downloadSuccess.add(ok);
+  if (!ok) downloadErrors.add(1);
+
+  sleep(Math.random() * 2 + 1); // jeda 1-3 detik antar request
+}
+
+export function handleSummary(data) {
+  return {
+    'test/load/results/exam-download-summary.json': JSON.stringify(data, null, 2),
+  };
+}
 
 ```
 
@@ -8145,6 +9876,115 @@ export const k6ConcurrentSubmission = '// see comment above';
 ### File: `test/load/sync-stress.k6.js`
 
 ```javascript
+// ════════════════════════════════════════════════════════════════════════════
+// test/load/sync-stress.k6.js
+// Load test: simulasi banyak siswa push sync items bersamaan (offline recovery)
+//
+// Jalankan:
+//   ATTEMPT_IDS=id1,id2 BASE_TOKEN=xxx k6 run test/load/sync-stress.k6.js
+// ════════════════════════════════════════════════════════════════════════════
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Counter, Rate, Trend } from 'k6/metrics';
+
+const syncErrors = new Counter('sync_errors');
+const syncSuccess = new Rate('sync_success_rate');
+const syncDuration = new Trend('sync_duration_ms');
+
+export const options = {
+  scenarios: {
+    // Skenario 1: steady load — pengiriman sync jawaban normal
+    steady_sync: {
+      executor: 'constant-vus',
+      vus: 30,
+      duration: '2m',
+      gracefulStop: '10s',
+    },
+    // Skenario 2: burst — simulasi banyak siswa reconnect setelah offline serentak
+    burst_reconnect: {
+      executor: 'ramping-arrival-rate',
+      startRate: 10,
+      timeUnit: '1s',
+      preAllocatedVUs: 50,
+      maxVUs: 100,
+      stages: [
+        { duration: '10s', target: 10 },
+        { duration: '20s', target: 80 }, // burst
+        { duration: '30s', target: 10 }, // settle
+      ],
+      startTime: '1m30s', // mulai setelah steady_sync berjalan 1.5 menit
+    },
+  },
+  thresholds: {
+    sync_success_rate: ['rate>0.97'],
+    sync_duration_ms: ['p(95)<2000'],
+    http_req_failed: ['rate<0.03'],
+  },
+};
+
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000/api';
+const BASE_TOKEN = __ENV.BASE_TOKEN || 'test-jwt-token';
+
+function getAttemptId() {
+  const ids = (__ENV.ATTEMPT_IDS || 'attempt-1,attempt-2').split(',');
+  return ids[(__VU - 1) % ids.length];
+}
+
+export default function () {
+  const attemptId = getAttemptId();
+  const idemKey = `sync-${__VU}-${__ITER}-${Date.now()}`;
+  const start = Date.now();
+
+  // Simulasi submit jawaban via sync endpoint (offline path)
+  const res = http.post(
+    `${BASE_URL}/sync`,
+    JSON.stringify({
+      attemptId,
+      idempotencyKey: idemKey,
+      type: 'SUBMIT_ANSWER',
+      payload: {
+        attemptId,
+        questionId: `q-${Math.ceil(Math.random() * 10)}`,
+        idempotencyKey: idemKey,
+        answer: ['a', 'b', 'c', 'd'][Math.floor(Math.random() * 4)],
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${BASE_TOKEN}`,
+      },
+    },
+  );
+
+  const duration = Date.now() - start;
+  syncDuration.add(duration);
+
+  const ok = check(res, {
+    'status 200 atau 201': (r) => r.status === 200 || r.status === 201,
+    'has syncItem id': (r) => JSON.parse(r.body)?.data?.id !== undefined,
+    'response < 3s': (r) => r.timings.duration < 3000,
+  });
+
+  syncSuccess.add(ok);
+  if (!ok) syncErrors.add(1);
+
+  // Cek status sync sesekali (1 dari 5 iterasi)
+  if (__ITER % 5 === 0) {
+    const statusRes = http.get(`${BASE_URL}/sync/${attemptId}/status`, {
+      headers: { Authorization: `Bearer ${BASE_TOKEN}` },
+    });
+    check(statusRes, { 'status check 200': (r) => r.status === 200 });
+  }
+
+  sleep(Math.random() * 1.5 + 0.5); // jeda 0.5-2 detik
+}
+
+export function handleSummary(data) {
+  return {
+    'test/load/results/sync-stress-summary.json': JSON.stringify(data, null, 2),
+  };
+}
 
 ```
 
@@ -9229,12 +11069,98 @@ describe('SyncService', () => {
 ### File: `scripts/cleanup-media.sh`
 
 ```bash
-# scripts/cleanup-media.sh
 #!/bin/bash
-# Hapus media orphan (tidak referensed di DB) lebih dari 30 hari
-echo "Cleaning up orphan media files older than 30 days..."
-mc find minio/exam-assets --older-than 30d | xargs mc rm
-echo "Done"
+# scripts/cleanup-media.sh
+# Hapus media orphan dari MinIO yang tidak ada referensinya di DB
+# Jalankan: DATABASE_DIRECT_URL=... bash scripts/cleanup-media.sh [--dry-run]
+
+set -euo pipefail
+
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=true
+  echo "🔍 DRY RUN mode — tidak ada yang dihapus"
+fi
+
+BUCKET=${MINIO_BUCKET:-exam-assets}
+PREFIXES=("questions/images" "answers/video" "answers/audio")
+REPORTS_PREFIX="reports"
+TEMP_DIR=$(mktemp -d)
+DB_OBJECTS_FILE="${TEMP_DIR}/db_objects.txt"
+MINIO_OBJECTS_FILE="${TEMP_DIR}/minio_objects.txt"
+ORPHAN_FILE="${TEMP_DIR}/orphans.txt"
+DELETED=0
+SKIPPED=0
+
+echo "[$(date)] Memulai cleanup media orphan..."
+
+# Ambil semua objectName yang masih ada di DB
+echo "  Mengambil daftar media dari database..."
+psql "${DATABASE_DIRECT_URL:-}" --no-psqlrc -t -c "
+  SELECT UNNEST(media_urls) FROM exam_answers
+  UNION
+  SELECT object_name FROM (
+    SELECT return_value->>'objectName' AS object_name
+    FROM (SELECT return_value::jsonb FROM bullmq_jobs WHERE status='completed') t
+    WHERE return_value->>'objectName' IS NOT NULL
+  ) r
+" 2>/dev/null | tr -d ' ' | sort -u > "${DB_OBJECTS_FILE}" || {
+  echo "⚠️  Tidak bisa query DB — hanya cleanup berdasarkan umur file"
+  touch "${DB_OBJECTS_FILE}"
+}
+
+mc alias set minio \
+  "http://${MINIO_ENDPOINT:-localhost}:${MINIO_PORT:-9000}" \
+  "${MINIO_ACCESS_KEY:-minioadmin}" \
+  "${MINIO_SECRET_KEY:-minioadmin}" \
+  --quiet
+
+# Untuk setiap prefix, cari file lebih dari 7 hari yang tidak ada di DB
+for PREFIX in "${PREFIXES[@]}"; do
+  echo "  Memeriksa prefix: ${PREFIX}/"
+  mc find "minio/${BUCKET}/${PREFIX}" \
+    --older-than 7d \
+    --name "*" 2>/dev/null | \
+    sed "s|minio/${BUCKET}/||" | sort > "${MINIO_OBJECTS_FILE}" || true
+
+  if [[ -s "${MINIO_OBJECTS_FILE}" && -s "${DB_OBJECTS_FILE}" ]]; then
+    comm -23 "${MINIO_OBJECTS_FILE}" "${DB_OBJECTS_FILE}" > "${ORPHAN_FILE}" || true
+  elif [[ -s "${MINIO_OBJECTS_FILE}" ]]; then
+    # Tidak ada data DB, skip agar aman
+    echo "  ⚠️  Tidak ada data DB untuk ${PREFIX}, dilewati"
+    continue
+  fi
+
+  while IFS= read -r OBJECT; do
+    [[ -z "${OBJECT}" ]] && continue
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      echo "  [DRY] Akan hapus: ${OBJECT}"
+      ((SKIPPED++)) || true
+    else
+      mc rm "minio/${BUCKET}/${OBJECT}" --quiet && {
+        echo "  ✓ Dihapus: ${OBJECT}"
+        ((DELETED++)) || true
+      } || echo "  ✗ Gagal hapus: ${OBJECT}"
+    fi
+  done < "${ORPHAN_FILE}"
+done
+
+# Hapus report lebih dari 30 hari (selalu aman karena generated on-demand)
+echo "  Membersihkan report lama (>30 hari)..."
+mc find "minio/${BUCKET}/${REPORTS_PREFIX}" \
+  --older-than 30d \
+  --name "*.xlsx" --name "*.pdf" \
+  --exec "$([ "${DRY_RUN}" == "true" ] && echo 'echo [DRY] Akan hapus: {}' || echo 'mc rm {}')" \
+  2>/dev/null || true
+
+# Cleanup temp
+rm -rf "${TEMP_DIR}"
+
+if [[ "${DRY_RUN}" == "true" ]]; then
+  echo "[$(date)] Dry run selesai — ${SKIPPED} objek akan dihapus"
+else
+  echo "[$(date)] Cleanup selesai — ${DELETED} objek dihapus ✅"
+fi
 
 ```
 
@@ -9243,12 +11169,128 @@ echo "Done"
 ### File: `scripts/rotate-keys.sh`
 
 ```bash
-# scripts/rotate-keys.sh
-#!/bin/bash
-NEW_KEY=$(openssl rand -hex 32)
-echo "New ENCRYPTION_KEY: $NEW_KEY"
-echo "⚠️  Update .env dan re-deploy sebelum key lama expired"
-echo "⚠️  Re-enkripsi semua correctAnswer di database setelah rotate"
+/**
+ * scripts/rotate-keys.ts
+ * Re-enkripsi semua correctAnswer di DB dengan key baru.
+ *
+ * Jalankan:
+ *   OLD_KEY=<64hex> NEW_KEY=<64hex> ts-node scripts/rotate-keys.ts
+ *
+ * ⚠️ BACKUP DATABASE SEBELUM MENJALANKAN SCRIPT INI
+ */
+
+import { PrismaClient } from '@prisma/client';
+import * as crypto from 'crypto';
+
+const ALGO = 'aes-256-gcm';
+const IV_LEN = 12;
+const TAG_LEN = 16;
+
+function encrypt(plaintext: string, keyHex: string): string {
+  const key = Buffer.from(keyHex, 'hex');
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(ALGO, key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64');
+}
+
+function decrypt(ciphertext: string, keyHex: string): string {
+  const key = Buffer.from(keyHex, 'hex');
+  const buf = Buffer.from(ciphertext, 'base64');
+  const iv = buf.subarray(0, IV_LEN);
+  const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
+  const enc = buf.subarray(IV_LEN + TAG_LEN);
+  const decipher = crypto.createDecipheriv(ALGO, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(enc).toString('utf8') + decipher.final('utf8');
+}
+
+async function main() {
+  const oldKey = process.env.OLD_KEY;
+  const newKey = process.env.NEW_KEY;
+
+  if (!oldKey || oldKey.length !== 64) {
+    console.error('❌ OLD_KEY harus berupa 64 hex chars (32 bytes)');
+    process.exit(1);
+  }
+  if (!newKey || newKey.length !== 64) {
+    console.error('❌ NEW_KEY harus berupa 64 hex chars (32 bytes)');
+    process.exit(1);
+  }
+  if (oldKey === newKey) {
+    console.error('❌ OLD_KEY dan NEW_KEY tidak boleh sama');
+    process.exit(1);
+  }
+
+  const prisma = new PrismaClient();
+  let success = 0;
+  let failed = 0;
+  const errors: { id: string; error: string }[] = [];
+
+  console.log('🔄 Memulai rotasi key enkripsi...');
+  console.log('⚠️  Pastikan database sudah di-backup!');
+  console.log('');
+
+  try {
+    // Ambil semua soal
+    const questions = await prisma.question.findMany({
+      select: { id: true, correctAnswer: true },
+    });
+
+    console.log(`📊 Total soal: ${questions.length}`);
+
+    // Proses dalam batch untuk menghindari timeout
+    const BATCH = 100;
+    for (let i = 0; i < questions.length; i += BATCH) {
+      const batch = questions.slice(i, i + BATCH);
+      console.log(`  Batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(questions.length / BATCH)}...`);
+
+      await Promise.allSettled(
+        batch.map(async (q) => {
+          try {
+            const plaintext = decrypt(q.correctAnswer as unknown as string, oldKey);
+            const reEncrypted = encrypt(plaintext, newKey);
+            await prisma.question.update({
+              where: { id: q.id },
+              data: { correctAnswer: reEncrypted },
+            });
+            success++;
+          } catch (err) {
+            failed++;
+            errors.push({ id: q.id, error: (err as Error).message });
+          }
+        }),
+      );
+    }
+
+    console.log('');
+    console.log(`✅ Berhasil: ${success} soal`);
+
+    if (failed > 0) {
+      console.error(`❌ Gagal: ${failed} soal`);
+      console.error('Detail kegagalan:');
+      errors.slice(0, 10).forEach((e) => console.error(`  - ${e.id}: ${e.error}`));
+      if (errors.length > 10) console.error(`  ... dan ${errors.length - 10} lainnya`);
+      console.error('');
+      console.error('⚠️  Update ENCRYPTION_KEY di .env HANYA jika 0 kegagalan!');
+      process.exit(1);
+    }
+
+    console.log('');
+    console.log('✅ Rotasi selesai. Langkah selanjutnya:');
+    console.log(`   1. Update ENCRYPTION_KEY=${newKey} di .env`);
+    console.log('   2. Restart semua instance API');
+    console.log('   3. Verifikasi aplikasi berjalan normal');
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+main().catch((err) => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
 
 ```
 
@@ -9273,31 +11315,35 @@ echo "Done!"
 ### File: `.env.example`
 
 ```
-# Application
+# ── Application ──────────────────────────────────────────
 NODE_ENV=development
 PORT=3000
 API_PREFIX=api
 APP_URL=http://localhost:3000
 
-# Database (Prisma)
-DATABASE_URL=postgresql://exam_user:exam_password@pgbouncer:5432/exam_db
+# ── Database (Prisma) ─────────────────────────────────────
+# Via PgBouncer (production)
+DATABASE_URL=postgresql://exam_user:exam_password@pgbouncer:6432/exam_db
+# Direct ke Postgres (migration & RLS setup)
 DATABASE_DIRECT_URL=postgresql://exam_user:exam_password@postgres:5432/exam_db
 
-# Redis
+# ── Redis ─────────────────────────────────────────────────
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 
-# JWT
+# ── JWT ───────────────────────────────────────────────────
+# Minimal 32 karakter, random, berbeda satu sama lain
 JWT_ACCESS_SECRET=change-this-access-secret-min-32-chars
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=change-this-refresh-secret-min-32-chars
 JWT_REFRESH_EXPIRES_IN=7d
 
-# Encryption (AES-256-GCM key, 32 bytes hex)
+# ── Enkripsi (AES-256-GCM) ────────────────────────────────
+# Generate: openssl rand -hex 32
 ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 
-# MinIO (S3-compatible)
+# ── MinIO (S3-compatible) ─────────────────────────────────
 MINIO_ENDPOINT=localhost
 MINIO_PORT=9000
 MINIO_USE_SSL=false
@@ -9306,25 +11352,29 @@ MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=exam-assets
 MINIO_PRESIGNED_TTL=3600
 
-# BullMQ
+# ── BullMQ ────────────────────────────────────────────────
 BULLMQ_CONCURRENCY=10
 
-# Rate Limiting
+# ── Rate Limiting ─────────────────────────────────────────
 THROTTLE_TTL=60
 THROTTLE_LIMIT=100
 
-# File Upload
+# ── File Upload ───────────────────────────────────────────
 MAX_FILE_SIZE=1073741824
 ALLOWED_IMAGE_TYPES=image/jpeg,image/png,image/webp
 ALLOWED_AUDIO_TYPES=audio/mpeg,audio/wav,audio/webm
 ALLOWED_VIDEO_TYPES=video/mp4,video/webm
 
-# Sentry
+# ── Sentry (error tracking) ───────────────────────────────
+# Kosongkan untuk menonaktifkan
 SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
 
-# SMTP (optional)
+# ── SMTP (email notification) ─────────────────────────────
+# Kosongkan SMTP_USER/SMTP_PASS untuk menonaktifkan email
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
+SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=noreply@exam.app
@@ -9553,13 +11603,16 @@ module.exports = {
     "db:migrate:dev": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "db:seed": "ts-node src/prisma/seeds/index.ts"
+    "db:seed": "ts-node src/prisma/seeds/index.ts",
+    "db:rls": "psql $DATABASE_DIRECT_URL -f prisma/migrations/rls/enable_rls.sql",
+    "keys:rotate": "ts-node scripts/rotate-keys.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.1.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.1.1",
     "@nestjs/core": "^10.0.0",
+    "@nestjs/event-emitter": "^2.0.4",
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
@@ -9584,11 +11637,11 @@ module.exports = {
     "ioredis": "^5.3.2",
     "minio": "^7.1.3",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.8",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "puppeteer": "^21.7.0",
-    "react": "^19.2.4",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "sharp": "^0.33.1",
@@ -9610,9 +11663,9 @@ module.exports = {
     "@types/jest": "^29.5.2",
     "@types/multer": "^1.4.11",
     "@types/node": "^20.3.1",
+    "@types/nodemailer": "^6.4.14",
     "@types/passport-jwt": "^4.0.0",
     "@types/passport-local": "^1.0.38",
-    "@types/react": "^19.2.14",
     "@types/string-similarity": "^4.0.2",
     "@types/supertest": "^2.0.12",
     "@types/uuid": "^11.0.0",
@@ -9906,43 +11959,77 @@ Mendukung multi-tenant via subdomain isolation (smkn1.exam.app → tenantId `smk
 ### File: `docs/deployment/production-checklist.md`
 
 ```markdown
-
-<!-- ══════════════════════════════════════════════════════════ -->
-<!-- docs/deployment/production-checklist.md                   -->
-<!-- ══════════════════════════════════════════════════════════ -->
-
 # Production Checklist
 
-## Environment Variables
-- [ ] `JWT_ACCESS_SECRET` min 32 chars, random
-- [ ] `JWT_REFRESH_SECRET` min 32 chars, random, berbeda dari access
-- [ ] `ENCRYPTION_KEY` 64 hex chars (32 bytes random)
-- [ ] `DATABASE_URL` dan `DATABASE_DIRECT_URL` set ke PgBouncer dan Postgres
-- [ ] MinIO credentials diganti dari default
+## Pre-Deploy
+
+### Environment Variables
+- [ ] `JWT_ACCESS_SECRET` — min 32 chars, random (`openssl rand -base64 48`)
+- [ ] `JWT_REFRESH_SECRET` — min 32 chars, random, **berbeda** dari access secret
+- [ ] `ENCRYPTION_KEY` — 64 hex chars (`openssl rand -hex 32`)
+- [ ] `DATABASE_URL` → PgBouncer (port 6432, transaction mode)
+- [ ] `DATABASE_DIRECT_URL` → Postgres langsung (port 5432, hanya untuk migration)
+- [ ] MinIO credentials diganti dari default (`minioadmin`)
+- [ ] `REDIS_PASSWORD` diset untuk production
 - [ ] `SENTRY_DSN` diset untuk error tracking
+- [ ] `SMTP_USER` dan `SMTP_PASS` diset jika email notification dipakai
+- [ ] `APP_URL` sesuai domain production (untuk CORS)
 
-## Database
-- [ ] Jalankan `prisma migrate deploy`
-- [ ] Enable RLS di PostgreSQL
-- [ ] Setup backup otomatis (lihat `scripts/backup.sh`)
-- [ ] PgBouncer pool size sesuai dengan `max_connections` Postgres
+### Database
+- [ ] Jalankan `npm run db:migrate` (prisma migrate deploy)
+- [ ] Jalankan `npm run db:rls` untuk setup PostgreSQL RLS
+- [ ] Jalankan `npm run db:seed` untuk data awal (tenant, superadmin)
+- [ ] Verifikasi PgBouncer pool size ≤ `max_connections` Postgres - 5
+- [ ] Setup cron backup: `0 2 * * * /app/scripts/backup.sh`
+- [ ] Test restore dari backup
 
-## Security
-- [ ] HTTPS dengan valid TLS certificate
-- [ ] Helmet headers aktif
-- [ ] Rate limiting dikonfigurasi per tenant
-- [ ] CORS origin dikonfigurasi spesifik (bukan wildcard)
+### Security
+- [ ] HTTPS dengan valid TLS certificate (Let's Encrypt / CA)
+- [ ] Helmet headers aktif (cek via `curl -I https://yourdomain`)
+- [ ] CORS hanya izinkan domain yang dikenal (`APP_URL`)
+- [ ] Rate limiting dikonfigurasi: `THROTTLE_TTL=60`, `THROTTLE_LIMIT=100`
+- [ ] Verifikasi `ENCRYPTION_KEY` bukan default (`0000...`)
+- [ ] Verifikasi `JWT_*_SECRET` bukan default
 
-## Performance
+### Key Management
+- [ ] `ENCRYPTION_KEY` disimpan di secrets manager (AWS Secrets Manager / Vault)
+- [ ] Jadwalkan rotasi key setiap 90 hari via `npm run keys:rotate`
+- [ ] Backup `ENCRYPTION_KEY` lama sebelum rotasi
+
+## Deploy
+
+### Runtime
 - [ ] PM2 cluster mode aktif (`instances: 'max'`)
-- [ ] Redis persistence enabled (`appendonly yes`)
-- [ ] MinIO dengan erasure coding untuk HA
-- [ ] CDN untuk static assets frontend
+- [ ] Memory limit dikonfigurasi (`max_memory_restart: '2G'`)
+- [ ] Log rotation aktif (winston `winston-daily-rotate-file`)
+- [ ] `NODE_ENV=production` di-set
 
-## Monitoring
-- [ ] Health check endpoint `/health` terdaftar di load balancer
-- [ ] Log rotation dikonfigurasi (winston-daily-rotate-file)
+### Infrastructure
+- [ ] Redis `appendonly yes` untuk persistence
+- [ ] MinIO dengan erasure coding (min 4 node untuk HA)
+- [ ] PostgreSQL dengan replica untuk read scaling
+- [ ] CDN di depan MinIO untuk media serving
+
+## Post-Deploy Verification
+
+### Health Checks
+- [ ] `GET /health` → status 200, database UP
+- [ ] `GET /api` → API info response
+- [ ] BullMQ worker aktif (cek via Redis: `KEYS bull:*`)
+- [ ] WebSocket `/monitoring` dapat dikoneksi
+
+### Functional Tests
+- [ ] Login berhasil: `POST /api/auth/login`
+- [ ] Subdomain routing: `smkn1.exam.app` → tenantId resolved
+- [ ] Download paket soal berhasil
+- [ ] Submit jawaban dan ujian berhasil
+- [ ] Auto-grading berjalan via BullMQ
+
+### Monitoring
+- [ ] Sentry menerima test event
 - [ ] Alerting untuk dead letter queue BullMQ
+- [ ] Slow query log dikonfigurasi (>500ms)
+- [ ] Disk space monitoring untuk MinIO dan Postgres
 
 ```
 

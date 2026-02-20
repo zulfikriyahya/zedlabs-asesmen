@@ -53,6 +53,7 @@ model User {
   activityLogs  ExamActivityLog[]
   gradedAnswers ExamAnswer[]      @relation("GradedBy")
   auditLogs     AuditLog[]
+  notifications Notification[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -141,6 +142,7 @@ model Question {
   subject          Subject              @relation(fields: [subjectId], references: [id])
   tags             QuestionTagMapping[]
   examPackageItems ExamPackageQuestion[]
+  answers          ExamAnswer[]         // ← FK eksplisit ke jawaban siswa
 
   @@index([tenantId])
   @@index([tenantId, subjectId])
@@ -241,8 +243,9 @@ model ExamSession {
 model SessionStudent {
   sessionId String
   userId    String
-  tokenCode String   @unique
-  addedAt   DateTime @default(now())
+  tokenCode String    @unique
+  expiresAt DateTime? // ← token expiry opsional
+  addedAt   DateTime  @default(now())
 
   session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -255,18 +258,18 @@ model SessionStudent {
 // ============================================
 
 model ExamAttempt {
-  id                String        @id @default(cuid())
-  sessionId         String
-  userId            String
-  idempotencyKey    String        @unique
-  deviceFingerprint String?
-  startedAt         DateTime      @default(now())
-  submittedAt       DateTime?
-  status            AttemptStatus @default(IN_PROGRESS)
-  packageHash       String?
-  totalScore        Float?
-  maxScore          Float?
-  gradingStatus     GradingStatus @default(PENDING)
+  id                 String        @id @default(cuid())
+  sessionId          String
+  userId             String
+  idempotencyKey     String        @unique
+  deviceFingerprint  String?
+  startedAt          DateTime      @default(now())
+  submittedAt        DateTime?
+  status             AttemptStatus @default(IN_PROGRESS)
+  packageHash        String?
+  totalScore         Float?
+  maxScore           Float?
+  gradingStatus      GradingStatus @default(PENDING)
   gradingCompletedAt DateTime?
 
   session      ExamSession       @relation(fields: [sessionId], references: [id])
@@ -282,26 +285,28 @@ model ExamAttempt {
 }
 
 model ExamAnswer {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   attemptId      String
   questionId     String
-  idempotencyKey String   @unique
+  idempotencyKey String    @unique
   answer         Json
   mediaUrls      String[]
   score          Float?
   maxScore       Float?
   feedback       String?
-  isAutoGraded   Boolean  @default(false)
+  isAutoGraded   Boolean   @default(false)
   gradedById     String?
   gradedAt       DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])       // ← FK eksplisit
   gradedBy User?       @relation("GradedBy", fields: [gradedById], references: [id])
 
   @@unique([attemptId, questionId])
   @@index([attemptId])
+  @@index([questionId])
   @@map("exam_answers")
 }
 
@@ -353,7 +358,7 @@ model AuditLog {
   id         String   @id @default(cuid())
   tenantId   String
   userId     String?
-  action     String   // START_EXAM | SUBMIT_EXAM | CHANGE_SCORE | ADMIN_ACCESS | ...
+  action     String
   entityType String
   entityId   String
   before     Json?
@@ -383,6 +388,8 @@ model Notification {
   isRead    Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade) // ← relasi eksplisit
 
   @@index([userId, isRead])
   @@map("notifications")

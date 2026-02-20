@@ -2,6 +2,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { SubdomainMiddleware } from './common/middleware/subdomain.middleware';
@@ -10,6 +11,8 @@ import { TenantGuard } from './common/guards/tenant.guard';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { SentryService } from './common/services/sentry.service';
+import { EmailService } from './common/services/email.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -38,6 +41,10 @@ import { RedisProvider } from './common/providers/redis.provider';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
+
+    // Event emitter untuk domain events (exam.submitted, grading.completed, dll)
+    EventEmitterModule.forRoot({ wildcard: false, maxListeners: 20 }),
+
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
@@ -50,6 +57,7 @@ import { RedisProvider } from './common/providers/redis.provider';
         ],
       }),
     }),
+
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
@@ -66,6 +74,7 @@ import { RedisProvider } from './common/providers/redis.provider';
         },
       }),
     }),
+
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -92,11 +101,14 @@ import { RedisProvider } from './common/providers/redis.provider';
   providers: [
     AppService,
     RedisProvider,
+    SentryService,
+    EmailService,
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
+  exports: [SentryService, EmailService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

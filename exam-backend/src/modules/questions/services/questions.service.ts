@@ -1,6 +1,6 @@
-// ── services/questions.service.ts ────────────────────────
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { decrypt, encrypt } from '../../../common/utils/encryption.util';
@@ -9,7 +9,6 @@ import { ApproveQuestionDto } from '../dto/approve-question.dto';
 import { CreateQuestionDto } from '../dto/create-question.dto';
 import { ImportQuestionsDto } from '../dto/import-questions.dto';
 import { UpdateQuestionDto } from '../dto/update-question.dto';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class QuestionsService {
@@ -18,8 +17,15 @@ export class QuestionsService {
     private cfg: ConfigService,
   ) {}
 
-  private get encKey() {
-    return this.cfg.get<string>('ENCRYPTION_KEY', '');
+  /** Throw jika ENCRYPTION_KEY tidak dikonfigurasi — mencegah silent failure di production */
+  private get encKey(): string {
+    const key = this.cfg.get<string>('ENCRYPTION_KEY');
+    if (!key || key.length !== 64) {
+      throw new InternalServerErrorException(
+        'ENCRYPTION_KEY tidak valid. Harus berupa 64 hex chars (32 bytes).',
+      );
+    }
+    return key;
   }
 
   async findAll(
@@ -58,7 +64,6 @@ export class QuestionsService {
       const { correctAnswer: _ca, ...rest } = q;
       return rest;
     }
-    // decrypt correctAnswer
     const ca = decrypt(q.correctAnswer as unknown as string, this.encKey);
     return { ...q, correctAnswer: JSON.parse(ca) };
   }
@@ -67,11 +72,11 @@ export class QuestionsService {
     const encAnswer = encrypt(JSON.stringify(dto.correctAnswer), this.encKey);
     const { tagIds, correctAnswer: _ca, ...rest } = dto;
 
-    const question = await this.prisma.question.create({
+    return this.prisma.question.create({
       data: {
         tenantId,
         createdById,
-        subjectId: rest.subjectId, // ← eksplisit
+        subjectId: rest.subjectId,
         type: rest.type,
         content: rest.content as Prisma.InputJsonValue,
         options:
@@ -83,7 +88,6 @@ export class QuestionsService {
       },
       include: { tags: { include: { tag: true } } },
     });
-    return question;
   }
 
   async update(tenantId: string, id: string, dto: UpdateQuestionDto) {

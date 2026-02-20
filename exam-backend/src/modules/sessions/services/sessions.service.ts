@@ -5,6 +5,7 @@ import { SessionStatus } from '../../../common/enums/exam-status.enum';
 import { generateTokenCode } from '../../../common/utils/randomizer.util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { EmailService } from '../../../common/services/email.service';
 import { AssignStudentsDto } from '../dto/assign-students.dto';
 import { CreateSessionDto } from '../dto/create-session.dto';
 import { UpdateSessionDto } from '../dto/update-session.dto';
@@ -14,6 +15,7 @@ export class SessionsService {
   constructor(
     private prisma: PrismaService,
     private notifSvc: NotificationsService,
+    private emailSvc: EmailService,
   ) {}
 
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
@@ -89,21 +91,36 @@ export class SessionsService {
       data: { status: SessionStatus.ACTIVE },
     });
 
-    // Notify semua peserta sesi
+    // Ambil semua peserta beserta user data
     const students = await this.prisma.sessionStudent.findMany({
       where: { sessionId: id },
-      select: { userId: true },
+      include: {
+        user: { select: { id: true, email: true, username: true } },
+      },
     });
+
+    // In-app notification + email (fire-and-forget)
     await Promise.allSettled(
-      students.map((ss) =>
-        this.notifSvc.create({
+      students.map(async (ss) => {
+        // In-app notification
+        await this.notifSvc.create({
           userId: ss.userId,
           title: 'Ujian Dimulai',
-          body: `Sesi "${s.title}" telah diaktifkan. Silakan login dan mulai ujian.`,
+          body: `Sesi "${s.title}" telah diaktifkan. Token Anda: ${ss.tokenCode}`,
           type: 'SESSION_ACTIVATED',
-          metadata: { sessionId: id, tenantId },
-        }),
-      ),
+          metadata: { sessionId: id, tenantId, tokenCode: ss.tokenCode },
+        });
+
+        // Email notification
+        await this.emailSvc.sendSessionActivated({
+          to: ss.user.email,
+          name: ss.user.username,
+          sessionTitle: s.title,
+          tokenCode: ss.tokenCode,
+          startTime: s.startTime,
+          endTime: s.endTime,
+        });
+      }),
     );
 
     return updated;

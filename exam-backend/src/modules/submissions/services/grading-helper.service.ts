@@ -1,13 +1,10 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/services/grading-helper.service.ts
-// Memisahkan logika runAutoGrade agar tidak ada circular dependency
-// SubmissionsModule ↔ GradingModule
-// ════════════════════════════════════════════════════════════════════════════
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AutoGradingService } from './auto-grading.service';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
 import { QuestionType } from '../../../common/enums/question-type.enum';
+import type { GradingCompletedEvent } from '../processors/submission.events.listener';
 
 @Injectable()
 export class GradingHelperService {
@@ -16,6 +13,7 @@ export class GradingHelperService {
   constructor(
     private prisma: PrismaService,
     private autoGrading: AutoGradingService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async runAutoGrade(attemptId: string): Promise<void> {
@@ -94,5 +92,16 @@ export class GradingHelperService {
     this.logger.log(
       `Attempt ${attemptId} graded: ${totalScore}/${maxScore}, status=${gradingStatus}`,
     );
+
+    // Emit domain event
+    const event: GradingCompletedEvent = {
+      attemptId,
+      userId: attempt.userId,
+      tenantId: attempt.session.tenantId,
+      totalScore,
+      maxScore,
+      gradingStatus,
+    };
+    this.eventEmitter.emit('grading.completed', event);
   }
 }

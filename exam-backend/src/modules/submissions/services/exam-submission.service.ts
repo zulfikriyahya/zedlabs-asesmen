@@ -1,8 +1,6 @@
-// ────────────────────────────────────────────────────────────────────────────
-// src/modules/submissions/services/exam-submission.service.ts — fix logger
-// ────────────────────────────────────────────────────────────────────────────
 import { InjectQueue } from '@nestjs/bullmq';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
@@ -11,14 +9,19 @@ import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
 import { AutoGradeJobData } from '../processors/submission.processor';
+import type {
+  ExamSubmittedEvent,
+  GradingCompletedEvent,
+} from '../processors/submission.events.listener';
 
 @Injectable()
 export class ExamSubmissionService {
-  private readonly logger = new Logger(ExamSubmissionService.name); // ← fix
+  private readonly logger = new Logger(ExamSubmissionService.name);
 
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
+    private eventEmitter: EventEmitter2,
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 
@@ -55,7 +58,15 @@ export class ExamSubmissionService {
   async submitExam(dto: SubmitExamDto) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      include: { session: { select: { tenantId: true } } },
+      include: {
+        session: {
+          select: {
+            tenantId: true,
+            title: true,
+            id: true,
+          },
+        },
+      },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
 
@@ -78,6 +89,16 @@ export class ExamSubmissionService {
       entityId: dto.attemptId,
       after: { submittedAt: new Date().toISOString() },
     });
+
+    // Emit domain event — ditangkap oleh SubmissionEventsListener
+    const event: ExamSubmittedEvent = {
+      attemptId: dto.attemptId,
+      userId: attempt.userId,
+      tenantId,
+      sessionId: attempt.session.id,
+      sessionTitle: attempt.session.title,
+    };
+    this.eventEmitter.emit('exam.submitted', event);
 
     const jobData: AutoGradeJobData = { attemptId: dto.attemptId, tenantId };
     await this.submissionQueue.add('auto-grade', jobData, {
@@ -110,6 +131,11 @@ export class ExamSubmissionService {
       },
     );
     this.logger.log(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
+  }
+
+  /** Dipanggil oleh GradingHelperService setelah auto-grade selesai */
+  emitGradingCompleted(event: GradingCompletedEvent) {
+    this.eventEmitter.emit('grading.completed', event);
   }
 
   async getAttemptResult(attemptId: string, userId: string) {

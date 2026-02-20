@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ExamPackagesModule } from '../exam-packages/exam-packages.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { ExamDownloadService } from './services/exam-download.service';
 import { ExamSubmissionService } from './services/exam-submission.service';
 import { AutoGradingService } from './services/auto-grading.service';
@@ -10,14 +11,16 @@ import { SubmissionsService } from './services/submissions.service';
 import { StudentExamController } from './controllers/student-exam.controller';
 import { SubmissionsController } from './controllers/submissions.controller';
 import { SubmissionProcessor } from './processors/submission.processor';
+import { SubmissionEventsListener } from './processors/submission.events.listener';
 import { GradingHelperService } from './services/grading-helper.service';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: 'submission' }),
     ExamPackagesModule,
-    AuditLogsModule, // sudah ada — AuditInterceptor & AuditLogsService tersedia
+    AuditLogsModule,
     AuthModule,
+    NotificationsModule, // diperlukan oleh SubmissionEventsListener
   ],
   providers: [
     ExamDownloadService,
@@ -26,6 +29,7 @@ import { GradingHelperService } from './services/grading-helper.service';
     GradingHelperService,
     SubmissionsService,
     SubmissionProcessor,
+    SubmissionEventsListener,
   ],
   controllers: [StudentExamController, SubmissionsController],
   exports: [ExamSubmissionService, AutoGradingService, GradingHelperService],

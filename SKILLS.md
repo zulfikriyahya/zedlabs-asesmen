@@ -98,776 +98,728 @@ Login (role: SUPERVISOR) → Subscribe sesi aktif via Socket.IO
 
 ## Struktur Proyek
 
-### Monorepo Root
+### Frontend (`exam-frontend`)
 ```
-.
-├── app_flow_diagram.tsx
-├── exam-backend
-│   ├── docker-compose.yml
-│   ├── Dockerfile
-│   ├── docs
+exam-frontend/
+├── next.config.ts
+├── package.json
+├── playwright.config.ts
+├── postcss.config.js
+├── public
+│   ├── fonts
+│   ├── icons
+│   ├── images
+│   ├── manifest.json
+│   └── robots.txt
+├── src
+│   ├── app
 │   │   ├── api
-│   │   │   └── swagger.yaml
-│   │   ├── architecture
-│   │   │   ├── database-schema.md
-│   │   │   ├── offline-sync-flow.md
-│   │   │   ├── security-model.md
-│   │   │   └── system-design.md
-│   │   └── deployment
-│   │       └── production-checklist.md
-│   ├── ecosystem.config.js
-│   ├── logs
-│   ├── nest-cli.json
-│   ├── package.json
-│   ├── prisma
-│   │   └── schema.prisma
-│   ├── scripts
-│   │   ├── backup.sh
-│   │   ├── cleanup-media.sh
-│   │   ├── restore.sh
-│   │   ├── rotate-keys.sh
-│   │   └── seed.sh
-│   ├── src
-│   │   ├── app.controller.ts
-│   │   ├── app.module.ts
-│   │   ├── app.service.ts
-│   │   ├── common
-│   │   │   ├── decorators
-│   │   │   │   ├── current-user.decorator.ts
-│   │   │   │   ├── idempotency.decorator.ts
-│   │   │   │   ├── public.decorator.ts
-│   │   │   │   ├── roles.decorator.ts
-│   │   │   │   └── tenant-id.decorator.ts
-│   │   │   ├── dto
-│   │   │   │   ├── base-query.dto.ts
-│   │   │   │   ├── base-response.dto.ts
-│   │   │   │   └── pagination.dto.ts
-│   │   │   ├── entities
-│   │   │   ├── enums
-│   │   │   │   ├── exam-status.enum.ts
-│   │   │   │   ├── grading-status.enum.ts
-│   │   │   │   ├── question-type.enum.ts
-│   │   │   │   ├── sync-status.enum.ts
-│   │   │   │   └── user-role.enum.ts
-│   │   │   ├── exceptions
-│   │   │   │   ├── device-locked.exception.ts
-│   │   │   │   ├── exam-not-available.exception.ts
-│   │   │   │   ├── idempotency-conflict.exception.ts
-│   │   │   │   └── tenant-not-found.exception.ts
-│   │   │   ├── filters
-│   │   │   │   ├── all-exceptions.filter.ts
-│   │   │   │   └── http-exception.filter.ts
-│   │   │   ├── guards
-│   │   │   │   ├── tenant.guard.ts
-│   │   │   │   └── throttler.guard.ts
-│   │   │   ├── interceptors
-│   │   │   │   ├── idempotency.interceptor.ts
-│   │   │   │   ├── logging.interceptor.ts
-│   │   │   │   ├── tenant.interceptor.ts
-│   │   │   │   ├── timeout.interceptor.ts
-│   │   │   │   └── transform.interceptor.ts
-│   │   │   ├── middleware
-│   │   │   │   ├── logger.middleware.ts
-│   │   │   │   ├── performance.middleware.ts
-│   │   │   │   └── subdomain.middleware.ts
-│   │   │   ├── pipes
-│   │   │   │   ├── parse-int.pipe.ts
-│   │   │   │   └── validation.pipe.ts
-│   │   │   ├── utils
-│   │   │   │   ├── checksum.util.ts
-│   │   │   │   ├── device-fingerprint.util.ts
-│   │   │   │   ├── encryption.util.ts
-│   │   │   │   ├── file.util.ts
-│   │   │   │   ├── presigned-url.util.ts
-│   │   │   │   ├── randomizer.util.ts
-│   │   │   │   ├── similarity.util.ts
-│   │   │   │   └── time-validation.util.ts
-│   │   │   └── validators
-│   │   │       ├── is-tenant-exists.validator.ts
-│   │   │       └── is-unique.validator.ts
-│   │   ├── config
-│   │   │   ├── app.config.ts
-│   │   │   ├── bullmq.config.ts
-│   │   │   ├── database.config.ts
-│   │   │   ├── jwt.config.ts
-│   │   │   ├── minio.config.ts
-│   │   │   ├── multer.config.ts
-│   │   │   ├── redis.config.ts
-│   │   │   └── throttler.config.ts
-│   │   ├── main.ts
-│   │   ├── modules
-│   │   │   ├── activity-logs
-│   │   │   │   ├── activity-logs.module.ts
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── activity-logs.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   └── create-activity-log.dto.ts
-│   │   │   │   └── services
-│   │   │   │       └── activity-logs.service.ts
-│   │   │   ├── analytics
-│   │   │   │   ├── analytics.module.ts
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── analytics.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   └── analytics-filter.dto.ts
-│   │   │   │   └── services
-│   │   │   │       ├── analytics.service.ts
-│   │   │   │       └── dashboard.service.ts
-│   │   │   ├── audit-logs
-│   │   │   │   ├── audit-logs.module.ts
-│   │   │   │   ├── decorators
-│   │   │   │   │   └── audit.decorator.ts
-│   │   │   │   └── services
-│   │   │   │       └── audit-logs.service.ts
 │   │   │   ├── auth
-│   │   │   │   ├── auth.module.ts
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── auth.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── change-password.dto.ts
-│   │   │   │   │   ├── login.dto.ts
-│   │   │   │   │   └── refresh-token.dto.ts
-│   │   │   │   ├── guards
-│   │   │   │   │   ├── device.guard.ts
-│   │   │   │   │   ├── jwt-auth.guard.ts
-│   │   │   │   │   ├── local-auth.guard.ts
-│   │   │   │   │   └── roles.guard.ts
-│   │   │   │   ├── services
-│   │   │   │   │   └── auth.service.ts
-│   │   │   │   └── strategies
-│   │   │   │       ├── jwt-refresh.strategy.ts
-│   │   │   │       ├── jwt.strategy.ts
-│   │   │   │       └── local.strategy.ts
-│   │   │   ├── exam-packages
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── exam-packages.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── add-questions.dto.ts
-│   │   │   │   │   ├── create-exam-package.dto.ts
-│   │   │   │   │   ├── publish-exam-package.dto.ts
-│   │   │   │   │   └── update-exam-package.dto.ts
-│   │   │   │   ├── exam-packages.module.ts
-│   │   │   │   ├── interfaces
-│   │   │   │   │   └── exam-package-settings.interface.ts
-│   │   │   │   └── services
-│   │   │   │       ├── exam-package-builder.service.ts
-│   │   │   │       ├── exam-packages.service.ts
-│   │   │   │       └── item-analysis.service.ts
-│   │   │   ├── exam-rooms
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── exam-rooms.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── create-room.dto.ts
-│   │   │   │   │   └── update-room.dto.ts
-│   │   │   │   ├── exam-rooms.module.ts
-│   │   │   │   └── services
-│   │   │   │       └── exam-rooms.service.ts
-│   │   │   ├── grading
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── grading.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── complete-grading.dto.ts
-│   │   │   │   │   ├── grade-answer.dto.ts
-│   │   │   │   │   └── publish-result.dto.ts
-│   │   │   │   ├── grading.module.ts
-│   │   │   │   └── services
-│   │   │   │       ├── grading.service.ts
-│   │   │   │       └── manual-grading.service.ts
-│   │   │   ├── health
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── health.controller.ts
-│   │   │   │   └── health.module.ts
-│   │   │   ├── media
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── media.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── delete-media.dto.ts
-│   │   │   │   │   └── upload-media.dto.ts
-│   │   │   │   ├── media.module.ts
-│   │   │   │   └── services
-│   │   │   │       ├── media-compression.service.ts
-│   │   │   │       ├── media.service.ts
-│   │   │   │       └── media-upload.service.ts
-│   │   │   ├── monitoring
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── monitoring.controller.ts
-│   │   │   │   ├── gateways
-│   │   │   │   │   └── monitoring.gateway.ts
-│   │   │   │   ├── monitoring.module.ts
-│   │   │   │   └── services
-│   │   │   │       └── monitoring.service.ts
-│   │   │   ├── notifications
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── notifications.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── create-notification.dto.ts
-│   │   │   │   │   └── mark-read.dto.ts
-│   │   │   │   ├── notifications.module.ts
-│   │   │   │   └── services
-│   │   │   │       └── notifications.service.ts
-│   │   │   ├── questions
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── questions.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── approve-question.dto.ts
-│   │   │   │   │   ├── create-question.dto.ts
-│   │   │   │   │   ├── import-questions.dto.ts
-│   │   │   │   │   └── update-question.dto.ts
-│   │   │   │   ├── interfaces
-│   │   │   │   │   ├── correct-answer.interface.ts
-│   │   │   │   │   └── question-options.interface.ts
-│   │   │   │   ├── questions.module.ts
-│   │   │   │   └── services
-│   │   │   │       ├── question-import.service.ts
-│   │   │   │       ├── questions.service.ts
-│   │   │   │       └── question-statistics.service.ts
-│   │   │   ├── question-tags
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── question-tags.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── create-tag.dto.ts
-│   │   │   │   │   └── update-tag.dto.ts
-│   │   │   │   ├── question-tags.module.ts
-│   │   │   │   └── services
-│   │   │   │       └── question-tags.service.ts
-│   │   │   ├── reports
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── reports.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   └── export-filter.dto.ts
-│   │   │   │   ├── processors
-│   │   │   │   │   └── report-queue.processor.ts
-│   │   │   │   ├── reports.module.ts
-│   │   │   │   └── services
-│   │   │   │       ├── excel-export.service.ts
-│   │   │   │       └── pdf-export.service.ts
-│   │   │   ├── sessions
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── sessions.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── assign-students.dto.ts
-│   │   │   │   │   ├── create-session.dto.ts
-│   │   │   │   │   └── update-session.dto.ts
-│   │   │   │   ├── services
-│   │   │   │   │   ├── session-monitoring.service.ts
-│   │   │   │   │   └── sessions.service.ts
-│   │   │   │   └── sessions.module.ts
-│   │   │   ├── subjects
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── subjects.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── create-subject.dto.ts
-│   │   │   │   │   └── update-subject.dto.ts
-│   │   │   │   ├── services
-│   │   │   │   │   └── subjects.service.ts
-│   │   │   │   └── subjects.module.ts
-│   │   │   ├── submissions
-│   │   │   │   ├── controllers
-│   │   │   │   │   ├── student-exam.controller.ts
-│   │   │   │   │   └── submissions.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── start-attempt.dto.ts
-│   │   │   │   │   ├── submit-answer.dto.ts
-│   │   │   │   │   ├── submit-exam.dto.ts
-│   │   │   │   │   └── upload-media.dto.ts
-│   │   │   │   ├── interfaces
-│   │   │   │   │   ├── exam-package.interface.ts
-│   │   │   │   │   └── grading-result.interface.ts
-│   │   │   │   ├── services
-│   │   │   │   │   ├── auto-grading.service.ts
-│   │   │   │   │   ├── exam-download.service.ts
-│   │   │   │   │   ├── exam-submission.service.ts
-│   │   │   │   │   └── submissions.service.ts
-│   │   │   │   └── submissions.module.ts
-│   │   │   ├── sync
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── sync.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── add-sync-item.dto.ts
-│   │   │   │   │   └── retry-sync.dto.ts
-│   │   │   │   ├── processors
-│   │   │   │   │   └── sync.processor.ts
-│   │   │   │   ├── services
-│   │   │   │   │   ├── chunked-upload.service.ts
-│   │   │   │   │   ├── sync-processor.service.ts
-│   │   │   │   │   └── sync.service.ts
-│   │   │   │   └── sync.module.ts
-│   │   │   ├── tenants
-│   │   │   │   ├── controllers
-│   │   │   │   │   └── tenants.controller.ts
-│   │   │   │   ├── dto
-│   │   │   │   │   ├── create-tenant.dto.ts
-│   │   │   │   │   └── update-tenant.dto.ts
-│   │   │   │   ├── services
-│   │   │   │   │   └── tenants.service.ts
-│   │   │   │   └── tenants.module.ts
-│   │   │   └── users
-│   │   │       ├── controllers
-│   │   │       │   └── users.controller.ts
-│   │   │       ├── dto
-│   │   │       │   ├── create-user.dto.ts
-│   │   │       │   ├── import-users.dto.ts
-│   │   │       │   └── update-user.dto.ts
-│   │   │       ├── services
-│   │   │       │   └── users.service.ts
-│   │   │       └── users.module.ts
-│   │   └── prisma
-│   │       ├── factories
-│   │       │   ├── exam-package.factory.ts
-│   │       │   ├── question.factory.ts
-│   │       │   └── user.factory.ts
-│   │       └── seeds
-│   │           ├── 01-tenants.seed.ts
-│   │           ├── 02-users.seed.ts
-│   │           ├── 03-subjects.seed.ts
-│   │           └── index.ts
-│   ├── test
-│   │   ├── e2e
-│   │   │   ├── auth.e2e-spec.ts
-│   │   │   ├── grading.e2e-spec.ts
-│   │   │   ├── offline-sync.e2e-spec.ts
-│   │   │   └── student-exam-flow.e2e-spec.ts
-│   │   ├── integration
-│   │   │   ├── database.spec.ts
-│   │   │   ├── minio.spec.ts
-│   │   │   └── redis.spec.ts
-│   │   ├── load
-│   │   │   ├── concurrent-submission.k6.js
-│   │   │   ├── exam-download.k6.js
-│   │   │   └── sync-stress.k6.js
-│   │   └── unit
-│   │       ├── auth
-│   │       │   └── auth.service.spec.ts
-│   │       ├── exam-packages
-│   │       │   └── exam-packages.service.spec.ts
-│   │       ├── grading
-│   │       │   └── auto-grading.service.spec.ts
-│   │       ├── questions
-│   │       │   └── questions.service.spec.ts
-│   │       └── sync
-│   │           └── sync.service.spec.ts
-│   ├── tsconfig.json
-│   └── uploads
-│       ├── answers
-│       ├── media
-│       ├── questions
-│       └── temp
-├── exam-frontend
-│   ├── next.config.ts
-│   ├── package.json
-│   ├── playwright.config.ts
-│   ├── postcss.config.js
-│   ├── public
-│   │   ├── fonts
-│   │   ├── icons
-│   │   ├── images
-│   │   ├── manifest.json
-│   │   └── robots.txt
-│   ├── src
-│   │   ├── app
-│   │   │   ├── api
-│   │   │   │   ├── auth
-│   │   │   │   │   ├── login
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   ├── logout
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   └── refresh
-│   │   │   │   │       └── route.ts
-│   │   │   │   ├── download
+│   │   │   │   ├── login
 │   │   │   │   │   └── route.ts
-│   │   │   │   ├── health
+│   │   │   │   ├── logout
 │   │   │   │   │   └── route.ts
-│   │   │   │   ├── media
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── sync
+│   │   │   │   └── refresh
 │   │   │   │       └── route.ts
-│   │   │   ├── (auth)
-│   │   │   │   ├── layout.tsx
-│   │   │   │   └── login
-│   │   │   │       └── page.tsx
-│   │   │   ├── global.css
-│   │   │   ├── (guru)
-│   │   │   │   ├── dashboard
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── grading
-│   │   │   │   │   ├── [attemptId]
-│   │   │   │   │   │   └── page.tsx
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── hasil
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── soal
-│   │   │   │   │   ├── create
-│   │   │   │   │   │   └── page.tsx
-│   │   │   │   │   ├── [id]
-│   │   │   │   │   │   └── edit
-│   │   │   │   │   │       └── page.tsx
-│   │   │   │   │   ├── import
-│   │   │   │   │   │   └── page.tsx
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── ujian
-│   │   │   │       ├── create
-│   │   │   │       │   └── page.tsx
-│   │   │   │       ├── [id]
-│   │   │   │       │   ├── edit
-│   │   │   │       │   │   └── page.tsx
-│   │   │   │       │   ├── preview
-│   │   │   │       │   │   └── page.tsx
-│   │   │   │       │   └── statistics
-│   │   │   │       │       └── page.tsx
-│   │   │   │       └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   ├── loading.tsx
-│   │   │   ├── not-found.tsx
-│   │   │   ├── (operator)
-│   │   │   │   ├── dashboard
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── laporan
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── peserta
-│   │   │   │   │   ├── import
-│   │   │   │   │   │   └── page.tsx
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── ruang
-│   │   │   │   │   ├── create
-│   │   │   │   │   │   └── page.tsx
-│   │   │   │   │   ├── [id]
-│   │   │   │   │   │   └── edit
-│   │   │   │   │   │       └── page.tsx
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── sesi
-│   │   │   │       ├── create
-│   │   │   │       │   └── page.tsx
-│   │   │   │       ├── [id]
-│   │   │   │       │   └── edit
-│   │   │   │       │       └── page.tsx
-│   │   │   │       └── page.tsx
-│   │   │   ├── page.tsx
-│   │   │   ├── (pengawas)
-│   │   │   │   ├── dashboard
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── layout.tsx
-│   │   │   │   └── monitoring
-│   │   │   │       ├── live
-│   │   │   │       │   └── page.tsx
-│   │   │   │       └── [sessionId]
-│   │   │   │           └── page.tsx
-│   │   │   ├── (siswa)
-│   │   │   │   ├── dashboard
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── profile
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── ujian
-│   │   │   │       ├── download
-│   │   │   │       │   └── page.tsx
-│   │   │   │       ├── page.tsx
-│   │   │   │       └── [sessionId]
-│   │   │   │           ├── page.tsx
-│   │   │   │           ├── result
-│   │   │   │           │   └── page.tsx
-│   │   │   │           └── review
-│   │   │   │               └── page.tsx
-│   │   │   └── (superadmin)
-│   │   │       ├── audit-logs
-│   │   │       │   └── page.tsx
-│   │   │       ├── dashboard
-│   │   │       │   └── page.tsx
-│   │   │       ├── layout.tsx
-│   │   │       ├── schools
-│   │   │       │   ├── create
-│   │   │       │   │   └── page.tsx
-│   │   │       │   ├── [id]
-│   │   │       │   │   └── edit
-│   │   │       │   │       └── page.tsx
-│   │   │       │   └── page.tsx
-│   │   │       ├── settings
-│   │   │       │   └── page.tsx
-│   │   │       └── users
-│   │   │           └── page.tsx
-│   │   ├── components
-│   │   │   ├── analytics
-│   │   │   │   ├── DashboardStats.tsx
-│   │   │   │   ├── ExamStatistics.tsx
-│   │   │   │   ├── ItemAnalysisChart.tsx
-│   │   │   │   └── StudentProgress.tsx
-│   │   │   ├── auth
-│   │   │   │   ├── DeviceLockWarning.tsx
-│   │   │   │   └── LoginForm.tsx
-│   │   │   ├── exam
-│   │   │   │   ├── ActivityLogger.tsx
-│   │   │   │   ├── AutoSaveIndicator.tsx
-│   │   │   │   ├── ExamInstructions.tsx
-│   │   │   │   ├── ExamTimer.tsx
-│   │   │   │   ├── MediaPlayer.tsx
-│   │   │   │   ├── MediaRecorder.tsx
-│   │   │   │   ├── ProgressBar.tsx
-│   │   │   │   ├── QuestionNavigation.tsx
-│   │   │   │   └── question-types
-│   │   │   │       ├── Essay.tsx
-│   │   │   │       ├── Matching.tsx
-│   │   │   │       ├── MultipleChoiceComplex.tsx
-│   │   │   │       ├── MultipleChoice.tsx
-│   │   │   │       ├── ShortAnswer.tsx
-│   │   │   │       └── TrueFalse.tsx
-│   │   │   ├── grading
-│   │   │   │   ├── EssaySimilarityBadge.tsx
-│   │   │   │   ├── GradingRubric.tsx
-│   │   │   │   └── ManualGradingCard.tsx
-│   │   │   ├── layout
-│   │   │   │   ├── Footer.tsx
-│   │   │   │   ├── Header.tsx
-│   │   │   │   ├── MainLayout.tsx
-│   │   │   │   └── Sidebar.tsx
-│   │   │   ├── madrasah
-│   │   │   │   ├── ArabicKeyboard.tsx
-│   │   │   │   ├── HafalanRecorder.tsx
-│   │   │   │   ├── QuranDisplay.tsx
-│   │   │   │   └── TajwidMarker.tsx
-│   │   │   ├── monitoring
-│   │   │   │   ├── ActivityLogViewer.tsx
-│   │   │   │   ├── LiveMonitor.tsx
-│   │   │   │   └── StudentProgressCard.tsx
-│   │   │   ├── questions
-│   │   │   │   ├── MatchingEditor.tsx
-│   │   │   │   ├── MediaUpload.tsx
-│   │   │   │   ├── OptionsEditor.tsx
-│   │   │   │   ├── QuestionEditor.tsx
-│   │   │   │   └── TagSelector.tsx
-│   │   │   ├── sync
-│   │   │   │   ├── ChecksumValidator.tsx
-│   │   │   │   ├── DownloadProgress.tsx
-│   │   │   │   ├── SyncStatus.tsx
-│   │   │   │   └── UploadQueue.tsx
-│   │   │   └── ui
-│   │   │       ├── Alert.tsx
-│   │   │       ├── Badge.tsx
-│   │   │       ├── Button.tsx
-│   │   │       ├── Card.tsx
-│   │   │       ├── Confirm.tsx
-│   │   │       ├── Input.tsx
-│   │   │       ├── Loading.tsx
-│   │   │       ├── Modal.tsx
-│   │   │       ├── Select.tsx
-│   │   │       ├── Spinner.tsx
-│   │   │       ├── Table.tsx
-│   │   │       ├── Tabs.tsx
-│   │   │       ├── Toast.tsx
-│   │   │       └── Tooltip.tsx
-│   │   ├── hooks
-│   │   │   ├── use-auth.ts
-│   │   │   ├── use-auto-save.ts
-│   │   │   ├── use-device-warnings.ts
-│   │   │   ├── use-exam.ts
-│   │   │   ├── use-media-recorder.ts
-│   │   │   ├── use-online-status.ts
-│   │   │   ├── use-powersync.ts
-│   │   │   ├── use-sync-status.ts
-│   │   │   ├── use-timer.ts
-│   │   │   └── use-toast.ts
-│   │   ├── lib
-│   │   │   ├── api
-│   │   │   │   ├── analytics.api.ts
-│   │   │   │   ├── auth.api.ts
-│   │   │   │   ├── client.ts
-│   │   │   │   ├── exam-packages.api.ts
-│   │   │   │   ├── grading.api.ts
-│   │   │   │   ├── media.api.ts
-│   │   │   │   ├── monitoring.api.ts
-│   │   │   │   ├── questions.api.ts
-│   │   │   │   ├── sessions.api.ts
-│   │   │   │   ├── submissions.api.ts
-│   │   │   │   └── sync.api.ts
-│   │   │   ├── crypto
-│   │   │   │   ├── aes-gcm.ts
-│   │   │   │   ├── checksum.ts
-│   │   │   │   └── key-manager.ts
-│   │   │   ├── db
-│   │   │   │   ├── db.ts
-│   │   │   │   ├── migrations.ts
-│   │   │   │   ├── queries.ts
-│   │   │   │   └── schema.ts
-│   │   │   ├── exam
-│   │   │   │   ├── activity-logger.ts
-│   │   │   │   ├── auto-save.ts
-│   │   │   │   ├── controller.ts
-│   │   │   │   ├── navigation.ts
-│   │   │   │   ├── package-decoder.ts
-│   │   │   │   ├── randomizer.ts
-│   │   │   │   ├── timer.ts
-│   │   │   │   └── validator.ts
+│   │   │   ├── download
+│   │   │   │   └── route.ts
+│   │   │   ├── health
+│   │   │   │   └── route.ts
 │   │   │   ├── media
-│   │   │   │   ├── chunked-upload.ts
-│   │   │   │   ├── compress.ts
-│   │   │   │   ├── player.ts
-│   │   │   │   ├── recorder.ts
-│   │   │   │   └── upload.ts
-│   │   │   ├── middleware
-│   │   │   │   ├── auth.middleware.ts
-│   │   │   │   ├── role.middleware.ts
-│   │   │   │   └── tenant.middleware.ts
-│   │   │   ├── offline
-│   │   │   │   ├── cache.ts
-│   │   │   │   ├── checksum.ts
-│   │   │   │   ├── download.ts
-│   │   │   │   ├── queue.ts
-│   │   │   │   └── sync.ts
-│   │   │   └── utils
-│   │   │       ├── compression.ts
-│   │   │       ├── device.ts
-│   │   │       ├── error.ts
-│   │   │       ├── format.ts
-│   │   │       ├── logger.ts
-│   │   │       ├── network.ts
-│   │   │       └── time.ts
-│   │   ├── middleware.ts
-│   │   ├── schemas
-│   │   │   ├── answer.schema.ts
-│   │   │   ├── auth.schema.ts
-│   │   │   ├── exam.schema.ts
-│   │   │   ├── question.schema.ts
-│   │   │   ├── sync.schema.ts
-│   │   │   └── user.schema.ts
-│   │   ├── stores
-│   │   │   ├── activity.store.ts
-│   │   │   ├── answer.store.ts
-│   │   │   ├── auth.store.ts
-│   │   │   ├── exam.store.ts
-│   │   │   ├── index.ts
-│   │   │   ├── sync.store.ts
-│   │   │   ├── timer.store.ts
-│   │   │   └── ui.store.ts
-│   │   ├── styles
-│   │   │   ├── animations.css
-│   │   │   ├── arabic.css
-│   │   │   └── print.css
-│   │   ├── tests
-│   │   │   ├── integration
-│   │   │   │   ├── dexie.spec.ts
-│   │   │   │   └── sync.spec.ts
-│   │   │   ├── setup.ts
-│   │   │   └── unit
-│   │   │       ├── hooks
-│   │   │       │   ├── use-auto-save.spec.ts
-│   │   │       │   ├── use-online-status.spec.ts
-│   │   │       │   └── use-timer.spec.ts
-│   │   │       ├── lib
-│   │   │       │   ├── aes-gcm.spec.ts
-│   │   │       │   ├── auto-save.spec.ts
-│   │   │       │   ├── checksum.spec.ts
-│   │   │       │   └── compression.spec.ts
-│   │   │       └── stores
-│   │   │           ├── answer.store.spec.ts
-│   │   │           ├── auth.store.spec.ts
-│   │   │           └── exam.store.spec.ts
-│   │   └── types
-│   │       ├── activity.ts
-│   │       ├── answer.ts
-│   │       ├── api.ts
-│   │       ├── common.ts
-│   │       ├── exam.ts
-│   │       ├── index.ts
-│   │       ├── media.ts
-│   │       ├── question.ts
-│   │       ├── sync.ts
-│   │       └── user.ts
-│   ├── tailwind.config.ts
+│   │   │   │   └── route.ts
+│   │   │   └── sync
+│   │   │       └── route.ts
+│   │   ├── (auth)
+│   │   │   ├── layout.tsx
+│   │   │   └── login
+│   │   │       └── page.tsx
+│   │   ├── global.css
+│   │   ├── (guru)
+│   │   │   ├── dashboard
+│   │   │   │   └── page.tsx
+│   │   │   ├── grading
+│   │   │   │   ├── [attemptId]
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   ├── hasil
+│   │   │   │   └── page.tsx
+│   │   │   ├── layout.tsx
+│   │   │   ├── soal
+│   │   │   │   ├── create
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── edit
+│   │   │   │   │       └── page.tsx
+│   │   │   │   ├── import
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   └── ujian
+│   │   │       ├── create
+│   │   │       │   └── page.tsx
+│   │   │       ├── [id]
+│   │   │       │   ├── edit
+│   │   │       │   │   └── page.tsx
+│   │   │       │   ├── preview
+│   │   │       │   │   └── page.tsx
+│   │   │       │   └── statistics
+│   │   │       │       └── page.tsx
+│   │   │       └── page.tsx
+│   │   ├── layout.tsx
+│   │   ├── loading.tsx
+│   │   ├── not-found.tsx
+│   │   ├── (operator)
+│   │   │   ├── dashboard
+│   │   │   │   └── page.tsx
+│   │   │   ├── laporan
+│   │   │   │   └── page.tsx
+│   │   │   ├── layout.tsx
+│   │   │   ├── peserta
+│   │   │   │   ├── import
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   ├── ruang
+│   │   │   │   ├── create
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── edit
+│   │   │   │   │       └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   └── sesi
+│   │   │       ├── create
+│   │   │       │   └── page.tsx
+│   │   │       ├── [id]
+│   │   │       │   └── edit
+│   │   │       │       └── page.tsx
+│   │   │       └── page.tsx
+│   │   ├── page.tsx
+│   │   ├── (pengawas)
+│   │   │   ├── dashboard
+│   │   │   │   └── page.tsx
+│   │   │   ├── layout.tsx
+│   │   │   └── monitoring
+│   │   │       ├── live
+│   │   │       │   └── page.tsx
+│   │   │       └── [sessionId]
+│   │   │           └── page.tsx
+│   │   ├── (siswa)
+│   │   │   ├── dashboard
+│   │   │   │   └── page.tsx
+│   │   │   ├── layout.tsx
+│   │   │   ├── profile
+│   │   │   │   └── page.tsx
+│   │   │   └── ujian
+│   │   │       ├── download
+│   │   │       │   └── page.tsx
+│   │   │       ├── page.tsx
+│   │   │       └── [sessionId]
+│   │   │           ├── page.tsx
+│   │   │           ├── result
+│   │   │           │   └── page.tsx
+│   │   │           └── review
+│   │   │               └── page.tsx
+│   │   └── (superadmin)
+│   │       ├── audit-logs
+│   │       │   └── page.tsx
+│   │       ├── dashboard
+│   │       │   └── page.tsx
+│   │       ├── layout.tsx
+│   │       ├── schools
+│   │       │   ├── create
+│   │       │   │   └── page.tsx
+│   │       │   ├── [id]
+│   │       │   │   └── edit
+│   │       │   │       └── page.tsx
+│   │       │   └── page.tsx
+│   │       ├── settings
+│   │       │   └── page.tsx
+│   │       └── users
+│   │           └── page.tsx
+│   ├── components
+│   │   ├── analytics
+│   │   │   ├── DashboardStats.tsx
+│   │   │   ├── ExamStatistics.tsx
+│   │   │   ├── ItemAnalysisChart.tsx
+│   │   │   └── StudentProgress.tsx
+│   │   ├── auth
+│   │   │   ├── DeviceLockWarning.tsx
+│   │   │   └── LoginForm.tsx
+│   │   ├── exam
+│   │   │   ├── ActivityLogger.tsx
+│   │   │   ├── AutoSaveIndicator.tsx
+│   │   │   ├── ExamInstructions.tsx
+│   │   │   ├── ExamTimer.tsx
+│   │   │   ├── MediaPlayer.tsx
+│   │   │   ├── MediaRecorder.tsx
+│   │   │   ├── ProgressBar.tsx
+│   │   │   ├── QuestionNavigation.tsx
+│   │   │   └── question-types
+│   │   │       ├── Essay.tsx
+│   │   │       ├── Matching.tsx
+│   │   │       ├── MultipleChoiceComplex.tsx
+│   │   │       ├── MultipleChoice.tsx
+│   │   │       ├── ShortAnswer.tsx
+│   │   │       └── TrueFalse.tsx
+│   │   ├── grading
+│   │   │   ├── EssaySimilarityBadge.tsx
+│   │   │   ├── GradingRubric.tsx
+│   │   │   └── ManualGradingCard.tsx
+│   │   ├── layout
+│   │   │   ├── Footer.tsx
+│   │   │   ├── Header.tsx
+│   │   │   ├── MainLayout.tsx
+│   │   │   └── Sidebar.tsx
+│   │   ├── madrasah
+│   │   │   ├── ArabicKeyboard.tsx
+│   │   │   ├── HafalanRecorder.tsx
+│   │   │   ├── QuranDisplay.tsx
+│   │   │   └── TajwidMarker.tsx
+│   │   ├── monitoring
+│   │   │   ├── ActivityLogViewer.tsx
+│   │   │   ├── LiveMonitor.tsx
+│   │   │   └── StudentProgressCard.tsx
+│   │   ├── questions
+│   │   │   ├── MatchingEditor.tsx
+│   │   │   ├── MediaUpload.tsx
+│   │   │   ├── OptionsEditor.tsx
+│   │   │   ├── QuestionEditor.tsx
+│   │   │   └── TagSelector.tsx
+│   │   ├── sync
+│   │   │   ├── ChecksumValidator.tsx
+│   │   │   ├── DownloadProgress.tsx
+│   │   │   ├── SyncStatus.tsx
+│   │   │   └── UploadQueue.tsx
+│   │   └── ui
+│   │       ├── Alert.tsx
+│   │       ├── Badge.tsx
+│   │       ├── Button.tsx
+│   │       ├── Card.tsx
+│   │       ├── Confirm.tsx
+│   │       ├── Input.tsx
+│   │       ├── Loading.tsx
+│   │       ├── Modal.tsx
+│   │       ├── Select.tsx
+│   │       ├── Spinner.tsx
+│   │       ├── Table.tsx
+│   │       ├── Tabs.tsx
+│   │       ├── Toast.tsx
+│   │       └── Tooltip.tsx
+│   ├── hooks
+│   │   ├── use-auth.ts
+│   │   ├── use-auto-save.ts
+│   │   ├── use-device-warnings.ts
+│   │   ├── use-exam.ts
+│   │   ├── use-media-recorder.ts
+│   │   ├── use-online-status.ts
+│   │   ├── use-powersync.ts
+│   │   ├── use-sync-status.ts
+│   │   ├── use-timer.ts
+│   │   └── use-toast.ts
+│   ├── lib
+│   │   ├── api
+│   │   │   ├── analytics.api.ts
+│   │   │   ├── auth.api.ts
+│   │   │   ├── client.ts
+│   │   │   ├── exam-packages.api.ts
+│   │   │   ├── grading.api.ts
+│   │   │   ├── media.api.ts
+│   │   │   ├── monitoring.api.ts
+│   │   │   ├── questions.api.ts
+│   │   │   ├── sessions.api.ts
+│   │   │   ├── submissions.api.ts
+│   │   │   └── sync.api.ts
+│   │   ├── crypto
+│   │   │   ├── aes-gcm.ts
+│   │   │   ├── checksum.ts
+│   │   │   └── key-manager.ts
+│   │   ├── db
+│   │   │   ├── db.ts
+│   │   │   ├── migrations.ts
+│   │   │   ├── queries.ts
+│   │   │   └── schema.ts
+│   │   ├── exam
+│   │   │   ├── activity-logger.ts
+│   │   │   ├── auto-save.ts
+│   │   │   ├── controller.ts
+│   │   │   ├── navigation.ts
+│   │   │   ├── package-decoder.ts
+│   │   │   ├── randomizer.ts
+│   │   │   ├── timer.ts
+│   │   │   └── validator.ts
+│   │   ├── media
+│   │   │   ├── chunked-upload.ts
+│   │   │   ├── compress.ts
+│   │   │   ├── player.ts
+│   │   │   ├── recorder.ts
+│   │   │   └── upload.ts
+│   │   ├── middleware
+│   │   │   ├── auth.middleware.ts
+│   │   │   ├── role.middleware.ts
+│   │   │   └── tenant.middleware.ts
+│   │   ├── offline
+│   │   │   ├── cache.ts
+│   │   │   ├── checksum.ts
+│   │   │   ├── download.ts
+│   │   │   ├── queue.ts
+│   │   │   └── sync.ts
+│   │   └── utils
+│   │       ├── compression.ts
+│   │       ├── device.ts
+│   │       ├── error.ts
+│   │       ├── format.ts
+│   │       ├── logger.ts
+│   │       ├── network.ts
+│   │       └── time.ts
+│   ├── middleware.ts
+│   ├── schemas
+│   │   ├── answer.schema.ts
+│   │   ├── auth.schema.ts
+│   │   ├── exam.schema.ts
+│   │   ├── question.schema.ts
+│   │   ├── sync.schema.ts
+│   │   └── user.schema.ts
+│   ├── stores
+│   │   ├── activity.store.ts
+│   │   ├── answer.store.ts
+│   │   ├── auth.store.ts
+│   │   ├── exam.store.ts
+│   │   ├── index.ts
+│   │   ├── sync.store.ts
+│   │   ├── timer.store.ts
+│   │   └── ui.store.ts
+│   ├── styles
+│   │   ├── animations.css
+│   │   ├── arabic.css
+│   │   └── print.css
 │   ├── tests
-│   │   └── e2e
-│   │       ├── auth.spec.ts
-│   │       ├── exam-flow.spec.ts
-│   │       ├── grading.spec.ts
-│   │       ├── media-recording.spec.ts
-│   │       └── offline-sync.spec.ts
-│   ├── tsconfig.json
-│   └── vitest.config.ts
-├── generate.sh
-├── README_BE.md
-├── README_FE.md
-├── README.md
-├── setup-backend.sh
-├── setup-frontend.sh
-└── SKILLS.md
+│   │   ├── integration
+│   │   │   ├── dexie.spec.ts
+│   │   │   └── sync.spec.ts
+│   │   ├── setup.ts
+│   │   └── unit
+│   │       ├── hooks
+│   │       │   ├── use-auto-save.spec.ts
+│   │       │   ├── use-online-status.spec.ts
+│   │       │   └── use-timer.spec.ts
+│   │       ├── lib
+│   │       │   ├── aes-gcm.spec.ts
+│   │       │   ├── auto-save.spec.ts
+│   │       │   ├── checksum.spec.ts
+│   │       │   └── compression.spec.ts
+│   │       └── stores
+│   │           ├── answer.store.spec.ts
+│   │           ├── auth.store.spec.ts
+│   │           └── exam.store.spec.ts
+│   └── types
+│       ├── activity.ts
+│       ├── answer.ts
+│       ├── api.ts
+│       ├── common.ts
+│       ├── exam.ts
+│       ├── index.ts
+│       ├── media.ts
+│       ├── question.ts
+│       ├── sync.ts
+│       └── user.ts
+├── tailwind.config.ts
+├── tests
+│   └── e2e
+│       ├── auth.spec.ts
+│       ├── exam-flow.spec.ts
+│       ├── grading.spec.ts
+│       ├── media-recording.spec.ts
+│       └── offline-sync.spec.ts
+├── tsconfig.json
+└── vitest.config.ts
+
 ```
 
-### Frontend (`exam-frontend/src/`)
-```
-app/
-├── (auth)/login/                          # Halaman login
-├── (siswa)/ujian/[sessionId]/             # Ruang ujian utama ← paling kritis
-│   ├── review/                            # Review jawaban
-│   └── result/                            # Hasil ujian
-├── (guru)/soal/ ujian/ grading/           # Dashboard guru
-├── (operator)/sesi/ ruang/ peserta/       # Dashboard operator
-├── (pengawas)/monitoring/                 # Live monitoring
-└── (superadmin)/schools/ users/           # Admin institusi
-
-components/
-├── exam/question-types/                   # MultipleChoice, Essay, Matching, dll (lazy loaded)
-├── exam/                                  # ExamTimer, AutoSaveIndicator, ActivityLogger, dll
-├── sync/                                  # DownloadProgress, SyncStatus, UploadQueue
-├── monitoring/                            # LiveMonitor, ActivityLogViewer
-├── grading/                               # ManualGradingCard, EssaySimilarityBadge
-└── ui/                                    # Base components (Button, Modal, Toast, dll)
-
-stores/                                    # Zustand — state in-memory (tidak dipersist ke disk)
-├── auth.store.ts                          # session, token, device fingerprint
-├── exam.store.ts                          # paket soal, status ujian, currentQuestion
-├── answer.store.ts                        # jawaban, isDirty, lastSaved
-├── sync.store.ts                          # isOnline, pendingCount, lastSyncAt
-└── timer.store.ts                         # timeRemaining, tick
-
-lib/
-├── api/                                   # ky client + fungsi per domain (auth, submissions, dll)
-├── crypto/                                # aes-gcm.ts, key-manager.ts, checksum.ts
-├── db/                                    # Dexie schema, db instance, query helpers
-├── exam/                                  # controller.ts, auto-save.ts, package-decoder.ts, timer.ts
-├── media/                                 # recorder.ts, chunked-upload.ts, compress.ts
-├── offline/                               # download.ts, sync.ts, queue.ts, cache.ts
-└── utils/                                 # network.ts, device.ts, compression.ts, format.ts
-
-hooks/                                     # Custom hooks — satu hook per logika stateful
-schemas/                                   # Zod schemas — validasi form & response API
-types/                                     # TypeScript types & interfaces
-```
-
-### Backend (`exam-backend/src/`)
-```
-modules/
-├── auth/              # JWT, Passport, refresh token rotation, DeviceGuard
-├── tenants/           # Manajemen institusi (multi-tenant root)
-├── users/             # CRUD user, import Excel
-├── subjects/          # Mata pelajaran per tenant
-├── question-tags/     # Tag soal per tenant
-├── questions/         # Bank soal — 6 tipe, import/export
-├── exam-packages/     # Paket ujian, builder, item analysis
-├── exam-rooms/        # Ruang ujian per tenant
-├── sessions/          # Sesi ujian, assign peserta, monitoring
-├── submissions/       # ← KRITIS: download paket, submit jawaban, auto-grade
-├── grading/           # Manual grading, publish hasil
-├── sync/              # Offline sync endpoint, BullMQ processor, chunked upload
-├── monitoring/        # Socket.IO gateway, live status
-├── analytics/         # Item analysis, statistik ujian
-├── reports/           # Ekspor Excel (ExcelJS) & PDF (Puppeteer)
-├── media/             # Upload ke MinIO, presigned URL, kompresi
-├── activity-logs/     # Log aktivitas peserta selama ujian
-├── audit-logs/        # Tabel append-only aksi sensitif
-├── notifications/     # Notifikasi in-app
-└── health/            # @nestjs/terminus — health check load balancer
-
-common/
-├── decorators/        # @CurrentUser, @TenantId, @Roles, @Public, @Idempotency
-├── guards/            # TenantGuard, ThrottlerGuard
-├── interceptors/      # TenantInterceptor, IdempotencyInterceptor, TransformInterceptor
-├── filters/           # HttpExceptionFilter, AllExceptionsFilter
-├── middleware/        # SubdomainMiddleware (ekstrak tenantId dari subdomain)
-├── enums/             # UserRole, QuestionType, ExamPackageStatus, GradingStatus, SyncStatus
-└── utils/             # encryption, checksum, device-fingerprint, presigned-url, similarity
-
-prisma/
-├── schema.prisma      # Single source of truth — semua model & relasi
-└── seeds/             # 01-tenants, 02-users, 03-subjects
+### Backend (`exam-backend`)
+```exam-backend/
+├── docker-compose.yml
+├── Dockerfile
+├── docs
+│   ├── api
+│   │   └── swagger.yaml
+│   ├── architecture
+│   │   ├── database-schema.md
+│   │   ├── offline-sync-flow.md
+│   │   ├── security-model.md
+│   │   └── system-design.md
+│   └── deployment
+│       └── production-checklist.md
+├── ecosystem.config.js
+├── logs
+├── nest-cli.json
+├── package.json
+├── prisma
+│   ├── migrations
+│   │   ├── 20260219223909_init
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
+├── scripts
+│   ├── backup.sh
+│   ├── cleanup-media.sh
+│   ├── restore.sh
+│   ├── rotate-keys.sh
+│   └── seed.sh
+├── src
+│   ├── app.controller.ts
+│   ├── app.module.ts
+│   ├── app.service.ts
+│   ├── common
+│   │   ├── decorators
+│   │   │   ├── current-user.decorator.ts
+│   │   │   ├── idempotency.decorator.ts
+│   │   │   ├── public.decorator.ts
+│   │   │   ├── roles.decorator.ts
+│   │   │   ├── tenant-id.decorator.ts
+│   │   │   └── throttle-tier.decorator.ts
+│   │   ├── dto
+│   │   │   ├── base-query.dto.ts
+│   │   │   ├── base-response.dto.ts
+│   │   │   └── pagination.dto.ts
+│   │   ├── entities
+│   │   ├── enums
+│   │   │   ├── exam-status.enum.ts
+│   │   │   ├── grading-status.enum.ts
+│   │   │   ├── question-type.enum.ts
+│   │   │   ├── sync-status.enum.ts
+│   │   │   └── user-role.enum.ts
+│   │   ├── exceptions
+│   │   │   ├── device-locked.exception.ts
+│   │   │   ├── exam-not-available.exception.ts
+│   │   │   ├── idempotency-conflict.exception.ts
+│   │   │   └── tenant-not-found.exception.ts
+│   │   ├── filters
+│   │   │   ├── all-exceptions.filter.ts
+│   │   │   └── http-exception.filter.ts
+│   │   ├── guards
+│   │   │   ├── tenant.guard.ts
+│   │   │   └── throttler.guard.ts
+│   │   ├── interceptors
+│   │   │   ├── idempotency.interceptor.ts
+│   │   │   ├── logging.interceptor.ts
+│   │   │   ├── tenant.interceptor.ts
+│   │   │   ├── timeout.interceptor.ts
+│   │   │   └── transform.interceptor.ts
+│   │   ├── middleware
+│   │   │   ├── logger.middleware.ts
+│   │   │   ├── performance.middleware.ts
+│   │   │   └── subdomain.middleware.ts
+│   │   ├── pipes
+│   │   │   ├── parse-int.pipe.ts
+│   │   │   └── validation.pipe.ts
+│   │   ├── providers
+│   │   │   └── redis.provider.ts
+│   │   ├── utils
+│   │   │   ├── checksum.util.ts
+│   │   │   ├── device-fingerprint.util.ts
+│   │   │   ├── encryption.util.ts
+│   │   │   ├── file.util.ts
+│   │   │   ├── presigned-url.util.ts
+│   │   │   ├── randomizer.util.ts
+│   │   │   ├── similarity.util.ts
+│   │   │   └── time-validation.util.ts
+│   │   └── validators
+│   │       ├── is-tenant-exists.validator.ts
+│   │       └── is-unique.validator.ts
+│   ├── config
+│   │   ├── app.config.ts
+│   │   ├── bullmq.config.ts
+│   │   ├── database.config.ts
+│   │   ├── jwt.config.ts
+│   │   ├── minio.config.ts
+│   │   ├── multer.config.ts
+│   │   ├── redis.config.ts
+│   │   └── throttler.config.ts
+│   ├── main.ts
+│   ├── modules
+│   │   ├── activity-logs
+│   │   │   ├── activity-logs.module.ts
+│   │   │   ├── controllers
+│   │   │   │   └── activity-logs.controller.ts
+│   │   │   ├── dto
+│   │   │   │   └── create-activity-log.dto.ts
+│   │   │   └── services
+│   │   │       └── activity-logs.service.ts
+│   │   ├── analytics
+│   │   │   ├── analytics.module.ts
+│   │   │   ├── controllers
+│   │   │   │   └── analytics.controller.ts
+│   │   │   ├── dto
+│   │   │   │   └── analytics-filter.dto.ts
+│   │   │   └── services
+│   │   │       ├── analytics.service.ts
+│   │   │       └── dashboard.service.ts
+│   │   ├── audit-logs
+│   │   │   ├── audit-logs.module.ts
+│   │   │   ├── controllers
+│   │   │   │   └── audit-logs.controller.ts
+│   │   │   ├── decorators
+│   │   │   │   └── audit.decorator.ts
+│   │   │   ├── dto
+│   │   │   │   └── audit-log-query.dto.ts
+│   │   │   ├── interceptors
+│   │   │   │   └── audit.interceptor.ts
+│   │   │   └── services
+│   │   │       └── audit-logs.service.ts
+│   │   ├── auth
+│   │   │   ├── auth.module.ts
+│   │   │   ├── controllers
+│   │   │   │   └── auth.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── change-password.dto.ts
+│   │   │   │   ├── login.dto.ts
+│   │   │   │   └── refresh-token.dto.ts
+│   │   │   ├── guards
+│   │   │   │   ├── device.guard.ts
+│   │   │   │   ├── jwt-auth.guard.ts
+│   │   │   │   ├── local-auth.guard.ts
+│   │   │   │   └── roles.guard.ts
+│   │   │   ├── services
+│   │   │   │   └── auth.service.ts
+│   │   │   └── strategies
+│   │   │       ├── jwt-refresh.strategy.ts
+│   │   │       ├── jwt.strategy.ts
+│   │   │       └── local.strategy.ts
+│   │   ├── exam-packages
+│   │   │   ├── controllers
+│   │   │   │   └── exam-packages.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── add-questions.dto.ts
+│   │   │   │   ├── create-exam-package.dto.ts
+│   │   │   │   ├── publish-exam-package.dto.ts
+│   │   │   │   └── update-exam-package.dto.ts
+│   │   │   ├── exam-packages.module.ts
+│   │   │   ├── interfaces
+│   │   │   │   └── exam-package-settings.interface.ts
+│   │   │   └── services
+│   │   │       ├── exam-package-builder.service.ts
+│   │   │       ├── exam-packages.service.ts
+│   │   │       └── item-analysis.service.ts
+│   │   ├── exam-rooms
+│   │   │   ├── controllers
+│   │   │   │   └── exam-rooms.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── create-room.dto.ts
+│   │   │   │   └── update-room.dto.ts
+│   │   │   ├── exam-rooms.module.ts
+│   │   │   └── services
+│   │   │       └── exam-rooms.service.ts
+│   │   ├── grading
+│   │   │   ├── controllers
+│   │   │   │   └── grading.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── complete-grading.dto.ts
+│   │   │   │   ├── grade-answer.dto.ts
+│   │   │   │   └── publish-result.dto.ts
+│   │   │   ├── grading.module.ts
+│   │   │   └── services
+│   │   │       ├── grading.service.ts
+│   │   │       └── manual-grading.service.ts
+│   │   ├── health
+│   │   │   ├── controllers
+│   │   │   │   └── health.controller.ts
+│   │   │   └── health.module.ts
+│   │   ├── media
+│   │   │   ├── controllers
+│   │   │   │   └── media.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── delete-media.dto.ts
+│   │   │   │   └── upload-media.dto.ts
+│   │   │   ├── media.module.ts
+│   │   │   ├── processors
+│   │   │   │   └── media.processor.ts
+│   │   │   └── services
+│   │   │       ├── media-compression.service.ts
+│   │   │       ├── media.service.ts
+│   │   │       └── media-upload.service.ts
+│   │   ├── monitoring
+│   │   │   ├── controllers
+│   │   │   │   └── monitoring.controller.ts
+│   │   │   ├── gateways
+│   │   │   │   └── monitoring.gateway.ts
+│   │   │   ├── monitoring.module.ts
+│   │   │   └── services
+│   │   │       └── monitoring.service.ts
+│   │   ├── notifications
+│   │   │   ├── controllers
+│   │   │   │   └── notifications.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── create-notification.dto.ts
+│   │   │   │   └── mark-read.dto.ts
+│   │   │   ├── notifications.module.ts
+│   │   │   ├── processors
+│   │   │   │   └── notification.processor.ts
+│   │   │   └── services
+│   │   │       └── notifications.service.ts
+│   │   ├── questions
+│   │   │   ├── controllers
+│   │   │   │   └── questions.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── approve-question.dto.ts
+│   │   │   │   ├── create-question.dto.ts
+│   │   │   │   ├── import-questions.dto.ts
+│   │   │   │   └── update-question.dto.ts
+│   │   │   ├── interfaces
+│   │   │   │   ├── correct-answer.interface.ts
+│   │   │   │   └── question-options.interface.ts
+│   │   │   ├── questions.module.ts
+│   │   │   └── services
+│   │   │       ├── question-import.service.ts
+│   │   │       ├── questions.service.ts
+│   │   │       └── question-statistics.service.ts
+│   │   ├── question-tags
+│   │   │   ├── controllers
+│   │   │   │   └── question-tags.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── create-tag.dto.ts
+│   │   │   │   └── update-tag.dto.ts
+│   │   │   ├── question-tags.module.ts
+│   │   │   └── services
+│   │   │       └── question-tags.service.ts
+│   │   ├── reports
+│   │   │   ├── controllers
+│   │   │   │   └── reports.controller.ts
+│   │   │   ├── dto
+│   │   │   │   └── export-filter.dto.ts
+│   │   │   ├── processors
+│   │   │   │   └── report-queue.processor.ts
+│   │   │   ├── reports.module.ts
+│   │   │   └── services
+│   │   │       ├── excel-export.service.ts
+│   │   │       ├── pdf-export.service.ts
+│   │   │       └── reports.service.ts
+│   │   ├── sessions
+│   │   │   ├── controllers
+│   │   │   │   └── sessions.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── assign-students.dto.ts
+│   │   │   │   ├── create-session.dto.ts
+│   │   │   │   └── update-session.dto.ts
+│   │   │   ├── services
+│   │   │   │   ├── session-monitoring.service.ts
+│   │   │   │   └── sessions.service.ts
+│   │   │   └── sessions.module.ts
+│   │   ├── subjects
+│   │   │   ├── controllers
+│   │   │   │   └── subjects.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── create-subject.dto.ts
+│   │   │   │   └── update-subject.dto.ts
+│   │   │   ├── services
+│   │   │   │   └── subjects.service.ts
+│   │   │   └── subjects.module.ts
+│   │   ├── submissions
+│   │   │   ├── controllers
+│   │   │   │   ├── student-exam.controller.ts
+│   │   │   │   └── submissions.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── start-attempt.dto.ts
+│   │   │   │   ├── submit-answer.dto.ts
+│   │   │   │   ├── submit-exam.dto.ts
+│   │   │   │   └── upload-media.dto.ts
+│   │   │   ├── interfaces
+│   │   │   │   ├── exam-package.interface.ts
+│   │   │   │   └── grading-result.interface.ts
+│   │   │   ├── processors
+│   │   │   │   ├── submission-events.listener.ts
+│   │   │   │   └── submission.processor.ts
+│   │   │   ├── services
+│   │   │   │   ├── auto-grading.service.ts
+│   │   │   │   ├── exam-download.service.ts
+│   │   │   │   ├── exam-submission.service.ts
+│   │   │   │   ├── grading-helper.service.ts
+│   │   │   │   └── submissions.service.ts
+│   │   │   └── submissions.module.ts
+│   │   ├── sync
+│   │   │   ├── controllers
+│   │   │   │   └── sync.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── add-sync-item.dto.ts
+│   │   │   │   ├── retry-sync.dto.ts
+│   │   │   │   └── upload-chunk.dto.ts
+│   │   │   ├── processors
+│   │   │   │   └── sync.processor.ts
+│   │   │   ├── services
+│   │   │   │   ├── chunked-upload.service.ts
+│   │   │   │   ├── sync-processor.service.ts
+│   │   │   │   └── sync.service.ts
+│   │   │   ├── sync.module.ts
+│   │   │   └── sync.scheduler.ts
+│   │   ├── tenants
+│   │   │   ├── controllers
+│   │   │   │   └── tenants.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── create-tenant.dto.ts
+│   │   │   │   └── update-tenant.dto.ts
+│   │   │   ├── services
+│   │   │   │   └── tenants.service.ts
+│   │   │   └── tenants.module.ts
+│   │   └── users
+│   │       ├── controllers
+│   │       │   └── users.controller.ts
+│   │       ├── dto
+│   │       │   ├── create-user.dto.ts
+│   │       │   ├── import-users.dto.ts
+│   │       │   └── update-user.dto.ts
+│   │       ├── services
+│   │       │   └── users.service.ts
+│   │       └── users.module.ts
+│   ├── prisma
+│   │   ├── factories
+│   │   │   ├── exam-package.factory.ts
+│   │   │   ├── question.factory.ts
+│   │   │   └── user.factory.ts
+│   │   ├── prisma.module.ts
+│   │   ├── prisma.service.ts
+│   │   └── seeds
+│   │       ├── 01-tenants.seed.ts
+│   │       ├── 02-users.seed.ts
+│   │       ├── 03-subjects.seed.ts
+│   │       └── index.ts
+│   └── types
+│       └── uuid.d.ts
+├── test
+│   ├── e2e
+│   │   ├── auth.e2e-spec.ts
+│   │   ├── grading.e2e-spec.ts
+│   │   ├── offline-sync.e2e-spec.ts
+│   │   └── student-exam-flow.e2e-spec.ts
+│   ├── integration
+│   │   ├── database.spec.ts
+│   │   ├── minio.spec.ts
+│   │   └── redis.spec.ts
+│   ├── load
+│   │   ├── concurrent-submission.k6.js
+│   │   ├── exam-download.k6.js
+│   │   └── sync-stress.k6.js
+│   └── unit
+│       ├── auth
+│       │   └── auth.service.spec.ts
+│       ├── common
+│       │   └── throttler.guard.spec.ts
+│       ├── exam-packages
+│       │   └── exam-packages.service.spec.ts
+│       ├── grading
+│       │   └── auto-grading.service.spec.ts
+│       ├── questions
+│       │   └── questions.service.spec.ts
+│       ├── submissions
+│       │   ├── exam-download.service.spec.ts
+│       │   ├── exam-submission.service.spec.ts
+│       │   ├── grading-helper.service.spec.ts
+│       │   └── submission.processor.spec.ts
+│       └── sync
+│           ├── chunked-upload.service.spec.ts
+│           └── sync.service.spec.ts
+├── tsconfig.json
+└── uploads
+    ├── answers
+    ├── media
+    ├── questions
+    └── temp
 ```
 
 ### Prisma Model Utama & Relasi
