@@ -14,15 +14,20 @@ Panduan pengerjaan untuk proyek sistem ujian offline-first multi-tenant.
 
 ### Keamanan
 - Setiap query Prisma wajib menyertakan `tenantId`; RLS PostgreSQL sebagai safety net lapis kedua.
-- Paket soal dienkripsi AES-GCM via Web Crypto API; key hanya di memori selama sesi aktif, tidak pernah dipersist.
-- Semua aset media diakses via presigned URL MinIO dengan TTL terbatas.
-- Setiap submission membawa idempotency key untuk mencegah duplikasi saat retry.
+- `correctAnswer` disimpan terenkripsi AES-256-GCM di DB; key (`ENCRYPTION_KEY`) tidak pernah dikirim ke client.
+- Paket soal diterima client via HTTPS → dekripsi di memori (Web Crypto API); key session tidak pernah masuk Zustand persist, localStorage, maupun IndexedDB.
+- Semua aset media diakses via presigned URL MinIO dengan TTL terbatas (`MINIO_PRESIGNED_TTL`).
+- Setiap submission membawa idempotency key (unique constraint di `ExamAttempt` dan `ExamAnswer`) untuk mencegah duplikasi saat retry.
+- Device fingerprint (SHA-256) divalidasi via `DeviceGuard`; perangkat bisa di-lock per user oleh OPERATOR/ADMIN.
 
 ### Arsitektur
-- Backend modular NestJS: setiap domain (auth, exam, submission, sync, media, analytics) adalah modul terpisah.
+- Backend modular NestJS 10: setiap domain (auth, exam, submission, sync, media, analytics, dll.) adalah modul terpisah.
+- Database: PostgreSQL 16 via PgBouncer (transaction mode, port 6432); migrasi & Prisma Studio langsung ke port 5432.
+- Cache & queue: Redis 7 (ioredis) + BullMQ 5 dengan dead letter queue; `removeOnFail: false` pada semua job kritis.
+- Real-time: Socket.IO 4 di namespace `/monitoring`; event dikirim via BullMQ job `send-realtime`.
 - Frontend memisahkan concern: Zustand (state in-memory), Dexie (persistensi lokal), PowerSync (sinkronisasi dua arah).
-- BullMQ dikonfigurasi dengan dead letter queue; `removeOnFail: false` pada semua job kritis.
-- Audit log disimpan di tabel append-only untuk aksi sensitif: mulai ujian, submit jawaban, perubahan nilai, akses admin.
+- Audit log disimpan di tabel append-only untuk aksi sensitif: login, mulai ujian, submit jawaban, perubahan nilai, akses admin.
+- Multi-tenant via subdomain: `SubdomainMiddleware` meresolve `tenantId` dari subdomain; SUPERADMIN akses via `tenantId` di JWT.
 
 ---
 
@@ -31,7 +36,7 @@ Panduan pengerjaan untuk proyek sistem ujian offline-first multi-tenant.
 ### Umum
 - TypeScript strict mode; tidak ada `any` kecuali benar-benar tidak bisa dihindari.
 - Naming: `camelCase` variabel/fungsi, `PascalCase` class/tipe, `SCREAMING_SNAKE_CASE` konstanta.
-- Zod untuk validasi di semua titik masuk data: API request, form input, data dari IndexedDB.
+- Zod untuk validasi di semua titik masuk data di frontend (API request, form input, data dari IndexedDB).
 - Komentar dalam kode hanya untuk hal yang tidak self-explanatory.
 
 ### Frontend
@@ -40,10 +45,12 @@ Panduan pengerjaan untuk proyek sistem ujian offline-first multi-tenant.
 - Auto-save menggunakan debounce, bukan interval mentah, agar tidak overwrite saat pengguna masih mengetik.
 
 ### Backend
-- Guard NestJS untuk autentikasi dan otorisasi; dekorator custom untuk ekstrak `tenantId` dan `userId` dari JWT.
+- Guard NestJS untuk autentikasi dan otorisasi; dekorator custom (`@CurrentUser`, `@TenantId`, `@Roles`, `@UseIdempotency`) untuk ekstrak konteks dari JWT.
 - DTO dengan `class-validator` untuk validasi request; response menggunakan serializer (`@Exclude`, `@Expose`).
 - Service tidak boleh langsung akses `req` atau `res`; semua konteks diteruskan via parameter eksplisit.
-- Error handling terpusat via `ExceptionFilter`; tidak ada `try/catch` yang hanya melakukan `console.error`.
+- Error handling terpusat via `AllExceptionsFilter` dan `HttpExceptionFilter`; tidak ada `try/catch` yang hanya melakukan `console.error`.
+- Rate limiting via `CustomThrottlerGuard` dengan tiga tier: `STRICT` (5/60s), `MODERATE` (30/60s), `RELAXED` (120/60s).
+- Logging via Winston + DailyRotateFile; error tracking via Sentry (`@sentry/node`).
 
 ---
 
@@ -53,14 +60,21 @@ Gunakan alur ini sebagai referensi saat mengerjakan fitur apapun — pastikan im
 
 ### Siswa (Alur Kritis — Offline Flow)
 ```
-Login → DeviceGuard (fingerprint) → Download paket soal terenkripsi
-→ Simpan ke IndexedDB (Dexie: examPackages)
+Login → DeviceGuard (fingerprint check)
+→ POST /api/student/download (tokenCode + idempotencyKey)
+→ Server: validasi sesi ACTIVE, waktu valid, tokenCode cocok
+→ Server: upsert ExamAttempt (idempoten), schedule timeout via BullMQ
+→ Client: simpan paket terenkripsi ke IndexedDB (Dexie: examPackages)
 → Dekripsi di memori (lib/crypto/aes-gcm.ts, Web Crypto API)
-→ Kerjakan ujian → auto-save debounce ke IndexedDB (Dexie: answers)
+→ Kerjakan ujian → auto-save debounce → IndexedDB (Dexie: answers)
+→ POST /api/student/answers (upsert via idempotencyKey)
 → Rekam audio/video → chunked blob ke IndexedDB
 → Review jawaban (/(siswa)/ujian/[sessionId]/review)
-→ Submit → POST /submissions/submit + idempotency key
-→ PowerSync push syncQueue → BullMQ: process-submission → auto-grade
+→ POST /api/student/submit
+→ BullMQ: auto-grade → GradingHelperService
+→ Jika ada essay: gradingStatus = MANUAL_REQUIRED
+→ Guru grade manual → POST /api/grading/answer
+→ POST /api/grading/complete → POST /api/grading/publish
 → Hasil ujian (/(siswa)/ujian/[sessionId]/result)
 ```
 
@@ -73,7 +87,7 @@ Login → DeviceGuard (fingerprint) → Download paket soal terenkripsi
 Login (role: TEACHER) → Buat/import soal → Review & approve soal
 → Susun paket ujian (ExamPackage + ExamPackageQuestion)
 → Publish paket → Paket siap digunakan operator
-→ Manual grading esai (GET /grading?status=MANUAL_REQUIRED)
+→ Manual grading esai (GET /api/grading?status=MANUAL_REQUIRED)
 → Publish hasil → GradingStatus: PUBLISHED → siswa dapat melihat nilai
 ```
 
@@ -88,7 +102,7 @@ Login (role: OPERATOR) → Buat ruang ujian (ExamRoom)
 
 ### Pengawas
 ```
-Login (role: SUPERVISOR) → Subscribe sesi aktif via Socket.IO
+Login (role: SUPERVISOR) → Subscribe sesi aktif via Socket.IO (/monitoring)
 → Live monitoring status peserta (/(pengawas)/monitoring/[sessionId])
 → Pantau activity log: tab blur, paste, idle
 → Log diteruskan ke AuditLog → guru/admin review post-ujian
@@ -98,6 +112,26 @@ Login (role: SUPERVISOR) → Subscribe sesi aktif via Socket.IO
 
 ## Struktur Proyek
 
+### Tech Stack
+
+| Layer | Teknologi |
+|-------|-----------|
+| Framework | NestJS 10, TypeScript 5 (strict mode) |
+| ORM & Database | Prisma 5, PostgreSQL 16, PgBouncer (transaction mode, port 6432) |
+| Cache & Queue | Redis 7 (ioredis), BullMQ 5 |
+| Real-time | Socket.IO 4 (`/monitoring` namespace) |
+| Auth | JWT (passport-jwt), refresh token rotation, bcrypt |
+| Security | helmet, @nestjs/throttler, AES-256-GCM |
+| Storage | MinIO (S3-compatible, presigned URL, private bucket) |
+| Media | Sharp (kompresi gambar), fluent-ffmpeg, Puppeteer (PDF), ExcelJS |
+| Monitoring | Winston + DailyRotateFile, Sentry (@sentry/node), @nestjs/terminus |
+| Docs | Swagger / OpenAPI (`/docs`, non-production only) |
+| Scheduler | @nestjs/schedule (cleanup stale chunks) |
+| Events | @nestjs/event-emitter (domain events antar modul) |
+| Frontend | Next.js, Zustand, Dexie, PowerSync |
+
+---
+
 ### Frontend (`exam-frontend`)
 ```
 exam-frontend/
@@ -105,761 +139,238 @@ exam-frontend/
 ├── package.json
 ├── playwright.config.ts
 ├── postcss.config.js
-├── public
-│   ├── fonts
-│   ├── icons
-│   ├── images
-│   ├── manifest.json
-│   └── robots.txt
-├── src
-│   ├── app
-│   │   ├── api
-│   │   │   ├── auth
-│   │   │   │   ├── login
-│   │   │   │   │   └── route.ts
-│   │   │   │   ├── logout
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── refresh
-│   │   │   │       └── route.ts
-│   │   │   ├── download
-│   │   │   │   └── route.ts
-│   │   │   ├── health
-│   │   │   │   └── route.ts
-│   │   │   ├── media
-│   │   │   │   └── route.ts
-│   │   │   └── sync
-│   │   │       └── route.ts
-│   │   ├── (auth)
-│   │   │   ├── layout.tsx
-│   │   │   └── login
-│   │   │       └── page.tsx
-│   │   ├── global.css
-│   │   ├── (guru)
-│   │   │   ├── dashboard
-│   │   │   │   └── page.tsx
-│   │   │   ├── grading
-│   │   │   │   ├── [attemptId]
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   ├── hasil
-│   │   │   │   └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   ├── soal
-│   │   │   │   ├── create
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── [id]
-│   │   │   │   │   └── edit
-│   │   │   │   │       └── page.tsx
-│   │   │   │   ├── import
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   └── ujian
-│   │   │       ├── create
-│   │   │       │   └── page.tsx
-│   │   │       ├── [id]
-│   │   │       │   ├── edit
-│   │   │       │   │   └── page.tsx
-│   │   │       │   ├── preview
-│   │   │       │   │   └── page.tsx
-│   │   │       │   └── statistics
-│   │   │       │       └── page.tsx
-│   │   │       └── page.tsx
-│   │   ├── layout.tsx
-│   │   ├── loading.tsx
-│   │   ├── not-found.tsx
-│   │   ├── (operator)
-│   │   │   ├── dashboard
-│   │   │   │   └── page.tsx
-│   │   │   ├── laporan
-│   │   │   │   └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   ├── peserta
-│   │   │   │   ├── import
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   ├── ruang
-│   │   │   │   ├── create
-│   │   │   │   │   └── page.tsx
-│   │   │   │   ├── [id]
-│   │   │   │   │   └── edit
-│   │   │   │   │       └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   └── sesi
-│   │   │       ├── create
-│   │   │       │   └── page.tsx
-│   │   │       ├── [id]
-│   │   │       │   └── edit
-│   │   │       │       └── page.tsx
-│   │   │       └── page.tsx
-│   │   ├── page.tsx
-│   │   ├── (pengawas)
-│   │   │   ├── dashboard
-│   │   │   │   └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   └── monitoring
-│   │   │       ├── live
-│   │   │       │   └── page.tsx
-│   │   │       └── [sessionId]
-│   │   │           └── page.tsx
-│   │   ├── (siswa)
-│   │   │   ├── dashboard
-│   │   │   │   └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   ├── profile
-│   │   │   │   └── page.tsx
-│   │   │   └── ujian
-│   │   │       ├── download
-│   │   │       │   └── page.tsx
-│   │   │       ├── page.tsx
-│   │   │       └── [sessionId]
-│   │   │           ├── page.tsx
-│   │   │           ├── result
-│   │   │           │   └── page.tsx
-│   │   │           └── review
-│   │   │               └── page.tsx
-│   │   └── (superadmin)
-│   │       ├── audit-logs
-│   │       │   └── page.tsx
-│   │       ├── dashboard
-│   │       │   └── page.tsx
-│   │       ├── layout.tsx
-│   │       ├── schools
-│   │       │   ├── create
-│   │       │   │   └── page.tsx
-│   │       │   ├── [id]
-│   │       │   │   └── edit
-│   │       │   │       └── page.tsx
-│   │       │   └── page.tsx
-│   │       ├── settings
-│   │       │   └── page.tsx
-│   │       └── users
-│   │           └── page.tsx
-│   ├── components
-│   │   ├── analytics
-│   │   │   ├── DashboardStats.tsx
-│   │   │   ├── ExamStatistics.tsx
-│   │   │   ├── ItemAnalysisChart.tsx
-│   │   │   └── StudentProgress.tsx
-│   │   ├── auth
-│   │   │   ├── DeviceLockWarning.tsx
-│   │   │   └── LoginForm.tsx
-│   │   ├── exam
-│   │   │   ├── ActivityLogger.tsx
-│   │   │   ├── AutoSaveIndicator.tsx
-│   │   │   ├── ExamInstructions.tsx
-│   │   │   ├── ExamTimer.tsx
-│   │   │   ├── MediaPlayer.tsx
-│   │   │   ├── MediaRecorder.tsx
-│   │   │   ├── ProgressBar.tsx
-│   │   │   ├── QuestionNavigation.tsx
-│   │   │   └── question-types
-│   │   │       ├── Essay.tsx
-│   │   │       ├── Matching.tsx
-│   │   │       ├── MultipleChoiceComplex.tsx
-│   │   │       ├── MultipleChoice.tsx
-│   │   │       ├── ShortAnswer.tsx
-│   │   │       └── TrueFalse.tsx
-│   │   ├── grading
-│   │   │   ├── EssaySimilarityBadge.tsx
-│   │   │   ├── GradingRubric.tsx
-│   │   │   └── ManualGradingCard.tsx
-│   │   ├── layout
-│   │   │   ├── Footer.tsx
-│   │   │   ├── Header.tsx
-│   │   │   ├── MainLayout.tsx
-│   │   │   └── Sidebar.tsx
-│   │   ├── madrasah
-│   │   │   ├── ArabicKeyboard.tsx
-│   │   │   ├── HafalanRecorder.tsx
-│   │   │   ├── QuranDisplay.tsx
-│   │   │   └── TajwidMarker.tsx
-│   │   ├── monitoring
-│   │   │   ├── ActivityLogViewer.tsx
-│   │   │   ├── LiveMonitor.tsx
-│   │   │   └── StudentProgressCard.tsx
-│   │   ├── questions
-│   │   │   ├── MatchingEditor.tsx
-│   │   │   ├── MediaUpload.tsx
-│   │   │   ├── OptionsEditor.tsx
-│   │   │   ├── QuestionEditor.tsx
-│   │   │   └── TagSelector.tsx
-│   │   ├── sync
-│   │   │   ├── ChecksumValidator.tsx
-│   │   │   ├── DownloadProgress.tsx
-│   │   │   ├── SyncStatus.tsx
-│   │   │   └── UploadQueue.tsx
-│   │   └── ui
-│   │       ├── Alert.tsx
-│   │       ├── Badge.tsx
-│   │       ├── Button.tsx
-│   │       ├── Card.tsx
-│   │       ├── Confirm.tsx
-│   │       ├── Input.tsx
-│   │       ├── Loading.tsx
-│   │       ├── Modal.tsx
-│   │       ├── Select.tsx
-│   │       ├── Spinner.tsx
-│   │       ├── Table.tsx
-│   │       ├── Tabs.tsx
-│   │       ├── Toast.tsx
-│   │       └── Tooltip.tsx
-│   ├── hooks
-│   │   ├── use-auth.ts
-│   │   ├── use-auto-save.ts
-│   │   ├── use-device-warnings.ts
-│   │   ├── use-exam.ts
-│   │   ├── use-media-recorder.ts
-│   │   ├── use-online-status.ts
-│   │   ├── use-powersync.ts
-│   │   ├── use-sync-status.ts
-│   │   ├── use-timer.ts
-│   │   └── use-toast.ts
-│   ├── lib
-│   │   ├── api
-│   │   │   ├── analytics.api.ts
-│   │   │   ├── auth.api.ts
-│   │   │   ├── client.ts
-│   │   │   ├── exam-packages.api.ts
-│   │   │   ├── grading.api.ts
-│   │   │   ├── media.api.ts
-│   │   │   ├── monitoring.api.ts
-│   │   │   ├── questions.api.ts
-│   │   │   ├── sessions.api.ts
-│   │   │   ├── submissions.api.ts
-│   │   │   └── sync.api.ts
-│   │   ├── crypto
-│   │   │   ├── aes-gcm.ts
-│   │   │   ├── checksum.ts
-│   │   │   └── key-manager.ts
-│   │   ├── db
-│   │   │   ├── db.ts
-│   │   │   ├── migrations.ts
-│   │   │   ├── queries.ts
-│   │   │   └── schema.ts
-│   │   ├── exam
-│   │   │   ├── activity-logger.ts
-│   │   │   ├── auto-save.ts
-│   │   │   ├── controller.ts
-│   │   │   ├── navigation.ts
-│   │   │   ├── package-decoder.ts
-│   │   │   ├── randomizer.ts
-│   │   │   ├── timer.ts
-│   │   │   └── validator.ts
-│   │   ├── media
-│   │   │   ├── chunked-upload.ts
-│   │   │   ├── compress.ts
-│   │   │   ├── player.ts
-│   │   │   ├── recorder.ts
-│   │   │   └── upload.ts
-│   │   ├── middleware
-│   │   │   ├── auth.middleware.ts
-│   │   │   ├── role.middleware.ts
-│   │   │   └── tenant.middleware.ts
-│   │   ├── offline
-│   │   │   ├── cache.ts
-│   │   │   ├── checksum.ts
-│   │   │   ├── download.ts
-│   │   │   ├── queue.ts
-│   │   │   └── sync.ts
-│   │   └── utils
-│   │       ├── compression.ts
-│   │       ├── device.ts
-│   │       ├── error.ts
-│   │       ├── format.ts
-│   │       ├── logger.ts
-│   │       ├── network.ts
-│   │       └── time.ts
-│   ├── middleware.ts
-│   ├── schemas
-│   │   ├── answer.schema.ts
-│   │   ├── auth.schema.ts
-│   │   ├── exam.schema.ts
-│   │   ├── question.schema.ts
-│   │   ├── sync.schema.ts
-│   │   └── user.schema.ts
-│   ├── stores
-│   │   ├── activity.store.ts
-│   │   ├── answer.store.ts
-│   │   ├── auth.store.ts
-│   │   ├── exam.store.ts
-│   │   ├── index.ts
-│   │   ├── sync.store.ts
-│   │   ├── timer.store.ts
-│   │   └── ui.store.ts
-│   ├── styles
-│   │   ├── animations.css
-│   │   ├── arabic.css
-│   │   └── print.css
-│   ├── tests
-│   │   ├── integration
-│   │   │   ├── dexie.spec.ts
-│   │   │   └── sync.spec.ts
-│   │   ├── setup.ts
-│   │   └── unit
-│   │       ├── hooks
-│   │       │   ├── use-auto-save.spec.ts
-│   │       │   ├── use-online-status.spec.ts
-│   │       │   └── use-timer.spec.ts
-│   │       ├── lib
-│   │       │   ├── aes-gcm.spec.ts
-│   │       │   ├── auto-save.spec.ts
-│   │       │   ├── checksum.spec.ts
-│   │       │   └── compression.spec.ts
-│   │       └── stores
-│   │           ├── answer.store.spec.ts
-│   │           ├── auth.store.spec.ts
-│   │           └── exam.store.spec.ts
-│   └── types
-│       ├── activity.ts
-│       ├── answer.ts
-│       ├── api.ts
-│       ├── common.ts
-│       ├── exam.ts
-│       ├── index.ts
-│       ├── media.ts
-│       ├── question.ts
-│       ├── sync.ts
-│       └── user.ts
+├── public/
+│   ├── fonts/
+│   ├── icons/
+│   ├── images/
+│   ├── manifest.json
+│   └── robots.txt
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── auth/ (login, logout, refresh)
+│   │   │   ├── download/
+│   │   │   ├── health/
+│   │   │   ├── media/
+│   │   │   └── sync/
+│   │   ├── (auth)/login/
+│   │   ├── (guru)/          # dashboard, grading, hasil, soal, ujian
+│   │   ├── (operator)/      # dashboard, laporan, peserta, ruang, sesi
+│   │   ├── (pengawas)/      # dashboard, monitoring/[sessionId]
+│   │   ├── (siswa)/         # dashboard, profile, ujian/[sessionId]/{review,result}
+│   │   └── (superadmin)/    # audit-logs, dashboard, schools, settings, users
+│   ├── components/
+│   │   ├── analytics/       # DashboardStats, ExamStatistics, ItemAnalysisChart, StudentProgress
+│   │   ├── auth/            # DeviceLockWarning, LoginForm
+│   │   ├── exam/            # ActivityLogger, AutoSaveIndicator, ExamTimer, QuestionNavigation
+│   │   │   └── question-types/  # Essay, Matching, MultipleChoice, ShortAnswer, TrueFalse
+│   │   ├── grading/         # EssaySimilarityBadge, GradingRubric, ManualGradingCard
+│   │   ├── layout/          # Footer, Header, MainLayout, Sidebar
+│   │   ├── madrasah/        # ArabicKeyboard, HafalanRecorder, QuranDisplay, TajwidMarker
+│   │   ├── monitoring/      # ActivityLogViewer, LiveMonitor, StudentProgressCard
+│   │   ├── questions/       # MatchingEditor, MediaUpload, OptionsEditor, QuestionEditor, TagSelector
+│   │   ├── sync/            # ChecksumValidator, DownloadProgress, SyncStatus, UploadQueue
+│   │   └── ui/              # Alert, Badge, Button, Card, Confirm, Input, Modal, Table, Toast, dll.
+│   ├── hooks/
+│   │   ├── use-auth.ts
+│   │   ├── use-auto-save.ts
+│   │   ├── use-device-warnings.ts
+│   │   ├── use-exam.ts
+│   │   ├── use-media-recorder.ts
+│   │   ├── use-online-status.ts
+│   │   ├── use-powersync.ts
+│   │   ├── use-sync-status.ts
+│   │   ├── use-timer.ts
+│   │   └── use-toast.ts
+│   ├── lib/
+│   │   ├── api/             # client.ts + per-domain API files
+│   │   ├── crypto/          # aes-gcm.ts, checksum.ts, key-manager.ts
+│   │   ├── db/              # Dexie schema, migrations, queries
+│   │   ├── exam/            # activity-logger, auto-save, controller, navigation, randomizer, timer
+│   │   ├── media/           # chunked-upload, compress, player, recorder
+│   │   ├── middleware/       # auth, role, tenant middleware
+│   │   ├── offline/         # cache, checksum, download, queue, sync
+│   │   └── utils/           # compression, device, error, format, logger, network, time
+│   ├── middleware.ts
+│   ├── schemas/             # Zod schemas: answer, auth, exam, question, sync, user
+│   ├── stores/              # Zustand: activity, answer, auth, exam, sync, timer, ui
+│   ├── styles/              # animations.css, arabic.css, print.css
+│   ├── tests/
+│   │   ├── integration/     # dexie.spec.ts, sync.spec.ts
+│   │   └── unit/            # hooks, lib, stores
+│   └── types/               # activity, answer, api, exam, media, question, sync, user
+├── tests/e2e/               # Playwright: auth, exam-flow, grading, media-recording, offline-sync
 ├── tailwind.config.ts
-├── tests
-│   └── e2e
-│       ├── auth.spec.ts
-│       ├── exam-flow.spec.ts
-│       ├── grading.spec.ts
-│       ├── media-recording.spec.ts
-│       └── offline-sync.spec.ts
 ├── tsconfig.json
 └── vitest.config.ts
-
 ```
 
 ### Backend (`exam-backend`)
 ```
 exam-backend/
-├── docker-compose.yml
+├── src/
+│   ├── app.module.ts              # Root module, guards & interceptors global
+│   ├── main.ts                    # Bootstrap, Swagger (/docs), global pipes
+│   ├── common/
+│   │   ├── decorators/            # @CurrentUser, @TenantId, @Roles, @UseIdempotency, @ThrottleTier, @Public
+│   │   ├── dto/                   # PaginationDto, BaseQueryDto, BaseResponseDto
+│   │   ├── enums/                 # UserRole, QuestionType, ExamStatus, GradingStatus, SyncStatus
+│   │   ├── exceptions/            # DeviceLocked, ExamNotAvailable, IdempotencyConflict, TenantNotFound
+│   │   ├── filters/               # AllExceptionsFilter, HttpExceptionFilter
+│   │   ├── guards/                # TenantGuard, CustomThrottlerGuard
+│   │   ├── interceptors/          # Idempotency, Logging, Tenant, Timeout, Transform
+│   │   ├── middleware/            # SubdomainMiddleware, LoggerMiddleware, PerformanceMiddleware
+│   │   ├── pipes/                 # AppValidationPipe, ParseIntPipe
+│   │   ├── providers/             # RedisProvider (ioredis)
+│   │   ├── services/              # EmailService (nodemailer), SentryService
+│   │   └── utils/                 # checksum, encryption (AES-GCM), device-fingerprint, randomizer, similarity
+│   ├── config/                    # app, jwt, database, redis, minio, bullmq, throttler, smtp, sentry, multer
+│   ├── modules/
+│   │   ├── auth/                  # login, refresh, logout; guards: DeviceGuard, JwtAuthGuard, RolesGuard
+│   │   ├── users/                 # CRUD user, device lock/unlock
+│   │   ├── tenants/               # multi-tenant management (SUPERADMIN only)
+│   │   ├── subjects/              # mata pelajaran per tenant
+│   │   ├── questions/             # 6 tipe soal + bulk import + statistik
+│   │   ├── question-tags/         # tag soal per tenant
+│   │   ├── exam-packages/         # paket ujian + item analysis + ExamPackageBuilder
+│   │   ├── exam-rooms/            # ruang ujian
+│   │   ├── sessions/              # sesi ujian, assign peserta, aktivasi, session-monitoring
+│   │   ├── submissions/           # download paket, submit jawaban/ujian, auto-grade, ExamDownload
+│   │   ├── grading/               # manual grading, complete grading, publish hasil
+│   │   ├── sync/                  # sync queue, chunked upload, PowerSync endpoint, scheduler
+│   │   ├── media/                 # upload, presigned URL, kompresi via BullMQ (Sharp + ffmpeg)
+│   │   ├── monitoring/            # Socket.IO gateway (/monitoring), live status peserta
+│   │   ├── activity-logs/         # log aktivitas siswa (tab blur, paste, idle)
+│   │   ├── audit-logs/            # append-only audit trail + @Audit decorator + AuditInterceptor
+│   │   ├── analytics/             # dashboard summary, analitik sesi
+│   │   ├── reports/               # export PDF (Puppeteer) / Excel (ExcelJS) via BullMQ → MinIO
+│   │   ├── notifications/         # notifikasi in-app, BullMQ processor
+│   │   └── health/                # @nestjs/terminus health check
+│   └── prisma/
+│       ├── prisma.service.ts      # PrismaClient + forTenant() + withTenantContext()
+│       ├── seeds/                 # 01-tenants, 02-users, 03-subjects
+│       └── factories/             # exam-package, question, user (testing)
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/rls/enable_rls.sql
+├── test/
+│   ├── e2e/                       # auth, student-exam-flow, grading, offline-sync
+│   ├── integration/               # database (tenant isolation, idempotency), minio, redis
+│   ├── load/                      # k6: concurrent-submission, exam-download, sync-stress
+│   └── unit/                      # auth, grading, submissions, sync, throttler
+├── scripts/
+│   ├── backup.sh / restore.sh
+│   ├── cleanup-media.sh           # hapus media orphan di MinIO (>7 hari, tidak ada di DB)
+│   ├── rotate-keys.ts             # re-enkripsi correctAnswer dengan ENCRYPTION_KEY baru
+│   └── seed.sh
+├── docs/architecture/             # database-schema, offline-sync-flow, security-model, system-design
 ├── Dockerfile
-├── docs
-│   ├── api
-│   │   └── swagger.yaml
-│   ├── architecture
-│   │   ├── database-schema.md
-│   │   ├── offline-sync-flow.md
-│   │   ├── security-model.md
-│   │   └── system-design.md
-│   └── deployment
-│       └── production-checklist.md
-├── ecosystem.config.js
-├── logs
-├── nest-cli.json
-├── package.json
-├── prisma
-│   ├── migrations
-│   │   ├── 20260219223909_init
-│   │   │   └── migration.sql
-│   │   ├── migration_lock.toml
-│   │   └── rls
-│   │       └── enable_rls.sql
-│   └── schema.prisma
-├── scripts
-│   ├── backup.sh
-│   ├── cleanup-media.sh
-│   ├── restore.sh
-│   ├── rotate-keys.sh
-│   └── seed.sh
-├── src
-│   ├── app.controller.ts
-│   ├── app.module.ts
-│   ├── app.service.ts
-│   ├── common
-│   │   ├── decorators
-│   │   │   ├── current-user.decorator.ts
-│   │   │   ├── idempotency.decorator.ts
-│   │   │   ├── public.decorator.ts
-│   │   │   ├── roles.decorator.ts
-│   │   │   ├── tenant-id.decorator.ts
-│   │   │   └── throttle-tier.decorator.ts
-│   │   ├── dto
-│   │   │   ├── base-query.dto.ts
-│   │   │   ├── base-response.dto.ts
-│   │   │   └── pagination.dto.ts
-│   │   ├── entities
-│   │   ├── enums
-│   │   │   ├── exam-status.enum.ts
-│   │   │   ├── grading-status.enum.ts
-│   │   │   ├── question-type.enum.ts
-│   │   │   ├── sync-status.enum.ts
-│   │   │   └── user-role.enum.ts
-│   │   ├── exceptions
-│   │   │   ├── device-locked.exception.ts
-│   │   │   ├── exam-not-available.exception.ts
-│   │   │   ├── idempotency-conflict.exception.ts
-│   │   │   └── tenant-not-found.exception.ts
-│   │   ├── filters
-│   │   │   ├── all-exceptions.filter.ts
-│   │   │   └── http-exception.filter.ts
-│   │   ├── guards
-│   │   │   ├── tenant.guard.ts
-│   │   │   └── throttler.guard.ts
-│   │   ├── interceptors
-│   │   │   ├── idempotency.interceptor.ts
-│   │   │   ├── logging.interceptor.ts
-│   │   │   ├── tenant.interceptor.ts
-│   │   │   ├── timeout.interceptor.ts
-│   │   │   └── transform.interceptor.ts
-│   │   ├── logger
-│   │   │   └── winston.logger.ts
-│   │   ├── middleware
-│   │   │   ├── logger.middleware.ts
-│   │   │   ├── performance.middleware.ts
-│   │   │   └── subdomain.middleware.ts
-│   │   ├── pipes
-│   │   │   ├── parse-int.pipe.ts
-│   │   │   └── validation.pipe.ts
-│   │   ├── providers
-│   │   │   └── redis.provider.ts
-│   │   ├── services
-│   │   │   ├── email.service.ts
-│   │   │   └── sentry.service.ts
-│   │   ├── utils
-│   │   │   ├── checksum.util.ts
-│   │   │   ├── device-fingerprint.util.ts
-│   │   │   ├── encryption.util.ts
-│   │   │   ├── file.util.ts
-│   │   │   ├── presigned-url.util.ts
-│   │   │   ├── randomizer.util.ts
-│   │   │   ├── similarity.util.ts
-│   │   │   └── time-validation.util.ts
-│   │   └── validators
-│   │       ├── is-tenant-exists.validator.ts
-│   │       └── is-unique.validator.ts
-│   ├── config
-│   │   ├── app.config.ts
-│   │   ├── bullmq.config.ts
-│   │   ├── database.config.ts
-│   │   ├── jwt.config.ts
-│   │   ├── minio.config.ts
-│   │   ├── multer.config.ts
-│   │   ├── redis.config.ts
-│   │   ├── sentry.config.ts
-│   │   ├── smtp.config.ts
-│   │   └── throttler.config.ts
-│   ├── main.ts
-│   ├── modules
-│   │   ├── activity-logs
-│   │   │   ├── activity-logs.module.ts
-│   │   │   ├── controllers
-│   │   │   │   └── activity-logs.controller.ts
-│   │   │   ├── dto
-│   │   │   │   └── create-activity-log.dto.ts
-│   │   │   └── services
-│   │   │       └── activity-logs.service.ts
-│   │   ├── analytics
-│   │   │   ├── analytics.module.ts
-│   │   │   ├── controllers
-│   │   │   │   └── analytics.controller.ts
-│   │   │   ├── dto
-│   │   │   │   └── analytics-filter.dto.ts
-│   │   │   └── services
-│   │   │       ├── analytics.service.ts
-│   │   │       └── dashboard.service.ts
-│   │   ├── audit-logs
-│   │   │   ├── audit-logs.module.ts
-│   │   │   ├── controllers
-│   │   │   │   └── audit-logs.controller.ts
-│   │   │   ├── decorators
-│   │   │   │   └── audit.decorator.ts
-│   │   │   ├── dto
-│   │   │   │   └── audit-log-query.dto.ts
-│   │   │   ├── interceptors
-│   │   │   │   └── audit.interceptor.ts
-│   │   │   └── services
-│   │   │       └── audit-logs.service.ts
-│   │   ├── auth
-│   │   │   ├── auth.module.ts
-│   │   │   ├── controllers
-│   │   │   │   └── auth.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── change-password.dto.ts
-│   │   │   │   ├── login.dto.ts
-│   │   │   │   └── refresh-token.dto.ts
-│   │   │   ├── guards
-│   │   │   │   ├── device.guard.ts
-│   │   │   │   ├── jwt-auth.guard.ts
-│   │   │   │   ├── local-auth.guard.ts
-│   │   │   │   └── roles.guard.ts
-│   │   │   ├── services
-│   │   │   │   └── auth.service.ts
-│   │   │   └── strategies
-│   │   │       ├── jwt-refresh.strategy.ts
-│   │   │       ├── jwt.strategy.ts
-│   │   │       └── local.strategy.ts
-│   │   ├── exam-packages
-│   │   │   ├── controllers
-│   │   │   │   └── exam-packages.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── add-questions.dto.ts
-│   │   │   │   ├── create-exam-package.dto.ts
-│   │   │   │   ├── publish-exam-package.dto.ts
-│   │   │   │   └── update-exam-package.dto.ts
-│   │   │   ├── exam-packages.module.ts
-│   │   │   ├── interfaces
-│   │   │   │   └── exam-package-settings.interface.ts
-│   │   │   └── services
-│   │   │       ├── exam-package-builder.service.ts
-│   │   │       ├── exam-packages.service.ts
-│   │   │       └── item-analysis.service.ts
-│   │   ├── exam-rooms
-│   │   │   ├── controllers
-│   │   │   │   └── exam-rooms.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── create-room.dto.ts
-│   │   │   │   └── update-room.dto.ts
-│   │   │   ├── exam-rooms.module.ts
-│   │   │   └── services
-│   │   │       └── exam-rooms.service.ts
-│   │   ├── grading
-│   │   │   ├── controllers
-│   │   │   │   └── grading.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── complete-grading.dto.ts
-│   │   │   │   ├── grade-answer.dto.ts
-│   │   │   │   └── publish-result.dto.ts
-│   │   │   ├── grading.module.ts
-│   │   │   └── services
-│   │   │       ├── grading.service.ts
-│   │   │       └── manual-grading.service.ts
-│   │   ├── health
-│   │   │   ├── controllers
-│   │   │   │   └── health.controller.ts
-│   │   │   └── health.module.ts
-│   │   ├── media
-│   │   │   ├── controllers
-│   │   │   │   └── media.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── delete-media.dto.ts
-│   │   │   │   └── upload-media.dto.ts
-│   │   │   ├── media.module.ts
-│   │   │   ├── processors
-│   │   │   │   └── media.processor.ts
-│   │   │   └── services
-│   │   │       ├── media-compression.service.ts
-│   │   │       ├── media.service.ts
-│   │   │       └── media-upload.service.ts
-│   │   ├── monitoring
-│   │   │   ├── controllers
-│   │   │   │   └── monitoring.controller.ts
-│   │   │   ├── gateways
-│   │   │   │   └── monitoring.gateway.ts
-│   │   │   ├── monitoring.module.ts
-│   │   │   └── services
-│   │   │       └── monitoring.service.ts
-│   │   ├── notifications
-│   │   │   ├── controllers
-│   │   │   │   └── notifications.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── create-notification.dto.ts
-│   │   │   │   └── mark-read.dto.ts
-│   │   │   ├── notifications.module.ts
-│   │   │   ├── processors
-│   │   │   │   └── notification.processor.ts
-│   │   │   └── services
-│   │   │       └── notifications.service.ts
-│   │   ├── questions
-│   │   │   ├── controllers
-│   │   │   │   └── questions.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── approve-question.dto.ts
-│   │   │   │   ├── create-question.dto.ts
-│   │   │   │   ├── import-questions.dto.ts
-│   │   │   │   └── update-question.dto.ts
-│   │   │   ├── interfaces
-│   │   │   │   ├── correct-answer.interface.ts
-│   │   │   │   └── question-options.interface.ts
-│   │   │   ├── questions.module.ts
-│   │   │   └── services
-│   │   │       ├── question-import.service.ts
-│   │   │       ├── questions.service.ts
-│   │   │       └── question-statistics.service.ts
-│   │   ├── question-tags
-│   │   │   ├── controllers
-│   │   │   │   └── question-tags.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── create-tag.dto.ts
-│   │   │   │   └── update-tag.dto.ts
-│   │   │   ├── question-tags.module.ts
-│   │   │   └── services
-│   │   │       └── question-tags.service.ts
-│   │   ├── reports
-│   │   │   ├── controllers
-│   │   │   │   └── reports.controller.ts
-│   │   │   ├── dto
-│   │   │   │   └── export-filter.dto.ts
-│   │   │   ├── processors
-│   │   │   │   └── report-queue.processor.ts
-│   │   │   ├── reports.module.ts
-│   │   │   └── services
-│   │   │       ├── excel-export.service.ts
-│   │   │       ├── pdf-export.service.ts
-│   │   │       └── reports.service.ts
-│   │   ├── sessions
-│   │   │   ├── controllers
-│   │   │   │   └── sessions.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── assign-students.dto.ts
-│   │   │   │   ├── create-session.dto.ts
-│   │   │   │   └── update-session.dto.ts
-│   │   │   ├── services
-│   │   │   │   ├── session-monitoring.service.ts
-│   │   │   │   └── sessions.service.ts
-│   │   │   └── sessions.module.ts
-│   │   ├── subjects
-│   │   │   ├── controllers
-│   │   │   │   └── subjects.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── create-subject.dto.ts
-│   │   │   │   └── update-subject.dto.ts
-│   │   │   ├── services
-│   │   │   │   └── subjects.service.ts
-│   │   │   └── subjects.module.ts
-│   │   ├── submissions
-│   │   │   ├── controllers
-│   │   │   │   ├── student-exam.controller.ts
-│   │   │   │   └── submissions.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── start-attempt.dto.ts
-│   │   │   │   ├── submit-answer.dto.ts
-│   │   │   │   ├── submit-exam.dto.ts
-│   │   │   │   └── upload-media.dto.ts
-│   │   │   ├── interfaces
-│   │   │   │   ├── exam-package.interface.ts
-│   │   │   │   └── grading-result.interface.ts
-│   │   │   ├── processors
-│   │   │   │   ├── submission.events.listener.ts
-│   │   │   │   └── submission.processor.ts
-│   │   │   ├── services
-│   │   │   │   ├── auto-grading.service.ts
-│   │   │   │   ├── exam-download.service.ts
-│   │   │   │   ├── exam-submission.service.ts
-│   │   │   │   ├── grading-helper.service.ts
-│   │   │   │   └── submissions.service.ts
-│   │   │   └── submissions.module.ts
-│   │   ├── sync
-│   │   │   ├── controllers
-│   │   │   │   └── sync.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── add-sync-item.dto.ts
-│   │   │   │   ├── retry-sync.dto.ts
-│   │   │   │   └── upload-chunk.dto.ts
-│   │   │   ├── processors
-│   │   │   │   └── sync.processor.ts
-│   │   │   ├── services
-│   │   │   │   ├── chunked-upload.service.ts
-│   │   │   │   ├── sync-processor.service.ts
-│   │   │   │   └── sync.service.ts
-│   │   │   ├── sync.module.ts
-│   │   │   └── sync.scheduler.ts
-│   │   ├── tenants
-│   │   │   ├── controllers
-│   │   │   │   └── tenants.controller.ts
-│   │   │   ├── dto
-│   │   │   │   ├── create-tenant.dto.ts
-│   │   │   │   └── update-tenant.dto.ts
-│   │   │   ├── services
-│   │   │   │   └── tenants.service.ts
-│   │   │   └── tenants.module.ts
-│   │   └── users
-│   │       ├── controllers
-│   │       │   ├── device-management.controller.ts
-│   │       │   └── users.controller.ts
-│   │       ├── dto
-│   │       │   ├── create-user.dto.ts
-│   │       │   ├── device-management.dto.ts
-│   │       │   ├── import-users.dto.ts
-│   │       │   └── update-user.dto.ts
-│   │       ├── services
-│   │       │   ├── device-management.service.ts
-│   │       │   └── users.service.ts
-│   │       └── users.module.ts
-│   ├── prisma
-│   │   ├── factories
-│   │   │   ├── exam-package.factory.ts
-│   │   │   ├── question.factory.ts
-│   │   │   └── user.factory.ts
-│   │   ├── prisma.module.ts
-│   │   ├── prisma.service.ts
-│   │   └── seeds
-│   │       ├── 01-tenants.seed.ts
-│   │       ├── 02-users.seed.ts
-│   │       ├── 03-subjects.seed.ts
-│   │       └── index.ts
-│   └── types
-│       └── uuid.d.ts
-├── test
-│   ├── e2e
-│   │   ├── auth.e2e-spec.ts
-│   │   ├── grading.e2e-spec.ts
-│   │   ├── offline-sync.e2e-spec.ts
-│   │   └── student-exam-flow.e2e-spec.ts
-│   ├── integration
-│   │   ├── database.spec.ts
-│   │   ├── minio.spec.ts
-│   │   └── redis.spec.ts
-│   ├── load
-│   │   ├── concurrent-submission.k6.js
-│   │   ├── exam-download.k6.js
-│   │   └── sync-stress.k6.js
-│   └── unit
-│       ├── auth
-│       │   └── auth.service.spec.ts
-│       ├── common
-│       │   └── throttler.guard.spec.ts
-│       ├── exam-packages
-│       │   └── exam-packages.service.spec.ts
-│       ├── grading
-│       │   └── auto-grading.service.spec.ts
-│       ├── questions
-│       │   └── questions.service.spec.ts
-│       ├── submissions
-│       │   ├── exam-download.service.spec.ts
-│       │   ├── exam-submission.service.spec.ts
-│       │   ├── grading-helper.service.spec.ts
-│       │   └── submission.processor.spec.ts
-│       └── sync
-│           ├── chunked-upload.service.spec.ts
-│           └── sync.service.spec.ts
-├── tsconfig.json
-└── uploads
-    ├── answers
-    ├── media
-    ├── questions
-    └── temp
-
+├── docker-compose.yml             # services: api, postgres, pgbouncer, redis, minio
+└── ecosystem.config.js            # PM2 cluster config
 ```
 
 ### Prisma Model Utama & Relasi
 ```
 Tenant
  └── User → RefreshToken, UserDevice
- └── Subject → Question → ExamPackageQuestion
+ └── Subject → Question (6 tipe) → ExamPackageQuestion
  └── QuestionTag → QuestionTagMapping
  └── ExamPackage → ExamPackageQuestion
-                 → ExamSession → SessionStudent
-                               → ExamAttempt → ExamAnswer (idempotency)
-                                             → ExamActivityLog
-                                             → SyncQueue
+                 → ExamSession → SessionStudent (tokenCode unik)
+                               → ExamAttempt (idempotencyKey unique)
+                                   → ExamAnswer  (idempotencyKey unique)
+                                   → ExamActivityLog
+                                   → SyncQueue
  └── AuditLog (append-only)
+ └── Notification
 ```
 
 ### Queue Jobs (BullMQ) — Semua dengan DLQ & `removeOnFail: false`
 ```
-submission  → process-submission   Validasi & simpan jawaban
-            → auto-grade           Penilaian otomatis soal objektif
-sync        → process-sync-batch   Proses batch dari syncQueue
-media       → transcode-video      Transcode video jawaban
-            → compress-image       Kompresi gambar soal
-report      → generate-pdf         PDF via Puppeteer → MinIO → presigned URL
-            → generate-excel       Excel via ExcelJS → MinIO → presigned URL
-notification→ send-realtime        Broadcast ke Socket.IO
+submission   → auto-grade           Penilaian otomatis soal objektif setelah submit
+             → timeout-attempt      Force-submit saat durasi ujian habis
+sync         → process              Proses batch item dari syncQueue offline
+media        → compress-image       Kompresi gambar via Sharp
+             → transcode-video      Transcode video jawaban via ffmpeg
+report       → generate             Generate PDF (Puppeteer) / Excel (ExcelJS) → MinIO → presigned URL
+notification → send-realtime        Broadcast event ke Socket.IO
+```
+
+### API Endpoints & Role
+```
+/api/auth            Public (login), JWT (logout, change-password)
+/api/tenants         SUPERADMIN
+/api/users           ADMIN, SUPERADMIN
+/api/devices         ADMIN, OPERATOR
+/api/subjects        TEACHER, ADMIN
+/api/questions       TEACHER, ADMIN
+/api/question-tags   TEACHER, ADMIN
+/api/exam-packages   TEACHER, ADMIN
+/api/exam-rooms      OPERATOR, ADMIN
+/api/sessions        OPERATOR, ADMIN
+/api/student         STUDENT (+ DeviceGuard)
+/api/submissions     TEACHER, ADMIN, OPERATOR
+/api/grading         TEACHER, ADMIN
+/api/sync            STUDENT (JWT)
+/api/powersync       STUDENT (JWT)
+/api/media           JWT (semua role)
+/api/monitoring      SUPERVISOR, OPERATOR, ADMIN
+/api/activity-logs   JWT (semua role)
+/api/audit-logs      SUPERADMIN, ADMIN
+/api/analytics       TEACHER, ADMIN, SUPERADMIN
+/api/reports         OPERATOR, ADMIN
+/api/health          Public
+```
+
+---
+
+## Model Keamanan
+
+| Layer | Mekanisme |
+|-------|-----------|
+| Transport | HTTPS + Helmet (CSP, HSTS, dll.) |
+| Auth | JWT access (15m) + refresh (7d) dengan rotation |
+| Tenant isolation | `tenantId` wajib di setiap Prisma query |
+| RLS | PostgreSQL Row-Level Security sebagai safety net |
+| RBAC | RolesGuard — 6 role: SUPERADMIN > ADMIN > TEACHER > OPERATOR > SUPERVISOR > STUDENT |
+| Device | DeviceGuard — fingerprint hash (SHA-256), bisa di-lock per perangkat |
+| Enkripsi soal | `correctAnswer` disimpan AES-256-GCM; key tidak pernah ke client |
+| Idempotency | Unique constraint `idempotencyKey` di `ExamAttempt` dan `ExamAnswer` |
+| Rate limiting | `CustomThrottlerGuard` — tier: STRICT (5/60s), MODERATE (30/60s), RELAXED (120/60s) |
+| Audit | Tabel `audit_logs` append-only — login, start exam, submit, grade, publish |
+
+### Rotasi Encryption Key
+
+```bash
+OLD_KEY=<64hex> NEW_KEY=<64hex> ts-node scripts/rotate-keys.ts
+# Setelah 0 kegagalan: update ENCRYPTION_KEY di .env dan restart API
+```
+
+### Socket.IO Monitoring
+
+```javascript
+const socket = io('https://api.yourdomain.com/monitoring', {
+  auth: { token: accessToken }
+});
+socket.emit('join-session', { sessionId });
+socket.on('student-update', (data) => { /* live status */ });
+socket.on('activity-log', (log) => { /* tab blur, paste, idle */ });
+```
+
+### PowerSync Batch Endpoint
+
+```
+POST /api/powersync/data
+{
+  "batch": [
+    {
+      "type": "SUBMIT_ANSWER",
+      "attemptId": "att-abc",
+      "idempotencyKey": "uuid-v4",
+      "payload": { "questionId": "q-1", "answer": "a" }
+    }
+  ]
+}
 ```
 
 ---

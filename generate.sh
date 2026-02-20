@@ -43,7 +43,7 @@ EXCLUDE_BE=(
   "logs/*" "uploads/*"
   "prisma/migrations/*"
   "docs/api/*"
-  "scripts/backup.sh" "scripts/restore.sh"
+  "scripts/*"
 )
 
 PRIORITY_FE=("src" "public" "tests" "ROOT")
