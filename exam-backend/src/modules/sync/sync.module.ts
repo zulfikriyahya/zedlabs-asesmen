@@ -10,7 +10,6 @@ import { SyncController } from './controllers/sync.controller';
 import { SyncScheduler } from './sync.scheduler';
 import { PowerSyncController } from './controllers/powersync.controller';
 
-
 @Module({
   imports: [BullModule.registerQueue({ name: 'sync' }), ScheduleModule.forRoot(), MediaModule],
   providers: [

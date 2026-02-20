@@ -1,12 +1,12 @@
-'use client'
-import { forwardRef } from 'react'
-import { clsx } from 'clsx'
+'use client';
+import { forwardRef } from 'react';
+import { clsx } from 'clsx';
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
-  label?: string
-  error?: string
-  options: Array<{ value: string; label: string; disabled?: boolean }>
-  placeholder?: string
+  label?: string;
+  error?: string;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
+  placeholder?: string;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
@@ -23,8 +23,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {...rest}
       >
         {placeholder && <option value="">{placeholder}</option>}
-        {options.map(o => (
-          <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value} disabled={o.disabled}>
+            {o.label}
+          </option>
         ))}
       </select>
       {error && (
@@ -34,5 +36,5 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       )}
     </div>
   ),
-)
-Select.displayName = 'Select'
+);
+Select.displayName = 'Select';

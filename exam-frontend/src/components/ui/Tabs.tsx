@@ -1,24 +1,24 @@
-'use client'
-import { clsx } from 'clsx'
+'use client';
+import { clsx } from 'clsx';
 
 interface Tab {
-  key: string
-  label: string
-  badge?: number
+  key: string;
+  label: string;
+  badge?: number;
 }
 
 interface TabsProps {
-  tabs: Tab[]
-  active: string
-  onChange: (key: string) => void
-  variant?: 'boxed' | 'lifted' | 'bordered'
-  className?: string
+  tabs: Tab[];
+  active: string;
+  onChange: (key: string) => void;
+  variant?: 'boxed' | 'lifted' | 'bordered';
+  className?: string;
 }
 
 export function Tabs({ tabs, active, onChange, variant = 'bordered', className }: TabsProps) {
   return (
     <div role="tablist" className={clsx('tabs', `tabs-${variant}`, className)}>
-      {tabs.map(tab => (
+      {tabs.map((tab) => (
         <button
           key={tab.key}
           role="tab"
@@ -27,10 +27,10 @@ export function Tabs({ tabs, active, onChange, variant = 'bordered', className }
         >
           {tab.label}
           {tab.badge !== undefined && (
-            <span className="badge badge-sm badge-primary">{tab.badge}</span>
+            <span className="badge badge-primary badge-sm">{tab.badge}</span>
           )}
         </button>
       ))}
     </div>
-  )
+  );
 }

@@ -1,1 +1,1 @@
-export { loadCachedPackage, cacheEncryptedPackage } from './download'
+export { loadCachedPackage, cacheEncryptedPackage } from './download';

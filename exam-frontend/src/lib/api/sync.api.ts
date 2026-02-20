@@ -1,6 +1,6 @@
-import { apiGet, apiPost } from './client'
-import type { PowerSyncBatch } from '@/types/sync'
-import type { ID } from '@/types/common'
+import { apiGet, apiPost } from './client';
+import type { PowerSyncBatch } from '@/types/sync';
+import type { ID } from '@/types/common';
 
 export const syncApi = {
   pushBatch: (batch: PowerSyncBatch) =>
@@ -11,6 +11,5 @@ export const syncApi = {
       `sync/status/${attemptId}`,
     ),
 
-  powersyncPush: (batch: PowerSyncBatch) =>
-    apiPost<void>('powersync/data', batch),
-}
+  powersyncPush: (batch: PowerSyncBatch) => apiPost<void>('powersync/data', batch),
+};

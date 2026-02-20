@@ -9,11 +9,11 @@ export async function seedUsers(prisma: PrismaClient) {
   const hash = await bcrypt.hash('password123', 12);
 
   const users = [
-    { email: 'admin@smkn1.test',    username: 'admin',     role: 'ADMIN'      },
-    { email: 'guru@smkn1.test',     username: 'guru1',     role: 'TEACHER'    },
-    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR'   },
+    { email: 'admin@smkn1.test', username: 'admin', role: 'ADMIN' },
+    { email: 'guru@smkn1.test', username: 'guru1', role: 'TEACHER' },
+    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR' },
     { email: 'pengawas@smkn1.test', username: 'pengawas1', role: 'SUPERVISOR' },
-    { email: 'siswa@smkn1.test',    username: 'siswa1',    role: 'STUDENT'    },
+    { email: 'siswa@smkn1.test', username: 'siswa1', role: 'STUDENT' },
   ];
 
   for (const u of users) {

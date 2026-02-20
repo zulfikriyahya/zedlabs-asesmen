@@ -3,20 +3,20 @@
  * Digunakan untuk validasi integritas paket ujian setelah download.
  */
 
-import { bufferToBase64 } from './aes-gcm'
+import { bufferToBase64 } from './aes-gcm';
 
 export async function sha256Hex(data: string | ArrayBuffer): Promise<string> {
-  const buf = typeof data === 'string' ? new TextEncoder().encode(data) : data
-  const hash = await crypto.subtle.digest('SHA-256', buf)
+  const buf = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  const hash = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export async function sha256Base64(data: string | ArrayBuffer): Promise<string> {
-  const buf = typeof data === 'string' ? new TextEncoder().encode(data) : data
-  const hash = await crypto.subtle.digest('SHA-256', buf)
-  return bufferToBase64(hash)
+  const buf = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return bufferToBase64(hash);
 }
 
 /**
@@ -27,9 +27,9 @@ export async function validatePackageHash(
   encryptedData: string,
   expectedHash: string,
 ): Promise<void> {
-  const actual = await sha256Hex(encryptedData)
+  const actual = await sha256Hex(encryptedData);
   if (actual !== expectedHash) {
-    throw new Error(`Package hash mismatch. Expected: ${expectedHash}, got: ${actual}`)
+    throw new Error(`Package hash mismatch. Expected: ${expectedHash}, got: ${actual}`);
   }
 }
 
@@ -47,7 +47,7 @@ export async function generateDeviceFingerprint(): Promise<string> {
     screen.colorDepth.toString(),
     Intl.DateTimeFormat().resolvedOptions().timeZone,
     navigator.platform ?? '',
-  ].join('|')
+  ].join('|');
 
-  return sha256Hex(components)
+  return sha256Hex(components);
 }

@@ -9,47 +9,47 @@
  *   4. clearKey() dipanggil saat tab ditutup / logout / submit selesai.
  */
 
-import { importKeyFromBase64 } from './aes-gcm'
+import { importKeyFromBase64 } from './aes-gcm';
 
-type SessionId = string
+type SessionId = string;
 
-const _keys = new Map<SessionId, CryptoKey>()
+const _keys = new Map<SessionId, CryptoKey>();
 
 export const keyManager = {
   /**
    * Set key untuk session tertentu dari base64 string (dari server).
    */
   async set(sessionId: SessionId, rawKeyB64: string): Promise<void> {
-    const key = await importKeyFromBase64(rawKeyB64)
-    _keys.set(sessionId, key)
+    const key = await importKeyFromBase64(rawKeyB64);
+    _keys.set(sessionId, key);
   },
 
   /**
    * Ambil key untuk session. Throws jika tidak ada (sesi tidak valid).
    */
   get(sessionId: SessionId): CryptoKey {
-    const key = _keys.get(sessionId)
-    if (!key) throw new Error(`No active key for session: ${sessionId}`)
-    return key
+    const key = _keys.get(sessionId);
+    if (!key) throw new Error(`No active key for session: ${sessionId}`);
+    return key;
   },
 
   has(sessionId: SessionId): boolean {
-    return _keys.has(sessionId)
+    return _keys.has(sessionId);
   },
 
   /**
    * Hapus key saat sesi berakhir (submit / logout / timeout).
    */
   clear(sessionId: SessionId): void {
-    _keys.delete(sessionId)
+    _keys.delete(sessionId);
   },
 
   clearAll(): void {
-    _keys.clear()
+    _keys.clear();
   },
-}
+};
 
 // Auto-clear saat tab ditutup
 if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => keyManager.clearAll())
+  window.addEventListener('beforeunload', () => keyManager.clearAll());
 }

@@ -16,8 +16,12 @@
     scrollbar-color: hsl(var(--bc) / 0.2) transparent;
   }
 
-  *::-webkit-scrollbar { width: var(--scrollbar-width); }
-  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
   *::-webkit-scrollbar-thumb {
     background-color: hsl(var(--bc) / 0.2);
     border-radius: 9999px;

@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom';
 
 Object.defineProperty(globalThis, 'crypto', {
   value: {
@@ -11,11 +11,11 @@ Object.defineProperty(globalThis, 'crypto', {
       exportKey: vi.fn(),
     },
     getRandomValues: (arr: Uint8Array) => {
-      for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256)
-      return arr
+      for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+      return arr;
     },
   },
-})
+});
 
 vi.mock('dexie', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -23,9 +23,9 @@ vi.mock('dexie', () => ({
     stores: vi.fn().mockReturnThis(),
     open: vi.fn(),
   })),
-}))
+}));
 
 vi.mock('@powersync/react', () => ({
   usePowerSync: vi.fn(),
   PowerSyncContext: { Provider: ({ children }: { children: React.ReactNode }) => children },
-}))
+}));

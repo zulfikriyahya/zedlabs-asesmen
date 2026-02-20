@@ -1,19 +1,19 @@
-'use client'
-import { clsx } from 'clsx'
+'use client';
+import { clsx } from 'clsx';
 
 interface TrueFalseProps {
-  value?: string
-  onChange: (val: 'true' | 'false') => void
-  disabled?: boolean
+  value?: string;
+  onChange: (val: 'true' | 'false') => void;
+  disabled?: boolean;
 }
 
 export function TrueFalse({ value, onChange, disabled }: TrueFalseProps) {
   return (
     <div className="flex gap-4">
-      {(['true', 'false'] as const).map(opt => {
-        const selected = value === opt
-        const label = opt === 'true' ? 'Benar' : 'Salah'
-        const emoji = opt === 'true' ? '✓' : '✕'
+      {(['true', 'false'] as const).map((opt) => {
+        const selected = value === opt;
+        const label = opt === 'true' ? 'Benar' : 'Salah';
+        const emoji = opt === 'true' ? '✓' : '✕';
         return (
           <button
             key={opt}
@@ -31,8 +31,8 @@ export function TrueFalse({ value, onChange, disabled }: TrueFalseProps) {
             <span className="text-xl">{emoji}</span>
             {label}
           </button>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

@@ -1,14 +1,14 @@
-import { apiGet, apiPost, apiPatch, apiDelete } from './client'
-import type { ExamSession, SessionStudent } from '@/types/exam'
-import type { ID } from '@/types/common'
-import type { PaginatedApiResponse, BaseQueryParams } from '@/types/api'
+import { apiGet, apiPost, apiPatch, apiDelete } from './client';
+import type { ExamSession, SessionStudent } from '@/types/exam';
+import type { ID } from '@/types/common';
+import type { PaginatedApiResponse, BaseQueryParams } from '@/types/api';
 
 export interface CreateSessionPayload {
-  examPackageId: ID
-  roomId?: ID
-  title: string
-  startTime: string
-  endTime: string
+  examPackageId: ID;
+  roomId?: ID;
+  title: string;
+  startTime: string;
+  endTime: string;
 }
 
 export const sessionsApi = {
@@ -19,8 +19,7 @@ export const sessionsApi = {
 
   getById: (id: ID) => apiGet<ExamSession>(`sessions/${id}`),
 
-  create: (payload: CreateSessionPayload) =>
-    apiPost<ExamSession>('sessions', payload),
+  create: (payload: CreateSessionPayload) => apiPost<ExamSession>('sessions', payload),
 
   update: (id: ID, payload: Partial<CreateSessionPayload>) =>
     apiPatch<ExamSession>(`sessions/${id}`, payload),
@@ -38,4 +37,4 @@ export const sessionsApi = {
 
   removeStudent: (sessionId: ID, userId: ID) =>
     apiDelete<void>(`sessions/${sessionId}/students/${userId}`),
-}
+};

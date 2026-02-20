@@ -1,28 +1,34 @@
-'use client'
-import { useRef } from 'react'
+'use client';
+import { useRef } from 'react';
 
 interface EssayProps {
-  value?: string
-  onChange: (val: string) => void
-  disabled?: boolean
-  minRows?: number
-  maxLength?: number
+  value?: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  minRows?: number;
+  maxLength?: number;
 }
 
-export function Essay({ value = '', onChange, disabled, minRows = 6, maxLength = 5000 }: EssayProps) {
-  const ref = useRef<HTMLTextAreaElement>(null)
+export function Essay({
+  value = '',
+  onChange,
+  disabled,
+  minRows = 6,
+  maxLength = 5000,
+}: EssayProps) {
+  const ref = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (e.target.value.length > maxLength) return
-    onChange(e.target.value)
+    if (e.target.value.length > maxLength) return;
+    onChange(e.target.value);
     // Auto-resize
-    const el = ref.current
+    const el = ref.current;
     if (el) {
-      el.style.height = 'auto'
-      el.style.height = `${el.scrollHeight}px`
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
     }
-  }
+  };
 
   return (
     <div className="form-control">
@@ -45,5 +51,5 @@ export function Essay({ value = '', onChange, disabled, minRows = 6, maxLength =
         )}
       </label>
     </div>
-  )
+  );
 }

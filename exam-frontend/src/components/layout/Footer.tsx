@@ -5,5 +5,5 @@ export function Footer() {
         © {new Date().getFullYear()} Sistem Ujian · Offline-First · v1.0
       </p>
     </footer>
-  )
+  );
 }

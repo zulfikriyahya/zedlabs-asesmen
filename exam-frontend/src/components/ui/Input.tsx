@@ -1,12 +1,12 @@
-'use client'
-import { forwardRef } from 'react'
-import { clsx } from 'clsx'
+'use client';
+import { forwardRef } from 'react';
+import { clsx } from 'clsx';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string
-  error?: string
-  hint?: string
-  inputSize?: 'xs' | 'sm' | 'md' | 'lg'
+  label?: string;
+  error?: string;
+  hint?: string;
+  inputSize?: 'xs' | 'sm' | 'md' | 'lg';
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -36,5 +36,5 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       )}
     </div>
   ),
-)
-Input.displayName = 'Input'
+);
+Input.displayName = 'Input';

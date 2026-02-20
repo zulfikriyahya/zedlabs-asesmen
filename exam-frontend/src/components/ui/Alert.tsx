@@ -1,19 +1,19 @@
-import { clsx } from 'clsx'
+import { clsx } from 'clsx';
 
-type AlertVariant = 'info' | 'success' | 'warning' | 'error'
+type AlertVariant = 'info' | 'success' | 'warning' | 'error';
 
 const ICONS: Record<AlertVariant, string> = {
   info: 'ℹ',
   success: '✓',
   warning: '⚠',
   error: '✕',
-}
+};
 
 interface AlertProps {
-  variant?: AlertVariant
-  title?: string
-  children: React.ReactNode
-  className?: string
+  variant?: AlertVariant;
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
 }
 
 export function Alert({ variant = 'info', title, children, className }: AlertProps) {
@@ -25,5 +25,5 @@ export function Alert({ variant = 'info', title, children, className }: AlertPro
         <div className="text-sm">{children}</div>
       </div>
     </div>
-  )
+  );
 }

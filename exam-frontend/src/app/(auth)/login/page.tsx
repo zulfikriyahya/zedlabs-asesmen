@@ -1,7 +1,7 @@
-import type { Metadata } from 'next'
-import { LoginForm } from '@/components/auth/LoginForm'
+import type { Metadata } from 'next';
+import { LoginForm } from '@/components/auth/LoginForm';
 
-export const metadata: Metadata = { title: 'Login' }
+export const metadata: Metadata = { title: 'Login' };
 
 export default function LoginPage() {
   return (
@@ -12,5 +12,5 @@ export default function LoginPage() {
         <LoginForm />
       </div>
     </div>
-  )
+  );
 }

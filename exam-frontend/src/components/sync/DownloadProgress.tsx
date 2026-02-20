@@ -1,6 +1,6 @@
 interface DownloadProgressProps {
-  step: 'idle' | 'downloading' | 'decrypting' | 'ready'
-  progress?: number // 0–100, opsional
+  step: 'idle' | 'downloading' | 'decrypting' | 'ready';
+  progress?: number; // 0–100, opsional
 }
 
 const STEP_LABELS: Record<DownloadProgressProps['step'], string> = {
@@ -8,11 +8,11 @@ const STEP_LABELS: Record<DownloadProgressProps['step'], string> = {
   downloading: 'Mengunduh paket soal...',
   decrypting: 'Mendekripsi soal...',
   ready: 'Siap!',
-}
+};
 
 export function DownloadProgress({ step, progress }: DownloadProgressProps) {
-  const steps: Array<DownloadProgressProps['step']> = ['downloading', 'decrypting', 'ready']
-  const currentIdx = steps.indexOf(step)
+  const steps: Array<DownloadProgressProps['step']> = ['downloading', 'decrypting', 'ready'];
+  const currentIdx = steps.indexOf(step);
 
   return (
     <div className="space-y-3">
@@ -30,5 +30,5 @@ export function DownloadProgress({ step, progress }: DownloadProgressProps) {
         <progress className="progress progress-primary w-full" value={progress} max={100} />
       )}
     </div>
-  )
+  );
 }

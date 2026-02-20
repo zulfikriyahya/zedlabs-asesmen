@@ -1,1 +1,1 @@
-export { validatePackageHash, sha256Hex } from '@/lib/crypto/checksum'
+export { validatePackageHash, sha256Hex } from '@/lib/crypto/checksum';

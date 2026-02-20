@@ -1,73 +1,93 @@
-'use client'
-import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { useForm } from 'react-hook-form'
-import { apiGet, apiPatch } from '@/lib/api/client'
-import { parseErrorMessage } from '@/lib/utils/error'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import { Alert } from '@/components/ui/Alert'
-import { Card } from '@/components/ui/Card'
-import { Loading } from '@/components/ui/Loading'
-import { Badge } from '@/components/ui/Badge'
-import { useToast } from '@/hooks/use-toast'
+'use client';
+import { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { apiGet, apiPatch } from '@/lib/api/client';
+import { parseErrorMessage } from '@/lib/utils/error';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { Alert } from '@/components/ui/Alert';
+import { Card } from '@/components/ui/Card';
+import { Loading } from '@/components/ui/Loading';
+import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/hooks/use-toast';
 
 interface Tenant {
-  id: string; name: string; code: string; subdomain: string; isActive: boolean
+  id: string;
+  name: string;
+  code: string;
+  subdomain: string;
+  isActive: boolean;
 }
-interface SchoolEditForm { name: string; code: string; subdomain: string }
+interface SchoolEditForm {
+  name: string;
+  code: string;
+  subdomain: string;
+}
 
 export default function EditSchoolPage() {
-  const router = useRouter()
-  const params = useParams()
-  const id = params.id as string
-  const { success } = useToast()
-  const [serverError, setServerError] = useState<string | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [tenant, setTenant] = useState<Tenant | null>(null)
+  const router = useRouter();
+  const params = useParams();
+  const id = params.id as string;
+  const { success } = useToast();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
 
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting, isDirty } } =
-    useForm<SchoolEditForm>()
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors, isSubmitting, isDirty },
+  } = useForm<SchoolEditForm>();
 
-  const subdomain = watch('subdomain')
+  const subdomain = watch('subdomain');
 
   useEffect(() => {
     apiGet<Tenant>(`tenants/${id}`)
-      .then(t => {
-        setTenant(t)
-        reset({ name: t.name, code: t.code, subdomain: t.subdomain })
+      .then((t) => {
+        setTenant(t);
+        reset({ name: t.name, code: t.code, subdomain: t.subdomain });
       })
-      .catch(e => setLoadError(parseErrorMessage(e)))
-      .finally(() => setLoading(false))
-  }, [id, reset])
+      .catch((e) => setLoadError(parseErrorMessage(e)))
+      .finally(() => setLoading(false));
+  }, [id, reset]);
 
   const onSubmit = async (data: SchoolEditForm) => {
-    setServerError(null)
+    setServerError(null);
     try {
-      await apiPatch(`tenants/${id}`, data)
-      success('Data sekolah berhasil diperbarui!')
-      router.push('/superadmin/schools')
-    } catch (e) { setServerError(parseErrorMessage(e)) }
-  }
+      await apiPatch(`tenants/${id}`, data);
+      success('Data sekolah berhasil diperbarui!');
+      router.push('/superadmin/schools');
+    } catch (e) {
+      setServerError(parseErrorMessage(e));
+    }
+  };
 
-  if (loading) return <Loading fullscreen text="Memuat data sekolah..." />
-  if (loadError) return (
-    <div className="mx-auto max-w-md pt-8">
-      <Alert variant="error">{loadError}</Alert>
-      <Button variant="ghost" className="mt-4" onClick={() => router.back()}>Kembali</Button>
-    </div>
-  )
+  if (loading) return <Loading fullscreen text="Memuat data sekolah..." />;
+  if (loadError)
+    return (
+      <div className="mx-auto max-w-md pt-8">
+        <Alert variant="error">{loadError}</Alert>
+        <Button variant="ghost" className="mt-4" onClick={() => router.back()}>
+          Kembali
+        </Button>
+      </div>
+    );
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="ghost" onClick={() => router.back()}>←</Button>
+        <Button size="sm" variant="ghost" onClick={() => router.back()}>
+          ←
+        </Button>
         <div>
           <h1 className="text-2xl font-bold">Edit Sekolah</h1>
           {tenant && (
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-sm text-base-content/60 font-mono">{tenant.subdomain}.exam.app</p>
+            <div className="mt-0.5 flex items-center gap-2">
+              <p className="font-mono text-sm text-base-content/60">{tenant.subdomain}.exam.app</p>
               <Badge variant={tenant.isActive ? 'success' : 'error'} size="xs">
                 {tenant.isActive ? 'Aktif' : 'Nonaktif'}
               </Badge>
@@ -79,8 +99,8 @@ export default function EditSchoolPage() {
       {serverError && <Alert variant="error">{serverError}</Alert>}
 
       <Alert variant="warning" title="Perhatian">
-        Mengubah subdomain akan mempengaruhi URL akses semua pengguna di sekolah ini.
-        Pastikan sudah memberitahu administrator sekolah sebelum mengubah.
+        Mengubah subdomain akan mempengaruhi URL akses semua pengguna di sekolah ini. Pastikan sudah
+        memberitahu administrator sekolah sebelum mengubah.
       </Alert>
 
       <Card bordered>
@@ -115,8 +135,8 @@ export default function EditSchoolPage() {
               })}
             />
             {subdomain && (
-              <p className="text-xs text-base-content/50 mt-1 ml-1">
-                Preview URL: <code className="bg-base-200 px-1 rounded">{subdomain}.exam.app</code>
+              <p className="ml-1 mt-1 text-xs text-base-content/50">
+                Preview URL: <code className="rounded bg-base-200 px-1">{subdomain}.exam.app</code>
               </p>
             )}
           </div>
@@ -132,5 +152,5 @@ export default function EditSchoolPage() {
         </form>
       </Card>
     </div>
-  )
+  );
 }

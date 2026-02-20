@@ -1,10 +1,10 @@
-import { clsx } from 'clsx'
+import { clsx } from 'clsx';
 
 interface LoadingProps {
-  size?: 'xs' | 'sm' | 'md' | 'lg'
-  type?: 'spinner' | 'dots' | 'ring' | 'bars'
-  fullscreen?: boolean
-  text?: string
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  type?: 'spinner' | 'dots' | 'ring' | 'bars';
+  fullscreen?: boolean;
+  text?: string;
 }
 
 export function Loading({ size = 'md', type = 'spinner', fullscreen, text }: LoadingProps) {
@@ -13,9 +13,7 @@ export function Loading({ size = 'md', type = 'spinner', fullscreen, text }: Loa
       <span className={clsx('loading', `loading-${type}`, `loading-${size}`, 'text-primary')} />
       {text && <p className="text-sm text-base-content/60">{text}</p>}
     </div>
-  )
-  if (fullscreen) return (
-    <div className="flex min-h-screen items-center justify-center">{el}</div>
-  )
-  return el
+  );
+  if (fullscreen) return <div className="flex min-h-screen items-center justify-center">{el}</div>;
+  return el;
 }

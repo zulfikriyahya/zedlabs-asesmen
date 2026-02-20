@@ -3,23 +3,30 @@
  * Dipanggil via debounce dari useAutoSave hook, bukan interval.
  */
 
-import { upsertAnswer } from '@/lib/db/queries'
-import type { LocalAnswer } from '@/types/answer'
-import type { AnswerValue } from '@/types/answer'
-import type { ID } from '@/types/common'
-import { v4 as uuidv4 } from 'uuid'
+import { upsertAnswer } from '@/lib/db/queries';
+import type { LocalAnswer } from '@/types/answer';
+import type { AnswerValue } from '@/types/answer';
+import type { ID } from '@/types/common';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface SaveAnswerParams {
-  questionId: ID
-  attemptId: ID
-  sessionId: ID
-  answer: AnswerValue
-  mediaUrls?: string[]
-  existingIdempotencyKey?: string  // reuse key jika sudah ada (update, bukan insert baru)
+  questionId: ID;
+  attemptId: ID;
+  sessionId: ID;
+  answer: AnswerValue;
+  mediaUrls?: string[];
+  existingIdempotencyKey?: string; // reuse key jika sudah ada (update, bukan insert baru)
 }
 
 export async function saveAnswerToLocal(params: SaveAnswerParams): Promise<number> {
-  const { questionId, attemptId, sessionId, answer, mediaUrls = [], existingIdempotencyKey } = params
+  const {
+    questionId,
+    attemptId,
+    sessionId,
+    answer,
+    mediaUrls = [],
+    existingIdempotencyKey,
+  } = params;
 
   const record: Omit<LocalAnswer, 'id'> = {
     questionId,
@@ -30,9 +37,9 @@ export async function saveAnswerToLocal(params: SaveAnswerParams): Promise<numbe
     mediaUrls,
     savedAt: Date.now(),
     synced: false,
-  }
+  };
 
-  return upsertAnswer(record)
+  return upsertAnswer(record);
 }
 
 /**
@@ -43,13 +50,13 @@ export function createDebounce<T extends (...args: Parameters<T>) => unknown>(
   fn: T,
   delay: number,
 ): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout> | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   return (...args: Parameters<T>) => {
-    if (timer) clearTimeout(timer)
+    if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      fn(...args)
-      timer = null
-    }, delay)
-  }
+      fn(...args);
+      timer = null;
+    }, delay);
+  };
 }

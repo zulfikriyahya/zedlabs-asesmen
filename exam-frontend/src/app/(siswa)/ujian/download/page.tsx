@@ -1,38 +1,42 @@
-'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { startExam } from '@/lib/exam/controller'
-import { useExamStore } from '@/stores/exam.store'
-import { parseErrorMessage } from '@/lib/utils/error'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import { Alert } from '@/components/ui/Alert'
-import { Card } from '@/components/ui/Card'
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { startExam } from '@/lib/exam/controller';
+import { useExamStore } from '@/stores/exam.store';
+import { parseErrorMessage } from '@/lib/utils/error';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { Alert } from '@/components/ui/Alert';
+import { Card } from '@/components/ui/Card';
 
 const schema = z.object({
   tokenCode: z.string().min(4, 'Kode token wajib diisi'),
-})
-type Form = z.infer<typeof schema>
+});
+type Form = z.infer<typeof schema>;
 
 export default function DownloadPage() {
-  const router = useRouter()
-  const { setPackage } = useExamStore()
-  const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState<'idle' | 'downloading' | 'decrypting'>('idle')
+  const router = useRouter();
+  const { setPackage } = useExamStore();
+  const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<'idle' | 'downloading' | 'decrypting'>('idle');
 
-  const { register, handleSubmit, formState: { errors } } = useForm<Form>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<Form>({
     resolver: zodResolver(schema),
-  })
+  });
 
   const onSubmit = async ({ tokenCode }: Form) => {
-    setError(null)
+    setError(null);
     try {
-      setStep('downloading')
-      const { decryptedPackage, attemptId } = await startExam(tokenCode)
-      setStep('decrypting')
+      setStep('downloading');
+      const { decryptedPackage, attemptId } = await startExam(tokenCode);
+      setStep('decrypting');
 
       // Simpan ke exam store
       setPackage(decryptedPackage, {
@@ -49,20 +53,22 @@ export default function DownloadPage() {
         maxScore: null,
         gradingStatus: 'PENDING',
         gradingCompletedAt: null,
-      })
+      });
 
-      router.replace(`/siswa/ujian/${decryptedPackage.sessionId}`)
+      router.replace(`/siswa/ujian/${decryptedPackage.sessionId}`);
     } catch (e) {
-      setError(parseErrorMessage(e))
-      setStep('idle')
+      setError(parseErrorMessage(e));
+      setStep('idle');
     }
-  }
+  };
 
   return (
     <div className="mx-auto max-w-md space-y-6 pt-8">
       <div className="text-center">
         <h1 className="text-2xl font-bold">Mulai Ujian</h1>
-        <p className="mt-1 text-sm text-base-content/60">Masukkan kode token yang diberikan pengawas</p>
+        <p className="mt-1 text-sm text-base-content/60">
+          Masukkan kode token yang diberikan pengawas
+        </p>
       </div>
 
       <Card>
@@ -83,8 +89,8 @@ export default function DownloadPage() {
             placeholder="Contoh: ABC123"
             error={errors.tokenCode?.message}
             disabled={step !== 'idle'}
-            className="text-center text-lg tracking-widest font-mono uppercase"
-            {...register('tokenCode', { setValueAs: v => String(v).toUpperCase() })}
+            className="text-center font-mono text-lg uppercase tracking-widest"
+            {...register('tokenCode', { setValueAs: (v) => String(v).toUpperCase() })}
           />
 
           <Button type="submit" wide className="w-full" loading={step !== 'idle'}>
@@ -97,5 +103,5 @@ export default function DownloadPage() {
         Pastikan browser Anda mendukung Web Crypto API dan tersedia minimal 2 GB ruang penyimpanan.
       </Alert>
     </div>
-  )
+  );
 }

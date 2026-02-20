@@ -1,1 +1,1 @@
-export { compressImage } from '@/lib/utils/compression'
+export { compressImage } from '@/lib/utils/compression';

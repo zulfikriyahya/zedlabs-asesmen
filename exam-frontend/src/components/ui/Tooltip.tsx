@@ -1,10 +1,10 @@
-import { clsx } from 'clsx'
+import { clsx } from 'clsx';
 
 interface TooltipProps {
-  tip: string
-  children: React.ReactNode
-  position?: 'top' | 'bottom' | 'left' | 'right'
-  className?: string
+  tip: string;
+  children: React.ReactNode;
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
 }
 
 export function Tooltip({ tip, children, position = 'top', className }: TooltipProps) {
@@ -12,5 +12,5 @@ export function Tooltip({ tip, children, position = 'top', className }: TooltipP
     <div className={clsx('tooltip', `tooltip-${position}`, className)} data-tip={tip}>
       {children}
     </div>
-  )
+  );
 }

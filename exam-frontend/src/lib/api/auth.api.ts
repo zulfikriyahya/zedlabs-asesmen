@@ -1,15 +1,15 @@
-import { apiPost } from './client'
-import type { AuthUser } from '@/types/user'
+import { apiPost } from './client';
+import type { AuthUser } from '@/types/user';
 
 export interface LoginPayload {
-  username: string
-  password: string
-  fingerprint: string
+  username: string;
+  password: string;
+  fingerprint: string;
 }
 
 export interface LoginResponse {
-  user: AuthUser
-  accessToken: string
+  user: AuthUser;
+  accessToken: string;
 }
 
 export const authApi = {
@@ -20,23 +20,22 @@ export const authApi = {
       body: JSON.stringify(payload),
     }).then(async (res) => {
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.message ?? 'Login gagal')
+        const err = await res.json();
+        throw new Error(err.message ?? 'Login gagal');
       }
-      return res.json() as Promise<LoginResponse>
+      return res.json() as Promise<LoginResponse>;
     }),
 
-  logout: () =>
-    fetch('/api/auth/logout', { method: 'POST' }).then(() => undefined),
+  logout: () => fetch('/api/auth/logout', { method: 'POST' }).then(() => undefined),
 
   refresh: () =>
     fetch('/api/auth/refresh', { method: 'POST' }).then(async (res) => {
-      if (!res.ok) throw new Error('Token expired')
-      return res.json() as Promise<{ accessToken: string }>
+      if (!res.ok) throw new Error('Token expired');
+      return res.json() as Promise<{ accessToken: string }>;
     }),
 
   changePassword: (payload: { currentPassword: string; newPassword: string }) =>
     apiPost<void>('auth/change-password', payload),
 
   me: () => apiPost<AuthUser>('auth/me', {}),
-}
+};

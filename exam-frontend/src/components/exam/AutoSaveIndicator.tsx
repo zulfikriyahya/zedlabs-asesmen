@@ -1,13 +1,17 @@
-'use client'
-import { clsx } from 'clsx'
-import { useSyncStatus } from '@/hooks/use-sync-status'
+'use client';
+import { clsx } from 'clsx';
+import { useSyncStatus } from '@/hooks/use-sync-status';
 
 export function AutoSaveIndicator() {
-  const { isSyncing, lastSyncAt, lastError, pendingCount } = useSyncStatus()
+  const { isSyncing, lastSyncAt, lastError, pendingCount } = useSyncStatus();
 
   const lastSyncFormatted = lastSyncAt
-    ? new Date(lastSyncAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : null
+    ? new Date(lastSyncAt).toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : null;
 
   return (
     <div className="flex items-center gap-1.5 text-xs">
@@ -23,7 +27,7 @@ export function AutoSaveIndicator() {
         </>
       ) : pendingCount > 0 ? (
         <>
-          <span className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-warning" />
           <span className="text-warning">{pendingCount} belum tersimpan</span>
         </>
       ) : lastSyncFormatted ? (
@@ -38,5 +42,5 @@ export function AutoSaveIndicator() {
         </>
       )}
     </div>
-  )
+  );
 }

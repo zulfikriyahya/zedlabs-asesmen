@@ -1,6 +1,6 @@
-import { apiGet } from './client'
-import type { ActivitySummary } from '@/types/activity'
-import type { ID } from '@/types/common'
+import { apiGet } from './client';
+import type { ActivitySummary } from '@/types/activity';
+import type { ID } from '@/types/common';
 
 export const monitoringApi = {
   getSessionStatus: (sessionId: ID) =>
@@ -11,4 +11,4 @@ export const monitoringApi = {
 
   getAttemptLogs: (attemptId: ID) =>
     apiGet<ActivitySummary>(`monitoring/attempts/${attemptId}/logs`),
-}
+};

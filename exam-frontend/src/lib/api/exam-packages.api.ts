@@ -1,14 +1,14 @@
-import { apiGet, apiPost, apiPatch } from './client'
-import type { ExamPackage } from '@/types/exam'
-import type { ID } from '@/types/common'
-import type { PaginatedApiResponse, BaseQueryParams } from '@/types/api'
+import { apiGet, apiPost, apiPatch } from './client';
+import type { ExamPackage } from '@/types/exam';
+import type { ID } from '@/types/common';
+import type { PaginatedApiResponse, BaseQueryParams } from '@/types/api';
 
 export interface CreatePackagePayload {
-  title: string
-  description?: string
-  subjectId?: ID
-  settings: ExamPackage['settings']
-  questionIds?: Array<{ questionId: ID; order: number; points?: number }>
+  title: string;
+  description?: string;
+  subjectId?: ID;
+  settings: ExamPackage['settings'];
+  questionIds?: Array<{ questionId: ID; order: number; points?: number }>;
 }
 
 export const examPackagesApi = {
@@ -19,8 +19,7 @@ export const examPackagesApi = {
 
   getById: (id: ID) => apiGet<ExamPackage>(`exam-packages/${id}`),
 
-  create: (payload: CreatePackagePayload) =>
-    apiPost<ExamPackage>('exam-packages', payload),
+  create: (payload: CreatePackagePayload) => apiPost<ExamPackage>('exam-packages', payload),
 
   update: (id: ID, payload: Partial<CreatePackagePayload>) =>
     apiPatch<ExamPackage>(`exam-packages/${id}`, payload),
@@ -30,6 +29,5 @@ export const examPackagesApi = {
 
   publish: (id: ID) => apiPost<ExamPackage>(`exam-packages/${id}/publish`, {}),
 
-  getItemAnalysis: (id: ID) =>
-    apiGet<Record<string, unknown>>(`exam-packages/${id}/item-analysis`),
-}
+  getItemAnalysis: (id: ID) => apiGet<Record<string, unknown>>(`exam-packages/${id}/item-analysis`),
+};

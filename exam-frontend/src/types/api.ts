@@ -1,25 +1,25 @@
-import type { PaginationMeta } from './common'
+import type { PaginationMeta } from './common';
 
 // ── Generic API envelope ──────────────────────────────────────────────────────
 
 export interface ApiSuccessResponse<T> {
-  success: true
-  data: T
-  message?: string
+  success: true;
+  data: T;
+  message?: string;
 }
 
 export interface ApiErrorResponse {
-  success: false
-  error: string
-  message: string
-  statusCode: number
-  details?: Record<string, string[]>   // field-level validation errors
+  success: false;
+  error: string;
+  message: string;
+  statusCode: number;
+  details?: Record<string, string[]>; // field-level validation errors
 }
 
-export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 export interface PaginatedApiResponse<T> extends ApiSuccessResponse<T[]> {
-  meta: PaginationMeta
+  meta: PaginationMeta;
 }
 
 // ── HTTP client error ─────────────────────────────────────────────────────────
@@ -30,31 +30,32 @@ export class ApiError extends Error {
     message: string,
     public details?: Record<string, string[]>,
   ) {
-    super(message)
-    this.name = 'ApiError'
+    super(message);
+    this.name = 'ApiError';
   }
 }
 
 // ── Request helpers ───────────────────────────────────────────────────────────
 
 export interface PaginationParams {
-  page?: number
-  limit?: number
+  page?: number;
+  limit?: number;
 }
 
 export interface SortParams {
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
-export type BaseQueryParams = PaginationParams & SortParams & {
-  search?: string
-}
+export type BaseQueryParams = PaginationParams &
+  SortParams & {
+    search?: string;
+  };
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 export interface UploadProgressEvent {
-  loaded: number
-  total: number
-  percent: number
+  loaded: number;
+  total: number;
+  percent: number;
 }
