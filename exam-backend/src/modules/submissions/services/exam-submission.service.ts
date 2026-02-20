@@ -13,6 +13,8 @@ import type {
   ExamSubmittedEvent,
   GradingCompletedEvent,
 } from '../processors/submission.events.listener';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 
 @Injectable()
 export class ExamSubmissionService {
@@ -21,7 +23,7 @@ export class ExamSubmissionService {
   constructor(
     private prisma: PrismaService,
     private auditLogs: AuditLogsService,
-    private eventEmitter: EventEmitter2,
+    private eventEmitter: EventEmitter2, // ← tambah ini
     @InjectQueue('submission') private submissionQueue: Queue,
   ) {}
 

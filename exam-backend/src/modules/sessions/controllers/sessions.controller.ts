@@ -117,4 +117,17 @@ export class SessionsController {
   activate(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.activate(tid, id);
   }
+  @Post(':id/complete')
+  @Roles(UserRole.OPERATOR, UserRole.ADMIN)
+  @AuditAction('COMPLETE_SESSION', 'ExamSession')
+  @ApiOperation({
+    summary: 'Selesaikan sesi ujian',
+    description: 'Status → COMPLETED. Semua attempt IN_PROGRESS di-timeout otomatis.',
+  })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Sesi berhasil diselesaikan' })
+  @ApiResponse({ status: 400, description: 'Sesi sudah dibatalkan' })
+  complete(@TenantId() tid: string, @Param('id') id: string) {
+    return this.svc.complete(tid, id);
+  }
 }

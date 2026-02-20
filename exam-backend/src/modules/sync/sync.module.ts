@@ -8,6 +8,8 @@ import { ChunkedUploadService } from './services/chunked-upload.service';
 import { SyncProcessor } from './processors/sync.processor';
 import { SyncController } from './controllers/sync.controller';
 import { SyncScheduler } from './sync.scheduler';
+import { PowerSyncController } from './controllers/powersync.controller';
+
 
 @Module({
   imports: [BullModule.registerQueue({ name: 'sync' }), ScheduleModule.forRoot(), MediaModule],
@@ -18,7 +20,7 @@ import { SyncScheduler } from './sync.scheduler';
     SyncProcessor,
     SyncScheduler,
   ],
-  controllers: [SyncController],
+  controllers: [SyncController, PowerSyncController],
   exports: [SyncService, ChunkedUploadService],
 })
 export class SyncModule {}

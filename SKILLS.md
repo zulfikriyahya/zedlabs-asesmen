@@ -434,7 +434,8 @@ exam-frontend/
 ```
 
 ### Backend (`exam-backend`)
-```exam-backend/
+```
+exam-backend/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── docs
@@ -455,7 +456,9 @@ exam-frontend/
 │   ├── migrations
 │   │   ├── 20260219223909_init
 │   │   │   └── migration.sql
-│   │   └── migration_lock.toml
+│   │   ├── migration_lock.toml
+│   │   └── rls
+│   │       └── enable_rls.sql
 │   └── schema.prisma
 ├── scripts
 │   ├── backup.sh
@@ -503,6 +506,8 @@ exam-frontend/
 │   │   │   ├── tenant.interceptor.ts
 │   │   │   ├── timeout.interceptor.ts
 │   │   │   └── transform.interceptor.ts
+│   │   ├── logger
+│   │   │   └── winston.logger.ts
 │   │   ├── middleware
 │   │   │   ├── logger.middleware.ts
 │   │   │   ├── performance.middleware.ts
@@ -512,6 +517,9 @@ exam-frontend/
 │   │   │   └── validation.pipe.ts
 │   │   ├── providers
 │   │   │   └── redis.provider.ts
+│   │   ├── services
+│   │   │   ├── email.service.ts
+│   │   │   └── sentry.service.ts
 │   │   ├── utils
 │   │   │   ├── checksum.util.ts
 │   │   │   ├── device-fingerprint.util.ts
@@ -532,6 +540,8 @@ exam-frontend/
 │   │   ├── minio.config.ts
 │   │   ├── multer.config.ts
 │   │   ├── redis.config.ts
+│   │   ├── sentry.config.ts
+│   │   ├── smtp.config.ts
 │   │   └── throttler.config.ts
 │   ├── main.ts
 │   ├── modules
@@ -724,7 +734,7 @@ exam-frontend/
 │   │   │   │   ├── exam-package.interface.ts
 │   │   │   │   └── grading-result.interface.ts
 │   │   │   ├── processors
-│   │   │   │   ├── submission-events.listener.ts
+│   │   │   │   ├── submission.events.listener.ts
 │   │   │   │   └── submission.processor.ts
 │   │   │   ├── services
 │   │   │   │   ├── auto-grading.service.ts
@@ -759,12 +769,15 @@ exam-frontend/
 │   │   │   └── tenants.module.ts
 │   │   └── users
 │   │       ├── controllers
+│   │       │   ├── device-management.controller.ts
 │   │       │   └── users.controller.ts
 │   │       ├── dto
 │   │       │   ├── create-user.dto.ts
+│   │       │   ├── device-management.dto.ts
 │   │       │   ├── import-users.dto.ts
 │   │       │   └── update-user.dto.ts
 │   │       ├── services
+│   │       │   ├── device-management.service.ts
 │   │       │   └── users.service.ts
 │   │       └── users.module.ts
 │   ├── prisma
@@ -820,6 +833,7 @@ exam-frontend/
     ├── media
     ├── questions
     └── temp
+
 ```
 
 ### Prisma Model Utama & Relasi

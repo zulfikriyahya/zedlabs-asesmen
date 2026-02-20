@@ -19,7 +19,9 @@ exam-backend/
 │   ├── migrations
 │   │   ├── 20260219223909_init
 │   │   │   └── migration.sql
-│   │   └── migration_lock.toml
+│   │   ├── migration_lock.toml
+│   │   └── rls
+│   │       └── enable_rls.sql
 │   └── schema.prisma
 ├── scripts
 │   ├── backup.sh
@@ -67,6 +69,8 @@ exam-backend/
 │   │   │   ├── tenant.interceptor.ts
 │   │   │   ├── timeout.interceptor.ts
 │   │   │   └── transform.interceptor.ts
+│   │   ├── logger
+│   │   │   └── winston.logger.ts
 │   │   ├── middleware
 │   │   │   ├── logger.middleware.ts
 │   │   │   ├── performance.middleware.ts
@@ -76,6 +80,9 @@ exam-backend/
 │   │   │   └── validation.pipe.ts
 │   │   ├── providers
 │   │   │   └── redis.provider.ts
+│   │   ├── services
+│   │   │   ├── email.service.ts
+│   │   │   └── sentry.service.ts
 │   │   ├── utils
 │   │   │   ├── checksum.util.ts
 │   │   │   ├── device-fingerprint.util.ts
@@ -96,6 +103,8 @@ exam-backend/
 │   │   ├── minio.config.ts
 │   │   ├── multer.config.ts
 │   │   ├── redis.config.ts
+│   │   ├── sentry.config.ts
+│   │   ├── smtp.config.ts
 │   │   └── throttler.config.ts
 │   ├── main.ts
 │   ├── modules
@@ -288,7 +297,7 @@ exam-backend/
 │   │   │   │   ├── exam-package.interface.ts
 │   │   │   │   └── grading-result.interface.ts
 │   │   │   ├── processors
-│   │   │   │   ├── submission-events.listener.ts
+│   │   │   │   ├── submission.events.listener.ts
 │   │   │   │   └── submission.processor.ts
 │   │   │   ├── services
 │   │   │   │   ├── auto-grading.service.ts
@@ -323,12 +332,15 @@ exam-backend/
 │   │   │   └── tenants.module.ts
 │   │   └── users
 │   │       ├── controllers
+│   │       │   ├── device-management.controller.ts
 │   │       │   └── users.controller.ts
 │   │       ├── dto
 │   │       │   ├── create-user.dto.ts
+│   │       │   ├── device-management.dto.ts
 │   │       │   ├── import-users.dto.ts
 │   │       │   └── update-user.dto.ts
 │   │       ├── services
+│   │       │   ├── device-management.service.ts
 │   │       │   └── users.service.ts
 │   │       └── users.module.ts
 │   ├── prisma
@@ -384,3 +396,5 @@ exam-backend/
     ├── media
     ├── questions
     └── temp
+
+141 directories, 257 files

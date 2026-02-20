@@ -13,6 +13,7 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { SentryService } from './common/services/sentry.service';
 import { EmailService } from './common/services/email.service';
+import { RedisProvider } from './common/providers/redis.provider';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -36,13 +37,11 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { HealthModule } from './modules/health/health.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RedisProvider } from './common/providers/redis.provider';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
 
-    // Event emitter untuk domain events (exam.submitted, grading.completed, dll)
     EventEmitterModule.forRoot({ wildcard: false, maxListeners: 20 }),
 
     ThrottlerModule.forRootAsync({
@@ -64,7 +63,7 @@ import { RedisProvider } from './common/providers/redis.provider';
         connection: {
           host: cfg.get('REDIS_HOST', 'localhost'),
           port: cfg.get<number>('REDIS_PORT', 6379),
-          password: cfg.get('REDIS_PASSWORD'),
+          password: cfg.get('REDIS_PASSWORD') || undefined,
         },
         defaultJobOptions: {
           removeOnComplete: 100,
@@ -101,6 +100,8 @@ import { RedisProvider } from './common/providers/redis.provider';
   providers: [
     AppService,
     RedisProvider,
+    // SentryService & EmailService disediakan di module masing-masing yang butuh,
+    // tapi kita daftarkan di root agar bisa di-inject secara global via exports
     SentryService,
     EmailService,
     { provide: APP_GUARD, useClass: TenantGuard },
@@ -108,7 +109,8 @@ import { RedisProvider } from './common/providers/redis.provider';
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
-  exports: [SentryService, EmailService],
+  // Export agar modul lain bisa inject tanpa import ulang
+  exports: [SentryService, EmailService, RedisProvider],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

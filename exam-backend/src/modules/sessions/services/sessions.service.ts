@@ -17,7 +17,6 @@ export class SessionsService {
     private notifSvc: NotificationsService,
     private emailSvc: EmailService,
   ) {}
-
   async findAll(tenantId: string, q: BaseQueryDto & { status?: SessionStatus }) {
     const where = {
       tenantId,
@@ -124,5 +123,26 @@ export class SessionsService {
     );
 
     return updated;
+  }
+  async complete(tenantId: string, id: string): Promise<ExamSession> {
+    const s = await this.findOne(tenantId, id);
+
+    if (s.status === SessionStatus.COMPLETED) {
+      return s; // idempoten
+    }
+    if (s.status === SessionStatus.CANCELLED) {
+      throw new BadRequestException('Sesi yang sudah dibatalkan tidak bisa diselesaikan');
+    }
+
+    // Timeout semua attempt yang masih IN_PROGRESS
+    await this.prisma.examAttempt.updateMany({
+      where: { sessionId: id, status: 'IN_PROGRESS' },
+      data: { status: 'TIMED_OUT', submittedAt: new Date() },
+    });
+
+    return this.prisma.examSession.update({
+      where: { id },
+      data: { status: SessionStatus.COMPLETED },
+    });
   }
 }
