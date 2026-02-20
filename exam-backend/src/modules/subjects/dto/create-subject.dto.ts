@@ -1,9 +1,5 @@
-// ── dto/create-subject.dto.ts ─────────────────────────────
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CreateSubjectDto {
-  @IsString() @IsNotEmpty() name: string;
-  @IsString() @IsNotEmpty() code: string;
+  @IsString() @IsNotEmpty() name!: string;
+  @IsString() @IsNotEmpty() code!: string;
 }
-
-export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}

@@ -1,4 +1,3 @@
-// ── is-tenant-exists.validator.ts ────────────────────────
 import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
@@ -7,7 +6,7 @@ import {
   ValidationOptions,
 } from 'class-validator';
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service'; // will be created
+import { PrismaService } from '../../prisma/prisma.service';
 
 @ValidatorConstraint({ name: 'isTenantExists', async: true })
 @Injectable()

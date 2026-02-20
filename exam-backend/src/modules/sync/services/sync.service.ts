@@ -1,4 +1,15 @@
-// ── services/sync.service.ts ─────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/services/sync.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { SyncStatus } from '../../../common/enums/sync-status.enum';
+import { AddSyncItemDto } from '../dto/add-sync-item.dto';
+import { RetrySyncDto } from '../dto/retry-sync.dto';
+import { Prisma } from '@prisma/client';
+
 @Injectable()
 export class SyncService {
   constructor(
@@ -13,7 +24,7 @@ export class SyncService {
         attemptId: dto.attemptId,
         idempotencyKey: dto.idempotencyKey,
         type: dto.type,
-        payload: dto.payload,
+        payload: dto.payload as Prisma.InputJsonValue,
         status: SyncStatus.PENDING,
       },
       update: {},

@@ -1,9 +1,5 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/exam-rooms/dto/create-room.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
-
 export class CreateRoomDto {
-  @IsString() @IsNotEmpty() name: string;
+  @IsString() @IsNotEmpty() name!: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
 }

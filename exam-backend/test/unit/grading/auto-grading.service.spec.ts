@@ -1,8 +1,9 @@
 // ── test/unit/grading/auto-grading.service.spec.ts ───────────────────────────
-import { AutoGradingService } from '../../../src/modules/submissions/services/auto-grading.service';
 import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
 import { QuestionType } from '../../../src/common/enums/question-type.enum';
 import { encrypt } from '../../../src/common/utils/encryption.util';
+import { AutoGradingService } from '../../../src/modules/submissions/services/auto-grading.service';
 
 describe('AutoGradingService', () => {
   let svc: AutoGradingService;

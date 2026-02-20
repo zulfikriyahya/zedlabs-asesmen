@@ -1,18 +1,15 @@
-// ── timeout.interceptor.ts ───────────────────────────────
-import { timeout } from 'rxjs/operators';
-import { TimeoutError } from 'rxjs';
-import { RequestTimeoutException } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, RequestTimeoutException } from '@nestjs/common';
+import { Observable, TimeoutError } from 'rxjs';
+import { timeout, catchError } from 'rxjs/operators';
 
-@Inj()
+@Injectable()
 export class TimeoutInterceptor implements NestInterceptor {
-  intercept(_ctx: EC, next: CallHandler): Observable<unknown> {
+  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       timeout(30_000),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tap({
-        error: (e: any) => {
-          if (e instanceof TimeoutError) throw new RequestTimeoutException();
-        },
+      catchError((err) => {
+        if (err instanceof TimeoutError) throw new RequestTimeoutException();
+        throw err;
       }),
     );
   }

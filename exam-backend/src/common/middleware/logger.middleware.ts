@@ -1,13 +1,12 @@
-// ── logger.middleware.ts ─────────────────────────────────
-import { Injectable as LI, NestMiddleware as LM, Logger as LL } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
 
-@LI()
-export class LoggerMiddleware implements LM {
-  private readonly logger = new LL('HTTP');
+@Injectable()
+export class LoggerMiddleware implements NestMiddleware {
+  private readonly logger = new Logger('HTTP');
 
   use(req: Request, _res: Response, next: NextFunction) {
-    const { method, url } = req as unknown as { method: string; url: string };
-    this.logger.debug(`→ ${method} ${url}`);
+    this.logger.debug(`→ ${req.method} ${req.url}`);
     next();
   }
 }

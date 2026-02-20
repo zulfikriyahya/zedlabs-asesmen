@@ -1,11 +1,7 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/dto/grade-answer.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
-
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 export class GradeAnswerDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
-  @IsNumber() @Min(0) score: number;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
+  @IsNumber() @Min(0) score!: number;
   @IsOptional() @IsString() feedback?: string;
 }

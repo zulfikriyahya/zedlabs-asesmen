@@ -11,7 +11,10 @@ import { sha256 } from '../../../common/utils/checksum.util';
 import { SessionStatus, AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { isWithinWindow } from '../../../common/utils/time-validation.util';
 import { hashFingerprint } from '../../../common/utils/device-fingerprint.util';
-import type { DownloadablePackage } from '../interfaces/exam-package.interface';
+import type {
+  DownloadablePackage,
+  DownloadableQuestion,
+} from '../interfaces/exam-package.interface';
 
 @Injectable()
 export class ExamDownloadService {
@@ -95,11 +98,14 @@ export class ExamDownloadService {
     }
 
     return {
-      ...pkg,
+      packageId: pkg.packageId,
+      title: pkg.title,
+      settings: pkg.settings as Record<string, unknown>,
+      questions: pkg.questions as unknown as DownloadableQuestion[],
       sessionId,
       attemptId: attempt.id,
       checksum,
-      encryptedKey: '', // enkripsi key dilakukan di layer transport
+      encryptedKey: '',
       expiresAt: session.endTime.toISOString(),
     };
   }

@@ -1,13 +1,13 @@
-// ── guards/roles.guard.ts ────────────────────────────────
-import { CanActivate, ExecutionContext as EC2, ForbiddenException } from '@nestjs/common';
-import { ROLES_KEY } from '../../../common/decorators/current-user.decorator';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { ROLES_KEY } from '../../../common/decorators/roles.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
-  canActivate(ctx: EC2): boolean {
+  canActivate(ctx: ExecutionContext): boolean {
     const required = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
       ctx.getHandler(),
       ctx.getClass(),

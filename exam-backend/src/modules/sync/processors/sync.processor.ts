@@ -1,4 +1,11 @@
-// ── processors/sync.processor.ts ────────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/processors/sync.processor.ts
+// ══════════════════════════════════════════════════════════════
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { SyncProcessorService } from '../services/sync-processor.service';
+
 @Processor('sync')
 export class SyncProcessor extends WorkerHost {
   private readonly logger = new Logger(SyncProcessor.name);

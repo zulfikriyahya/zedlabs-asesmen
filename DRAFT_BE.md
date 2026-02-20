@@ -3,10 +3,9 @@
 ### File: `src/app.controller.ts`
 
 ```typescript
-// ── app.controller.ts ────────────────────────────────────────────────────────
 import { Controller, Get } from '@nestjs/common';
 import { AppService } from './app.service';
-import { Public } from './common/decorators/current-user.decorator';
+import { Public } from './common/decorators/public.decorator';
 
 @Controller()
 export class AppController {
@@ -38,6 +37,7 @@ import { TenantGuard } from './common/guards/tenant.guard';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -91,6 +91,7 @@ import { AppService } from './app.service';
         },
       }),
     }),
+    PrismaModule,
     AuthModule,
     UsersModule,
     TenantsModule,
@@ -155,9 +156,6 @@ export class AppService {
 ### File: `src/common/decorators/current-user.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/current-user.decorator.ts  (FIXED — remove @Public clash)
-// ════════════════════════════════════════════════════════════════════════════
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export interface CurrentUserPayload {
@@ -172,9 +170,6 @@ export const CurrentUser = createParamDecorator(
     ctx.switchToHttp().getRequest().user,
 );
 
-// NOTE: @Public, @Roles, @TenantId ada di file terpisah masing-masing.
-// File ini HANYA berisi CurrentUser.
-
 ```
 
 ---
@@ -182,9 +177,6 @@ export const CurrentUser = createParamDecorator(
 ### File: `src/common/decorators/idempotency.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/idempotency.decorator.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 export const IDEMPOTENCY_KEY = 'idempotency';
 export const UseIdempotency = () => SetMetadata(IDEMPOTENCY_KEY, true);
@@ -196,9 +188,6 @@ export const UseIdempotency = () => SetMetadata(IDEMPOTENCY_KEY, true);
 ### File: `src/common/decorators/public.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/public.decorator.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -210,9 +199,6 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 ### File: `src/common/decorators/roles.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/roles.decorator.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { SetMetadata } from '@nestjs/common';
 import { UserRole } from '../enums/user-role.enum';
 export const ROLES_KEY = 'roles';
@@ -225,12 +211,10 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 ### File: `src/common/decorators/tenant-id.decorator.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/tenant-id.decorator.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export const TenantId = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): string => ctx.switchToHttp().getRequest().tenantId,
+  (_data: unknown, ctx: ExecutionContext): string =>
+    ctx.switchToHttp().getRequest().tenantId,
 );
 
 ```
@@ -240,8 +224,8 @@ export const TenantId = createParamDecorator(
 ### File: `src/common/dto/base-query.dto.ts`
 
 ```typescript
-// ── base-query.dto.ts ────────────────────────────────────────────────────────
 import { IsOptional, IsString } from 'class-validator';
+import { PaginationDto } from './pagination.dto';
 
 export class BaseQueryDto extends PaginationDto {
   @IsOptional()
@@ -554,10 +538,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
 ### File: `src/common/guards/tenant.guard.ts`
 
 ```typescript
-// ── tenant.guard.ts ──────────────────────────────────────
 import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../decorators/current-user.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { TenantNotFoundException } from '../exceptions/tenant-not-found.exception';
 
 @Injectable()
@@ -589,7 +572,7 @@ export class TenantGuard implements CanActivate {
 ### File: `src/common/guards/throttler.guard.ts`
 
 ```typescript
-// ── throttler.guard.ts ───────────────────────────────────
+import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 @Injectable()
@@ -608,20 +591,38 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 ### File: `src/common/interceptors/idempotency.interceptor.ts`
 
 ```typescript
-// ── idempotency.interceptor.ts ───────────────────────────
-import { InjectRedis } from '@nestjs-modules/ioredis'; // atau inject manual
-import { ConflictException } from '@nestjs/common';
-// NOTE: implementasi lengkap memerlukan Redis injection; ini skeleton pattern-nya.
-@Inj()
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  ConflictException,
+} from '@nestjs/common';
+import { Observable, of } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+// Cache in-memory sederhana untuk dev.
+// Di production: ganti dengan Redis (ioredis).
+const cache = new Map<string, unknown>();
+
+@Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  // Inject Redis via constructor di implementasi nyata
-  intercept(ctx: EC, next: CallHandler): Observable<unknown> {
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest();
     const key = req.headers['idempotency-key'] as string | undefined;
     if (!key) return next.handle();
-    // Cek Redis cache untuk key ini; jika ada return cached response
-    // Jika tidak ada, jalankan handler dan cache hasilnya
-    return next.handle();
+
+    if (cache.has(key)) {
+      return of(cache.get(key));
+    }
+
+    return next.handle().pipe(
+      tap((response) => {
+        cache.set(key, response);
+        // TTL 24 jam
+        setTimeout(() => cache.delete(key), 24 * 60 * 60 * 1000);
+      }),
+    );
   }
 }
 
@@ -632,15 +633,21 @@ export class IdempotencyInterceptor implements NestInterceptor {
 ### File: `src/common/interceptors/logging.interceptor.ts`
 
 ```typescript
-// ── logging.interceptor.ts ───────────────────────────────
-import { Logger as NLog } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
-@Inj()
+@Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-  private readonly logger = new NLog('HTTP');
+  private readonly logger = new Logger('HTTP');
 
-  intercept(ctx: EC, next: CallHandler): Observable<unknown> {
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest();
     const { method, url } = req;
     const start = Date.now();
@@ -661,12 +668,12 @@ export class LoggingInterceptor implements NestInterceptor {
 ### File: `src/common/interceptors/tenant.interceptor.ts`
 
 ```typescript
-// ── tenant.interceptor.ts ────────────────────────────────
-@Inj()
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  intercept(ctx: EC, next: CallHandler): Observable<unknown> {
-    // tenantId sudah di-set oleh SubdomainMiddleware; interceptor ini
-    // tersedia untuk enrichment response jika diperlukan
+  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle();
   }
 }
@@ -678,21 +685,18 @@ export class TenantInterceptor implements NestInterceptor {
 ### File: `src/common/interceptors/timeout.interceptor.ts`
 
 ```typescript
-// ── timeout.interceptor.ts ───────────────────────────────
-import { timeout } from 'rxjs/operators';
-import { TimeoutError } from 'rxjs';
-import { RequestTimeoutException } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, RequestTimeoutException } from '@nestjs/common';
+import { Observable, TimeoutError } from 'rxjs';
+import { timeout, catchError } from 'rxjs/operators';
 
-@Inj()
+@Injectable()
 export class TimeoutInterceptor implements NestInterceptor {
-  intercept(_ctx: EC, next: CallHandler): Observable<unknown> {
+  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       timeout(30_000),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tap({
-        error: (e: any) => {
-          if (e instanceof TimeoutError) throw new RequestTimeoutException();
-        },
+      catchError((err) => {
+        if (err instanceof TimeoutError) throw new RequestTimeoutException();
+        throw err;
       }),
     );
   }
@@ -741,16 +745,15 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
 ### File: `src/common/middleware/logger.middleware.ts`
 
 ```typescript
-// ── logger.middleware.ts ─────────────────────────────────
-import { Injectable as LI, NestMiddleware as LM, Logger as LL } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
 
-@LI()
-export class LoggerMiddleware implements LM {
-  private readonly logger = new LL('HTTP');
+@Injectable()
+export class LoggerMiddleware implements NestMiddleware {
+  private readonly logger = new Logger('HTTP');
 
   use(req: Request, _res: Response, next: NextFunction) {
-    const { method, url } = req as unknown as { method: string; url: string };
-    this.logger.debug(`→ ${method} ${url}`);
+    this.logger.debug(`→ ${req.method} ${req.url}`);
     next();
   }
 }
@@ -762,12 +765,14 @@ export class LoggerMiddleware implements LM {
 ### File: `src/common/middleware/performance.middleware.ts`
 
 ```typescript
-// ── performance.middleware.ts ────────────────────────────
-@LI()
-export class PerformanceMiddleware implements LM {
+import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
+
+@Injectable()
+export class PerformanceMiddleware implements NestMiddleware {
   use(_req: Request, res: Response, next: NextFunction) {
     const start = process.hrtime.bigint();
-    (res as unknown as { on: (e: string, cb: () => void) => void }).on('finish', () => {
+    res.on('finish', () => {
       const ms = Number(process.hrtime.bigint() - start) / 1e6;
       if (ms > 1000) console.warn(`⚠️  Slow request: ${ms.toFixed(1)}ms`);
     });
@@ -1013,7 +1018,6 @@ export function secondsRemaining(end: Date, now = new Date()): number {
 ### File: `src/common/validators/is-tenant-exists.validator.ts`
 
 ```typescript
-// ── is-tenant-exists.validator.ts ────────────────────────
 import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
@@ -1022,7 +1026,7 @@ import {
   ValidationOptions,
 } from 'class-validator';
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service'; // will be created
+import { PrismaService } from '../../prisma/prisma.service';
 
 @ValidatorConstraint({ name: 'isTenantExists', async: true })
 @Injectable()
@@ -1059,7 +1063,16 @@ export function IsTenantExists(opts?: ValidationOptions) {
 ### File: `src/common/validators/is-unique.validator.ts`
 
 ```typescript
-// ── is-unique.validator.ts ───────────────────────────────
+import {
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
+  registerDecorator,
+  ValidationOptions,
+} from 'class-validator';
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+
 @ValidatorConstraint({ name: 'isUnique', async: true })
 @Injectable()
 export class IsUniqueConstraint implements ValidatorConstraintInterface {
@@ -1097,9 +1110,7 @@ export function IsUnique(model: string, field: string, opts?: ValidationOptions)
 ### File: `src/config/app.config.ts`
 
 ```typescript
-// ── app.config.ts ────────────────────────────────────────
 import { registerAs } from '@nestjs/config';
-
 export const appConfig = registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '3000', 10),
@@ -1114,7 +1125,7 @@ export const appConfig = registerAs('app', () => ({
 ### File: `src/config/bullmq.config.ts`
 
 ```typescript
-// ── bullmq.config.ts ─────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const bullmqConfig = registerAs('bullmq', () => ({
   concurrency: parseInt(process.env.BULLMQ_CONCURRENCY ?? '10', 10),
 }));
@@ -1126,7 +1137,7 @@ export const bullmqConfig = registerAs('bullmq', () => ({
 ### File: `src/config/database.config.ts`
 
 ```typescript
-// ── database.config.ts ───────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const databaseConfig = registerAs('database', () => ({
   url: process.env.DATABASE_URL,
   directUrl: process.env.DATABASE_DIRECT_URL,
@@ -1139,7 +1150,7 @@ export const databaseConfig = registerAs('database', () => ({
 ### File: `src/config/jwt.config.ts`
 
 ```typescript
-// ── jwt.config.ts ────────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const jwtConfig = registerAs('jwt', () => ({
   accessSecret: process.env.JWT_ACCESS_SECRET ?? 'access-secret',
   accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
@@ -1154,7 +1165,7 @@ export const jwtConfig = registerAs('jwt', () => ({
 ### File: `src/config/minio.config.ts`
 
 ```typescript
-// ── minio.config.ts ──────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const minioConfig = registerAs('minio', () => ({
   endpoint: process.env.MINIO_ENDPOINT ?? 'localhost',
   port: parseInt(process.env.MINIO_PORT ?? '9000', 10),
@@ -1172,15 +1183,11 @@ export const minioConfig = registerAs('minio', () => ({
 ### File: `src/config/multer.config.ts`
 
 ```typescript
-// ── multer.config.ts ─────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const multerConfig = registerAs('multer', () => ({
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE ?? String(1024 ** 3), 10),
-  allowedImageTypes: (process.env.ALLOWED_IMAGE_TYPES ?? 'image/jpeg,image/png,image/webp').split(
-    ',',
-  ),
-  allowedAudioTypes: (process.env.ALLOWED_AUDIO_TYPES ?? 'audio/mpeg,audio/wav,audio/webm').split(
-    ',',
-  ),
+  allowedImageTypes: (process.env.ALLOWED_IMAGE_TYPES ?? 'image/jpeg,image/png,image/webp').split(','),
+  allowedAudioTypes: (process.env.ALLOWED_AUDIO_TYPES ?? 'audio/mpeg,audio/wav,audio/webm').split(','),
   allowedVideoTypes: (process.env.ALLOWED_VIDEO_TYPES ?? 'video/mp4,video/webm').split(','),
 }));
 
@@ -1191,7 +1198,7 @@ export const multerConfig = registerAs('multer', () => ({
 ### File: `src/config/redis.config.ts`
 
 ```typescript
-// ── redis.config.ts ──────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const redisConfig = registerAs('redis', () => ({
   host: process.env.REDIS_HOST ?? 'localhost',
   port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
@@ -1205,7 +1212,7 @@ export const redisConfig = registerAs('redis', () => ({
 ### File: `src/config/throttler.config.ts`
 
 ```typescript
-// ── throttler.config.ts ──────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const throttlerConfig = registerAs('throttler', () => ({
   ttl: parseInt(process.env.THROTTLE_TTL ?? '60', 10),
   limit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
@@ -1222,7 +1229,7 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import compression from 'compression';
+import * as compression from 'compression';
 import helmet from 'helmet';
 import 'reflect-metadata';
 import { AppModule } from './app.module';
@@ -1344,15 +1351,11 @@ export class ActivityLogsController {
 ### File: `src/modules/activity-logs/dto/create-activity-log.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/activity-logs/dto/create-activity-log.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
-
+import { IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 export class CreateActivityLogDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() userId: string;
-  @IsString() @IsNotEmpty() type: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() userId!: string;
+  @IsString() @IsNotEmpty() type!: string;
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;
 }
 
@@ -1370,6 +1373,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MonitoringGateway } from '../../monitoring/gateways/monitoring.gateway';
 import { CreateActivityLogDto } from '../dto/create-activity-log.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ActivityLogsService {
@@ -1384,7 +1388,7 @@ export class ActivityLogsService {
         attemptId: dto.attemptId,
         userId: dto.userId,
         type: dto.type,
-        metadata: dto.metadata,
+        metadata: dto.metadata as Prisma.InputJsonValue | undefined,
       },
     });
 
@@ -1667,15 +1671,32 @@ export class AuditLogsService {
 ### File: `src/modules/auth/auth.module.ts`
 
 ```typescript
-// ── auth.module.ts ────────────────────────────────────────
+// src/modules/auth/auth.module.ts
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { PrismaModule } from '../../../prisma/prisma.module';
+import { AuthService } from './services/auth.service';
+import { AuthController } from './controllers/auth.controller';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { LocalStrategy } from './strategies/local.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { DeviceGuard } from './guards/device.guard';
+import { LocalAuthGuard } from './guards/local-auth.guard';
 
 @Module({
-  imports: [PrismaModule, PassportModule, JwtModule.register({})],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy, LocalStrategy, DeviceGuard],
+  imports: [PassportModule, JwtModule.register({})],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    LocalStrategy,
+    JwtAuthGuard, // ← tambah
+    RolesGuard, // ← tambah
+    DeviceGuard,
+    LocalAuthGuard,
+  ],
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, RolesGuard, DeviceGuard],
 })
@@ -1688,10 +1709,15 @@ export class AuthModule {}
 ### File: `src/modules/auth/controllers/auth.controller.ts`
 
 ```typescript
-// ── controllers/auth.controller.ts ───────────────────────
-import { Controller, Post, Body, UseGuards, Req, HttpCode, HttpStatus } from '@nestjs/common';
-import { Public } from '../../../common/decorators/current-user.decorator';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
+import { ChangePasswordDto } from '../dto/change-password.dto';
+import { LoginDto } from '../dto/login.dto';
+import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { LocalAuthGuard } from '../guards/local-auth.guard';
+import { AuthService } from '../services/auth.service';
 
 @Controller('auth')
 export class AuthController {
@@ -1718,17 +1744,18 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(@Body() dto: RefreshTokenDto) {
-    // decode sub dari token tanpa verify untuk ambil userId
     const payload = this.authSvc['jwt'].decode(dto.refreshToken) as { sub: string };
     return this.authSvc.refresh(payload.sub, dto.refreshToken);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Body() dto: RefreshTokenDto) {
     await this.authSvc.logout(dto.refreshToken);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(@CurrentUser() user: CurrentUserPayload, @Body() dto: ChangePasswordDto) {
@@ -1743,12 +1770,10 @@ export class AuthController {
 ### File: `src/modules/auth/dto/change-password.dto.ts`
 
 ```typescript
-// ── dto/change-password.dto.ts ───────────────────────────
-import { IsString, MinLength, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class ChangePasswordDto {
-  @IsString() @IsNotEmpty() currentPassword: string;
-  @IsString() @MinLength(8) newPassword: string;
+  @IsString() @IsNotEmpty() currentPassword!: string;
+  @IsString() @MinLength(8) newPassword!: string;
 }
 
 ```
@@ -1758,13 +1783,11 @@ export class ChangePasswordDto {
 ### File: `src/modules/auth/dto/login.dto.ts`
 
 ```typescript
-// ── dto/login.dto.ts ─────────────────────────────────────
-import { IsString, IsNotEmpty, MinLength } from 'class-validator';
-
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class LoginDto {
-  @IsString() @IsNotEmpty() username: string;
-  @IsString() @IsNotEmpty() @MinLength(6) password: string;
-  @IsString() @IsNotEmpty() fingerprint: string;
+  @IsString() @IsNotEmpty() username!: string;
+  @IsString() @IsNotEmpty() @MinLength(6) password!: string;
+  @IsString() @IsNotEmpty() fingerprint!: string;
 }
 
 ```
@@ -1774,9 +1797,10 @@ export class LoginDto {
 ### File: `src/modules/auth/dto/refresh-token.dto.ts`
 
 ```typescript
-// ── dto/refresh-token.dto.ts ─────────────────────────────
+import { IsNotEmpty, IsString } from 'class-validator';
+
 export class RefreshTokenDto {
-  @IsString() @IsNotEmpty() refreshToken: string;
+  @IsString() @IsNotEmpty() refreshToken!: string;
 }
 
 ```
@@ -1786,9 +1810,9 @@ export class RefreshTokenDto {
 ### File: `src/modules/auth/guards/device.guard.ts`
 
 ```typescript
-// ── guards/device.guard.ts ───────────────────────────────
-import { CanActivate, ExecutionContext as EC3, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { DeviceLockedException } from '../../../common/exceptions/device-locked.exception';
+import { AuthService } from '../services/auth.service';
 
 @Injectable()
 export class DeviceGuard implements CanActivate {
@@ -1796,10 +1820,10 @@ export class DeviceGuard implements CanActivate {
 
   constructor(private authSvc: AuthService) {}
 
-  async canActivate(ctx: EC3): Promise<boolean> {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
     const user = req.user as { sub: string } | undefined;
-    if (!user) return true; // let JwtAuthGuard handle it
+    if (!user) return true;
 
     const fp = req.headers['x-device-fingerprint'] as string | undefined;
     if (!fp) return true;
@@ -1817,11 +1841,10 @@ export class DeviceGuard implements CanActivate {
 ### File: `src/modules/auth/guards/jwt-auth.guard.ts`
 
 ```typescript
-// ── guards/jwt-auth.guard.ts ─────────────────────────────
+import { Injectable, ExecutionContext } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../../../common/decorators/current-user.decorator';
+import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -1845,7 +1868,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 ### File: `src/modules/auth/guards/local-auth.guard.ts`
 
 ```typescript
-// ── guards/local-auth.guard.ts ───────────────────────────
+import { Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
 @Injectable()
 export class LocalAuthGuard extends AuthGuard('local') {}
 
@@ -1856,16 +1881,16 @@ export class LocalAuthGuard extends AuthGuard('local') {}
 ### File: `src/modules/auth/guards/roles.guard.ts`
 
 ```typescript
-// ── guards/roles.guard.ts ────────────────────────────────
-import { CanActivate, ExecutionContext as EC2, ForbiddenException } from '@nestjs/common';
-import { ROLES_KEY } from '../../../common/decorators/current-user.decorator';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { ROLES_KEY } from '../../../common/decorators/roles.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
-  canActivate(ctx: EC2): boolean {
+  canActivate(ctx: ExecutionContext): boolean {
     const required = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
       ctx.getHandler(),
       ctx.getClass(),
@@ -2020,12 +2045,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 ### File: `src/modules/auth/strategies/jwt-refresh.strategy.ts`
 
 ```typescript
-// ── strategies/jwt-refresh.strategy.ts ───────────────────
-import { Strategy as S2 } from 'passport-jwt';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 
 @Injectable()
-export class JwtRefreshStrategy extends PassportStrategy(S2, 'jwt-refresh') {
+export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(cfg: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
@@ -2046,12 +2074,13 @@ export class JwtRefreshStrategy extends PassportStrategy(S2, 'jwt-refresh') {
 ### File: `src/modules/auth/strategies/local.strategy.ts`
 
 ```typescript
-// ── strategies/local.strategy.ts ────────────────────────
-import { Strategy as LocalS } from 'passport-local';
-import { UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { Strategy } from 'passport-local';
+import { AuthService } from '../services/auth.service';
 
 @Injectable()
-export class LocalStrategy extends PassportStrategy(LocalS) {
+export class LocalStrategy extends PassportStrategy(Strategy) {
   constructor(private authSvc: AuthService) {
     super({ usernameField: 'username' });
   }
@@ -2070,29 +2099,34 @@ export class LocalStrategy extends PassportStrategy(LocalS) {
 ### File: `src/modules/exam-packages/controllers/exam-packages.controller.ts`
 
 ```typescript
-// ── controllers/exam-packages.controller.ts ──────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/controllers/exam-packages.controller.ts
+// ══════════════════════════════════════════════════════════════
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
   Body,
-  Param,
-  Query,
-  UseGuards,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import {
-  Roles,
-  TenantId,
-  CurrentUser,
-  CurrentUserPayload,
-} from '../../../common/decorators/current-user.decorator';
-import { UserRole } from '../../../common/enums/user-role.enum';
+import { AddQuestionsDto } from '../dto/add-questions.dto';
+import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
+import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
+import { ExamPackagesService } from '../services/exam-packages.service';
+import { ItemAnalysisService } from '../services/item-analysis.service';
 
 @Controller('exam-packages')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -2102,16 +2136,19 @@ export class ExamPackagesController {
     private analysisSvc: ItemAnalysisService,
   ) {}
 
-  @Get() findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
+  @Get()
+  findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
-  @Get(':id') findOne(@TenantId() tid: string, @Param('id') id: string) {
+
+  @Get(':id')
+  findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
-  @Get(':id/item-analysis') @Roles(UserRole.TEACHER, UserRole.ADMIN) analysis(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-  ) {
+
+  @Get(':id/item-analysis')
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  analysis(@TenantId() tid: string, @Param('id') id: string) {
     return this.analysisSvc.analyze(tid, id);
   }
 
@@ -2164,20 +2201,18 @@ export class ExamPackagesController {
 ### File: `src/modules/exam-packages/dto/add-questions.dto.ts`
 
 ```typescript
-// ── dto/add-questions.dto.ts ──────────────────────────────
-import { IsArray, ValidateNested, IsInt, IsOptional } from 'class-validator';
-
+import { IsArray, ValidateNested, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 class QuestionItem {
-  @IsString() questionId: string;
-  @IsInt() @Min(1) order: number;
+  @IsString() questionId!: string;
+  @IsInt() @Min(1) order!: number;
   @IsOptional() @IsInt() points?: number;
 }
-
 export class AddQuestionsDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QuestionItem)
-  questions: QuestionItem[];
+  questions!: QuestionItem[];
 }
 
 ```
@@ -2187,24 +2222,21 @@ export class AddQuestionsDto {
 ### File: `src/modules/exam-packages/dto/create-exam-package.dto.ts`
 
 ```typescript
-// ── dto/create-exam-package.dto.ts ───────────────────────
 import { IsString, IsNotEmpty, IsOptional, IsObject, IsInt, Min, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
-
 class ExamSettingsDto {
-  @IsInt() @Min(1) duration: number;
-  @IsBoolean() shuffleQuestions: boolean;
-  @IsBoolean() shuffleOptions: boolean;
-  @IsBoolean() showResult: boolean;
-  @IsInt() @Min(1) maxAttempts: number;
+  @IsInt() @Min(1) duration!: number;
+  @IsBoolean() shuffleQuestions!: boolean;
+  @IsBoolean() shuffleOptions!: boolean;
+  @IsBoolean() showResult!: boolean;
+  @IsInt() @Min(1) maxAttempts!: number;
   @IsOptional() @IsInt() passingScore?: number;
 }
-
 export class CreateExamPackageDto {
-  @IsString() @IsNotEmpty() title: string;
+  @IsString() @IsNotEmpty() title!: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() subjectId?: string;
-  @IsObject() @Type(() => ExamSettingsDto) settings: ExamSettingsDto;
+  @IsObject() @Type(() => ExamSettingsDto) settings!: ExamSettingsDto;
 }
 
 ```
@@ -2227,8 +2259,8 @@ export class PublishExamPackageDto {
 ### File: `src/modules/exam-packages/dto/update-exam-package.dto.ts`
 
 ```typescript
-// ── dto/update-exam-package.dto.ts ───────────────────────
 import { PartialType } from '@nestjs/mapped-types';
+import { CreateExamPackageDto } from './create-exam-package.dto';
 export class UpdateExamPackageDto extends PartialType(CreateExamPackageDto) {}
 
 ```
@@ -2238,8 +2270,14 @@ export class UpdateExamPackageDto extends PartialType(CreateExamPackageDto) {}
 ### File: `src/modules/exam-packages/exam-packages.module.ts`
 
 ```typescript
-// ── exam-packages.module.ts ──────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/exam-packages.module.ts
+// ══════════════════════════════════════════════════════════════
 import { Module } from '@nestjs/common';
+import { ExamPackagesController } from './controllers/exam-packages.controller';
+import { ExamPackageBuilderService } from './services/exam-package-builder.service';
+import { ExamPackagesService } from './services/exam-packages.service';
+import { ItemAnalysisService } from './services/item-analysis.service';
 
 @Module({
   providers: [ExamPackagesService, ExamPackageBuilderService, ItemAnalysisService],
@@ -2278,6 +2316,9 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { ExamPackageStatus } from '../../../common/enums/exam-status.enum';
+import { AddQuestionsDto } from '../dto/add-questions.dto';
+import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
+import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
 
 @Injectable()
 export class ExamPackagesService {
@@ -2380,23 +2421,21 @@ export class ExamPackagesService {
 ### File: `src/modules/exam-packages/services/exam-package-builder.service.ts`
 
 ```typescript
-// ── services/exam-package-builder.service.ts ─────────────
-import { Injectable as IB } from '@nestjs/common';
-import { shuffleArray } from '../../../common/utils/randomizer.util';
-import { decrypt } from '../../../common/utils/encryption.util';
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/services/exam-package-builder.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { shuffleArray } from '../../../common/utils/randomizer.util';
+import { PrismaService } from '../../../prisma/prisma.service';
 
-@IB()
+@Injectable()
 export class ExamPackageBuilderService {
   constructor(
     private prisma: PrismaService,
     private cfg: ConfigService,
   ) {}
 
-  /**
-   * Build payload paket ujian untuk dikirim ke siswa (terenkripsi di layer atas).
-   * correctAnswer dienkripsi ulang dengan session key sementara.
-   */
   async buildForDownload(tenantId: string, packageId: string, shuffle: boolean) {
     const pkg = await this.prisma.examPackage.findFirst({
       where: { id: packageId, tenantId, status: 'PUBLISHED' },
@@ -2412,12 +2451,11 @@ export class ExamPackageBuilderService {
     let questions = pkg.questions.map((pq) => ({
       id: pq.question.id,
       type: pq.question.type,
-      content: pq.question.content,
-      options: pq.question.options,
+      content: pq.question.content as Record<string, unknown>,
+      options: pq.question.options as Record<string, unknown> | undefined,
       points: pq.points ?? pq.question.points,
       order: pq.order,
-      // correctAnswer dikirim terenkripsi — client decrypt dengan session key
-      correctAnswer: pq.question.correctAnswer,
+      correctAnswer: pq.question.correctAnswer as string,
     }));
 
     if (shuffle) questions = shuffleArray(questions);
@@ -2427,7 +2465,7 @@ export class ExamPackageBuilderService {
       title: pkg.title,
       settings: pkg.settings,
       questions,
-      checksum: '', // diisi oleh caller
+      checksum: '',
     };
   }
 }
@@ -2439,8 +2477,13 @@ export class ExamPackageBuilderService {
 ### File: `src/modules/exam-packages/services/item-analysis.service.ts`
 
 ```typescript
-// ── services/item-analysis.service.ts ────────────────────
-@IB()
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/services/item-analysis.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+
+@Injectable()
 export class ItemAnalysisService {
   constructor(private prisma: PrismaService) {}
 
@@ -2459,7 +2502,7 @@ export class ItemAnalysisService {
         });
         const n = answers.length;
         const correct = answers.filter(
-          (a) => a.score && a.maxScore && a.score >= a.maxScore,
+          (a) => a.score != null && a.maxScore != null && a.score >= a.maxScore,
         ).length;
         return {
           questionId: pq.questionId,
@@ -2548,13 +2591,9 @@ export class ExamRoomsController {
 ### File: `src/modules/exam-rooms/dto/create-room.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/exam-rooms/dto/create-room.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
-
 export class CreateRoomDto {
-  @IsString() @IsNotEmpty() name: string;
+  @IsString() @IsNotEmpty() name!: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
 }
 
@@ -2565,11 +2604,8 @@ export class CreateRoomDto {
 ### File: `src/modules/exam-rooms/dto/update-room.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/exam-rooms/dto/update-room.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { PartialType } from '@nestjs/mapped-types';
-
+import { CreateRoomDto } from './create-room.dto';
 export class UpdateRoomDto extends PartialType(CreateRoomDto) {}
 
 ```
@@ -2579,93 +2615,12 @@ export class UpdateRoomDto extends PartialType(CreateRoomDto) {}
 ### File: `src/modules/exam-rooms/exam-rooms.module.ts`
 
 ```typescript
-// ── exam-rooms.module.ts ──────────────────────────────────
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
-import { PartialType } from '@nestjs/mapped-types';
-import { Injectable, NotFoundException, Module } from '@nestjs/common';
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles, TenantId } from '../../common/decorators/current-user.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { PrismaService } from '../../prisma/prisma.service';
-
-export class CreateRoomDto {
-  @IsString() @IsNotEmpty() name: string;
-  @IsOptional() @IsInt() @Min(1) capacity?: number;
-}
-export class UpdateRoomDto extends PartialType(CreateRoomDto) {}
-
-@Injectable()
-export class ExamRoomsService {
-  constructor(private prisma: PrismaService) {}
-
-  findAll(tenantId: string) {
-    return this.prisma.examRoom.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
-  }
-
-  async findOne(tenantId: string, id: string) {
-    const room = await this.prisma.examRoom.findFirst({ where: { id, tenantId } });
-    if (!room) throw new NotFoundException('Ruang ujian tidak ditemukan');
-    return room;
-  }
-
-  create(tenantId: string, dto: CreateRoomDto) {
-    return this.prisma.examRoom.create({ data: { tenantId, ...dto } });
-  }
-
-  async update(tenantId: string, id: string, dto: UpdateRoomDto) {
-    await this.findOne(tenantId, id);
-    return this.prisma.examRoom.update({ where: { id }, data: dto });
-  }
-
-  async remove(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
-    return this.prisma.examRoom.delete({ where: { id } });
-  }
-}
-
-@Controller('exam-rooms')
-@UseGuards(JwtAuthGuard, RolesGuard)
-export class ExamRoomsController {
-  constructor(private svc: ExamRoomsService) {}
-  @Get() findAll(@TenantId() tid: string) {
-    return this.svc.findAll(tid);
-  }
-  @Get(':id') findOne(@TenantId() tid: string, @Param('id') id: string) {
-    return this.svc.findOne(tid, id);
-  }
-  @Post() @Roles(UserRole.OPERATOR, UserRole.ADMIN) create(
-    @TenantId() tid: string,
-    @Body() dto: CreateRoomDto,
-  ) {
-    return this.svc.create(tid, dto);
-  }
-  @Patch(':id') @Roles(UserRole.OPERATOR, UserRole.ADMIN) update(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateRoomDto,
-  ) {
-    return this.svc.update(tid, id, dto);
-  }
-  @Delete(':id') @Roles(UserRole.ADMIN) @HttpCode(HttpStatus.NO_CONTENT) remove(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-  ) {
-    return this.svc.remove(tid, id);
-  }
-}
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-rooms/exam-rooms.module.ts  (clean — no bundle)
+// ══════════════════════════════════════════════════════════════
+import { Module } from '@nestjs/common';
+import { ExamRoomsController } from './controllers/exam-rooms.controller';
+import { ExamRoomsService } from './services/exam-rooms.service';
 
 @Module({
   providers: [ExamRoomsService],
@@ -2779,13 +2734,9 @@ export class GradingController {
 ### File: `src/modules/grading/dto/complete-grading.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/dto/complete-grading.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CompleteGradingDto {
-  @IsString() @IsNotEmpty() attemptId: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
 }
 
 ```
@@ -2795,15 +2746,11 @@ export class CompleteGradingDto {
 ### File: `src/modules/grading/dto/grade-answer.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/dto/grade-answer.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
-
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 export class GradeAnswerDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
-  @IsNumber() @Min(0) score: number;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
+  @IsNumber() @Min(0) score!: number;
   @IsOptional() @IsString() feedback?: string;
 }
 
@@ -2814,13 +2761,9 @@ export class GradeAnswerDto {
 ### File: `src/modules/grading/dto/publish-result.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/dto/publish-result.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsArray, IsString } from 'class-validator';
-
 export class PublishResultDto {
-  @IsArray() @IsString({ each: true }) attemptIds: string[];
+  @IsArray() @IsString({ each: true }) attemptIds!: string[];
 }
 
 ```
@@ -3093,13 +3036,9 @@ export class MediaController {
 ### File: `src/modules/media/dto/delete-media.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/media/dto/delete-media.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty } from 'class-validator';
-
 export class DeleteMediaDto {
-  @IsString() @IsNotEmpty() objectName: string;
+  @IsString() @IsNotEmpty() objectName!: string;
 }
 
 ```
@@ -3109,14 +3048,10 @@ export class DeleteMediaDto {
 ### File: `src/modules/media/dto/upload-media.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/media/dto/upload-media.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
-
+import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class UploadMediaDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
   @IsOptional() @IsString() chunkIndex?: string;
   @IsOptional() @IsString() totalChunks?: string;
   @IsOptional() @IsIn(['image', 'video', 'audio']) type?: 'image' | 'video' | 'audio';
@@ -3170,7 +3105,7 @@ export class MediaService {
   constructor(private cfg: ConfigService) {
     this.minio = new Minio.Client({
       endPoint: cfg.get('MINIO_ENDPOINT', 'localhost'),
-      port: cfg.get<number>('MINIO_PORT', 9000),
+      port: Number(cfg.get('MINIO_PORT', 9000)), // ← tambah Number()
       useSSL: cfg.get('MINIO_USE_SSL') === 'true',
       accessKey: cfg.get('MINIO_ACCESS_KEY', 'minioadmin'),
       secretKey: cfg.get('MINIO_SECRET_KEY', 'minioadmin'),
@@ -3324,7 +3259,7 @@ import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({ cors: true, namespace: '/monitoring' })
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
   private readonly logger = new Logger(MonitoringGateway.name);
 
   handleConnection(client: Socket) {
@@ -3465,16 +3400,12 @@ export class NotificationsController {
 ### File: `src/modules/notifications/dto/create-notification.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/notifications/dto/create-notification.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
-
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class CreateNotificationDto {
-  @IsString() @IsNotEmpty() userId: string;
-  @IsString() @IsNotEmpty() title: string;
-  @IsString() @IsNotEmpty() body: string;
-  @IsString() @IsNotEmpty() type: string;
+  @IsString() @IsNotEmpty() userId!: string;
+  @IsString() @IsNotEmpty() title!: string;
+  @IsString() @IsNotEmpty() body!: string;
+  @IsString() @IsNotEmpty() type!: string;
   @IsOptional() metadata?: Record<string, unknown>;
 }
 
@@ -3485,13 +3416,9 @@ export class CreateNotificationDto {
 ### File: `src/modules/notifications/dto/mark-read.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/notifications/dto/mark-read.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty } from 'class-validator';
-
 export class MarkReadDto {
-  @IsString() @IsNotEmpty() notificationId: string;
+  @IsString() @IsNotEmpty() notificationId!: string;
 }
 
 ```
@@ -3528,13 +3455,22 @@ export class NotificationsModule {}
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateNotificationDto } from '../dto/create-notification.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
   create(dto: CreateNotificationDto) {
-    return this.prisma.notification.create({ data: { ...dto } });
+    return this.prisma.notification.create({
+      data: {
+        userId: dto.userId,
+        title: dto.title,
+        body: dto.body,
+        type: dto.type,
+        metadata: dto.metadata as Prisma.InputJsonValue | undefined,
+      },
+    });
   }
 
   findByUser(userId: string) {
@@ -3557,7 +3493,9 @@ export class NotificationsService {
 ### File: `src/modules/questions/controllers/questions.controller.ts`
 
 ```typescript
-// ── controllers/questions.controller.ts ─────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/questions/controllers/questions.controller.ts
+// ══════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -3573,13 +3511,17 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import {
-  Roles,
-  TenantId,
-  CurrentUser,
-  CurrentUserPayload,
-} from '../../../common/decorators/current-user.decorator';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { QuestionsService } from '../services/questions.service';
+import { QuestionStatisticsService } from '../services/question-statistics.service';
+import { CreateQuestionDto } from '../dto/create-question.dto';
+import { UpdateQuestionDto } from '../dto/update-question.dto';
+import { ImportQuestionsDto } from '../dto/import-questions.dto';
+import { ApproveQuestionDto } from '../dto/approve-question.dto';
 
 @Controller('questions')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -3652,10 +3594,9 @@ export class QuestionsController {
 ### File: `src/modules/questions/dto/approve-question.dto.ts`
 
 ```typescript
-// ── dto/approve-question.dto.ts ──────────────────────────
 import { IsIn } from 'class-validator';
 export class ApproveQuestionDto {
-  @IsIn(['review', 'approved', 'draft']) status: string;
+  @IsIn(['review', 'approved', 'draft']) status!: string;
 }
 
 ```
@@ -3665,7 +3606,6 @@ export class ApproveQuestionDto {
 ### File: `src/modules/questions/dto/create-question.dto.ts`
 
 ```typescript
-// ── dto/create-question.dto.ts ────────────────────────────
 import {
   IsEnum,
   IsInt,
@@ -3678,13 +3618,12 @@ import {
   IsObject,
 } from 'class-validator';
 import { QuestionType } from '../../../common/enums/question-type.enum';
-
 export class CreateQuestionDto {
-  @IsString() @IsNotEmpty() subjectId: string;
-  @IsEnum(QuestionType) type: QuestionType;
-  @IsObject() content: Record<string, unknown>;
+  @IsString() @IsNotEmpty() subjectId!: string;
+  @IsEnum(QuestionType) type!: QuestionType;
+  @IsObject() content!: Record<string, unknown>;
   @IsOptional() @IsObject() options?: Record<string, unknown>;
-  @IsObject() correctAnswer: Record<string, unknown>;
+  @IsObject() correctAnswer!: Record<string, unknown>;
   @IsOptional() @IsInt() @Min(1) points?: number;
   @IsOptional() @IsInt() @Min(1) @Max(5) difficulty?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) tagIds?: string[];
@@ -3697,14 +3636,14 @@ export class CreateQuestionDto {
 ### File: `src/modules/questions/dto/import-questions.dto.ts`
 
 ```typescript
-// ── dto/import-questions.dto.ts ──────────────────────────
 import { IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
+import { CreateQuestionDto } from './create-question.dto';
 export class ImportQuestionsDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateQuestionDto)
-  questions: CreateQuestionDto[];
+  questions!: CreateQuestionDto[];
 }
 
 ```
@@ -3714,8 +3653,8 @@ export class ImportQuestionsDto {
 ### File: `src/modules/questions/dto/update-question.dto.ts`
 
 ```typescript
-// ── dto/update-question.dto.ts ────────────────────────────
 import { PartialType } from '@nestjs/mapped-types';
+import { CreateQuestionDto } from './create-question.dto';
 export class UpdateQuestionDto extends PartialType(CreateQuestionDto) {}
 
 ```
@@ -3766,8 +3705,11 @@ export interface QuestionContent {
 ### File: `src/modules/questions/questions.module.ts`
 
 ```typescript
-// ── questions.module.ts ──────────────────────────────────
 import { Module } from '@nestjs/common';
+import { QuestionsService } from './services/questions.service';
+import { QuestionStatisticsService } from './services/question-statistics.service';
+import { QuestionImportService } from './services/question-import.service';
+import { QuestionsController } from './controllers/questions.controller';
 
 @Module({
   providers: [QuestionsService, QuestionStatisticsService, QuestionImportService],
@@ -3784,13 +3726,17 @@ export class QuestionsModule {}
 
 ```typescript
 // ── services/questions.service.ts ────────────────────────
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
-import { encrypt, decrypt } from '../../../common/utils/encryption.util';
-import { ConfigService } from '@nestjs/config';
-import { shuffleArray } from '../../../common/utils/randomizer.util';
+import { decrypt, encrypt } from '../../../common/utils/encryption.util';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { ApproveQuestionDto } from '../dto/approve-question.dto';
+import { CreateQuestionDto } from '../dto/create-question.dto';
+import { ImportQuestionsDto } from '../dto/import-questions.dto';
+import { UpdateQuestionDto } from '../dto/update-question.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class QuestionsService {
@@ -3852,9 +3798,15 @@ export class QuestionsService {
       data: {
         tenantId,
         createdById,
-        ...rest,
-        correctAnswer: encAnswer,
-        tags: tagIds?.length ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
+        subjectId: rest.subjectId, // ← eksplisit
+        type: rest.type,
+        content: rest.content as Prisma.InputJsonValue,
+        options:
+          rest.options !== undefined ? (rest.options as Prisma.InputJsonValue) : Prisma.JsonNull,
+        points: rest.points,
+        difficulty: rest.difficulty,
+        correctAnswer: encAnswer as Prisma.InputJsonValue,
+        tags: tagIds?.length ? { create: tagIds.map((tagId: string) => ({ tagId })) } : undefined,
       },
       include: { tags: { include: { tag: true } } },
     });
@@ -3902,13 +3854,19 @@ export class QuestionsService {
 ### File: `src/modules/questions/services/question-import.service.ts`
 
 ```typescript
-// ── services/question-import.service.ts ──────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/questions/services/question-import.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { QuestionsService } from './questions.service';
+import { ImportQuestionsDto } from '../dto/import-questions.dto';
+import { CreateQuestionDto } from '../dto/create-question.dto';
+
 @Injectable()
 export class QuestionImportService {
   constructor(private questionsSvc: QuestionsService) {}
 
   async fromJson(tenantId: string, raw: unknown[], createdById: string) {
-    // validasi minimal, lalu delegate ke create
     const dto: ImportQuestionsDto = { questions: raw as CreateQuestionDto[] };
     return this.questionsSvc.bulkImport(tenantId, dto, createdById);
   }
@@ -3921,7 +3879,12 @@ export class QuestionImportService {
 ### File: `src/modules/questions/services/question-statistics.service.ts`
 
 ```typescript
-// ── services/question-statistics.service.ts ──────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/questions/services/question-statistics.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+
 @Injectable()
 export class QuestionStatisticsService {
   constructor(private prisma: PrismaService) {}
@@ -3936,7 +3899,9 @@ export class QuestionStatisticsService {
     });
 
     const total = answers.length;
-    const correct = answers.filter((a) => a.score && a.maxScore && a.score >= a.maxScore).length;
+    const correct = answers.filter(
+      (a) => a.score != null && a.maxScore != null && a.score >= a.maxScore,
+    ).length;
     const avgScore = total ? answers.reduce((s, a) => s + (a.score ?? 0), 0) / total : 0;
 
     return {
@@ -4005,13 +3970,9 @@ export class QuestionTagsController {
 ### File: `src/modules/question-tags/dto/create-tag.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/question-tags/dto/create-tag.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CreateTagDto {
-  @IsString() @IsNotEmpty() name: string;
+  @IsString() @IsNotEmpty() name!: string;
 }
 
 ```
@@ -4021,11 +3982,8 @@ export class CreateTagDto {
 ### File: `src/modules/question-tags/dto/update-tag.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/question-tags/dto/update-tag.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { PartialType } from '@nestjs/mapped-types';
-
+import { CreateTagDto } from './create-tag.dto';
 export class UpdateTagDto extends PartialType(CreateTagDto) {}
 
 ```
@@ -4131,13 +4089,9 @@ export class ReportsController {
 ### File: `src/modules/reports/dto/export-filter.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/reports/dto/export-filter.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
-
 export class ExportFilterDto {
-  @IsString() @IsNotEmpty() sessionId: string;
+  @IsString() @IsNotEmpty() sessionId!: string;
   @IsOptional() @IsIn(['excel', 'pdf']) format?: 'excel' | 'pdf';
 }
 
@@ -4403,13 +4357,9 @@ export class SessionsController {
 ### File: `src/modules/sessions/dto/assign-students.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/dto/assign-students.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { IsArray, IsString } from 'class-validator';
-
 export class AssignStudentsDto {
-  @IsArray() @IsString({ each: true }) userIds: string[];
+  @IsArray() @IsString({ each: true }) userIds!: string[];
 }
 
 ```
@@ -4419,28 +4369,13 @@ export class AssignStudentsDto {
 ### File: `src/modules/sessions/dto/create-session.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/dto/create-session.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsOptional, IsDateString } from 'class-validator';
-import { PartialType } from '@nestjs/mapped-types';
-import { IsEnum } from 'class-validator';
-import { SessionStatus } from '../../../common/enums/exam-status.enum';
-
+import { IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class CreateSessionDto {
-  @IsString() @IsNotEmpty() examPackageId: string;
+  @IsString() @IsNotEmpty() examPackageId!: string;
   @IsOptional() @IsString() roomId?: string;
-  @IsString() @IsNotEmpty() title: string;
-  @IsDateString() startTime: string;
-  @IsDateString() endTime: string;
-}
-
-export class UpdateSessionDto extends PartialType(CreateSessionDto) {
-  @IsOptional() @IsEnum(SessionStatus) status?: SessionStatus;
-}
-
-export class AssignStudentsDto {
-  @IsString({ each: true }) userIds: string[];
+  @IsString() @IsNotEmpty() title!: string;
+  @IsDateString() startTime!: string;
+  @IsDateString() endTime!: string;
 }
 
 ```
@@ -4450,14 +4385,10 @@ export class AssignStudentsDto {
 ### File: `src/modules/sessions/dto/update-session.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sessions/dto/update-session.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { PartialType } from '@nestjs/mapped-types';
-import { CreateSessionDto } from './create-session.dto';
-import { IsOptional, IsEnum } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 import { SessionStatus } from '../../../common/enums/exam-status.enum';
-
+import { CreateSessionDto } from './create-session.dto';
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {
   @IsOptional() @IsEnum(SessionStatus) status?: SessionStatus;
 }
@@ -4681,15 +4612,11 @@ export class SubjectsController {
 ### File: `src/modules/subjects/dto/create-subject.dto.ts`
 
 ```typescript
-// ── dto/create-subject.dto.ts ─────────────────────────────
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CreateSubjectDto {
-  @IsString() @IsNotEmpty() name: string;
-  @IsString() @IsNotEmpty() code: string;
+  @IsString() @IsNotEmpty() name!: string;
+  @IsString() @IsNotEmpty() code!: string;
 }
-
-export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 
 ```
 
@@ -4698,12 +4625,8 @@ export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 ### File: `src/modules/subjects/dto/update-subject.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/subjects/dto/update-subject.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateSubjectDto } from './create-subject.dto';
-
 export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
 
 ```
@@ -4840,24 +4763,26 @@ export class StudentExamController {
 ### File: `src/modules/submissions/controllers/submissions.controller.ts`
 
 ```typescript
-// ── controllers/submissions.controller.ts ───────────────
-import {
-  Controller as SC,
-  Get as SG,
-  Query as SQ,
-  UseGuards as SUG,
-  Param as SP,
-} from '@nestjs/common';
-import { Roles as SR } from '../../../common/decorators/current-user.decorator';
+// ══════════════════════════════════════════════════════════════
+// src/modules/submissions/controllers/submissions.controller.ts
+// ══════════════════════════════════════════════════════════════
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { SubmissionsService } from '../services/submissions.service';
 
-@SC('submissions')
-@SUG(JwtAuthGuard)
+@Controller('submissions')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SubmissionsController {
   constructor(private svc: SubmissionsService) {}
-  @SG()
-  @SR(UserRole.TEACHER, UserRole.ADMIN, UserRole.OPERATOR)
-  findAll(@TenantId() tid: string, @SQ() q: BaseQueryDto) {
+
+  @Get()
+  @Roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.OPERATOR)
+  findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
 }
@@ -4869,14 +4794,12 @@ export class SubmissionsController {
 ### File: `src/modules/submissions/dto/start-attempt.dto.ts`
 
 ```typescript
-// ── dto/start-attempt.dto.ts ──────────────────────────────
 import { IsString, IsNotEmpty } from 'class-validator';
-
 export class StartAttemptDto {
-  @IsString() @IsNotEmpty() sessionId: string;
-  @IsString() @IsNotEmpty() tokenCode: string;
-  @IsString() @IsNotEmpty() deviceFingerprint: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
+  @IsString() @IsNotEmpty() sessionId!: string;
+  @IsString() @IsNotEmpty() tokenCode!: string;
+  @IsString() @IsNotEmpty() deviceFingerprint!: string;
+  @IsString() @IsNotEmpty() idempotencyKey!: string;
 }
 
 ```
@@ -4886,12 +4809,12 @@ export class StartAttemptDto {
 ### File: `src/modules/submissions/dto/submit-answer.dto.ts`
 
 ```typescript
-// ── dto/submit-answer.dto.ts ──────────────────────────────
+import { IsNotEmpty, IsString } from 'class-validator';
 export class SubmitAnswerDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
-  answer: unknown; // JSON — bisa string, array, dll tergantung tipe soal
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
+  @IsString() @IsNotEmpty() idempotencyKey!: string;
+  answer!: unknown;
   mediaUrls?: string[];
 }
 
@@ -4902,10 +4825,10 @@ export class SubmitAnswerDto {
 ### File: `src/modules/submissions/dto/submit-exam.dto.ts`
 
 ```typescript
-// ── dto/submit-exam.dto.ts ────────────────────────────────
+import { IsNotEmpty, IsString } from 'class-validator';
 export class SubmitExamDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() idempotencyKey!: string;
 }
 
 ```
@@ -4915,11 +4838,10 @@ export class SubmitExamDto {
 ### File: `src/modules/submissions/dto/upload-media.dto.ts`
 
 ```typescript
-// ── dto/upload-media.dto.ts ───────────────────────────────
-import { IsOptional } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class UploadMediaDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() questionId: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() questionId!: string;
   @IsOptional() @IsString() chunkIndex?: string;
   @IsOptional() @IsString() totalChunks?: string;
 }
@@ -5156,14 +5078,17 @@ export class SubmissionEventsListener {
 ### File: `src/modules/submissions/services/auto-grading.service.ts`
 
 ```typescript
-// ── services/auto-grading.service.ts ─────────────────────
-import { Injectable as IG } from '@nestjs/common';
-import { decrypt } from '../../../common/utils/encryption.util';
+// ══════════════════════════════════════════════════════════════
+// src/modules/submissions/services/auto-grading.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { decrypt } from '../../../common/utils/encryption.util';
 import { cosineSimilarity } from '../../../common/utils/similarity.util';
 import { QuestionType } from '../../../common/enums/question-type.enum';
+import { GradingResult } from '../interfaces/grading-result.interface';
 
-@IG()
+@Injectable()
 export class AutoGradingService {
   constructor(private cfg: ConfigService) {}
 
@@ -5177,29 +5102,24 @@ export class AutoGradingService {
     studentAnswer: unknown,
     maxScore: number,
   ): GradingResult {
-    const ca = JSON.parse(decrypt(encryptedCorrectAnswer as string, this.encKey));
+    const ca = JSON.parse(decrypt(encryptedCorrectAnswer, this.encKey));
 
     switch (type) {
       case QuestionType.MULTIPLE_CHOICE:
       case QuestionType.TRUE_FALSE:
         return this.gradeExact(ca.value, studentAnswer, maxScore);
-
       case QuestionType.COMPLEX_MULTIPLE_CHOICE:
         return this.gradeMultiple(ca.value as string[], studentAnswer as string[], maxScore);
-
       case QuestionType.MATCHING:
         return this.gradeMatching(
           ca.value as Record<string, string>,
           studentAnswer as Record<string, string>,
           maxScore,
         );
-
       case QuestionType.SHORT_ANSWER:
         return this.gradeShortAnswer(ca, studentAnswer as string, maxScore);
-
       case QuestionType.ESSAY:
-        return this.gradeEssay(ca, studentAnswer as string, maxScore);
-
+        return this.gradeEssay(maxScore);
       default:
         return { questionId: '', score: 0, maxScore, isCorrect: false, requiresManual: true };
     }
@@ -5218,13 +5138,11 @@ export class AutoGradingService {
 
   private gradeMultiple(correct: string[], student: string[], max: number): GradingResult {
     const correctSet = new Set(correct);
-    const studentSet = new Set(student);
     const allCorrect =
-      correct.every((c) => studentSet.has(c)) && student.every((s) => correctSet.has(s));
-    // partial scoring: (correct - wrong) / total
-    const correctHits = student.filter((s) => correctSet.has(s)).length;
+      correct.every((c) => student.includes(c)) && student.every((s) => correctSet.has(s));
+    const hits = student.filter((s) => correctSet.has(s)).length;
     const wrong = student.filter((s) => !correctSet.has(s)).length;
-    const score = Math.max(0, ((correctHits - wrong) / correct.length) * max);
+    const score = Math.max(0, ((hits - wrong) / correct.length) * max);
     return {
       questionId: '',
       score: Math.round(score * 100) / 100,
@@ -5259,8 +5177,7 @@ export class AutoGradingService {
     const a = ca.caseSensitive ? ca.value : ca.value.toLowerCase();
     const b = ca.caseSensitive ? student : student.toLowerCase();
     const threshold = ca.similarityThreshold ?? 0.9;
-    const sim = cosineSimilarity(a, b);
-    const ok = sim >= threshold;
+    const ok = cosineSimilarity(a, b) >= threshold;
     return {
       questionId: '',
       score: ok ? max : 0,
@@ -5270,8 +5187,7 @@ export class AutoGradingService {
     };
   }
 
-  private gradeEssay(_ca: unknown, _student: string, max: number): GradingResult {
-    // Essay selalu manual
+  private gradeEssay(max: number): GradingResult {
     return { questionId: '', score: 0, maxScore: max, isCorrect: false, requiresManual: true };
   }
 }
@@ -5296,7 +5212,10 @@ import { sha256 } from '../../../common/utils/checksum.util';
 import { SessionStatus, AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { isWithinWindow } from '../../../common/utils/time-validation.util';
 import { hashFingerprint } from '../../../common/utils/device-fingerprint.util';
-import type { DownloadablePackage } from '../interfaces/exam-package.interface';
+import type {
+  DownloadablePackage,
+  DownloadableQuestion,
+} from '../interfaces/exam-package.interface';
 
 @Injectable()
 export class ExamDownloadService {
@@ -5380,11 +5299,14 @@ export class ExamDownloadService {
     }
 
     return {
-      ...pkg,
+      packageId: pkg.packageId,
+      title: pkg.title,
+      settings: pkg.settings as Record<string, unknown>,
+      questions: pkg.questions as unknown as DownloadableQuestion[],
       sessionId,
       attemptId: attempt.id,
       checksum,
-      encryptedKey: '', // enkripsi key dilakukan di layer transport
+      encryptedKey: '',
       expiresAt: session.endTime.toISOString(),
     };
   }
@@ -5549,7 +5471,7 @@ export class ExamSubmissionService {
         attemptId,
         status: attempt.status,
         gradingStatus: attempt.gradingStatus,
-        message: this.gradingStatusMessage(attempt.gradingStatus),
+        message: this.gradingStatusMessage(attempt.gradingStatus as GradingStatus),
       };
     }
 
@@ -5707,12 +5629,16 @@ export class GradingHelperService {
 ### File: `src/modules/submissions/services/submissions.service.ts`
 
 ```typescript
-// ── services/submissions.service.ts ──────────────────────
-import { Injectable as ISS } from '@nestjs/common';
+// ══════════════════════════════════════════════════════════════
+// src/modules/submissions/services/submissions.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { GradingStatus } from '../../../common/enums/grading-status.enum';
 
-@ISS()
+@Injectable()
 export class SubmissionsService {
   constructor(private prisma: PrismaService) {}
 
@@ -5749,13 +5675,12 @@ export class SubmissionsService {
 ### File: `src/modules/submissions/submissions.module.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/submissions/submissions.module.ts  (final — no circular dep)
-// ════════════════════════════════════════════════════════════════════════════
+// src/modules/submissions/submissions.module.ts
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ExamPackagesModule } from '../exam-packages/exam-packages.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthModule } from '../auth/auth.module'; // ← tambah
 import { ExamDownloadService } from './services/exam-download.service';
 import { ExamSubmissionService } from './services/exam-submission.service';
 import { AutoGradingService } from './services/auto-grading.service';
@@ -5764,18 +5689,20 @@ import { StudentExamController } from './controllers/student-exam.controller';
 import { SubmissionsController } from './controllers/submissions.controller';
 import { SubmissionProcessor } from './processors/submission.processor';
 import { SubmissionEventsListener } from './processors/submission-events.listener';
-// GradingService di-inject via GradingModule — tapi itu circular.
-// Solusi: AutoGradingService di-provide langsung di sini,
-// GradingService.runAutoGrade di-call langsung tanpa import GradingModule.
 import { GradingHelperService } from './services/grading-helper.service';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'submission' }), ExamPackagesModule, AuditLogsModule],
+  imports: [
+    BullModule.registerQueue({ name: 'submission' }),
+    ExamPackagesModule,
+    AuditLogsModule,
+    AuthModule, // ← tambah agar DeviceGuard dapat AuthService
+  ],
   providers: [
     ExamDownloadService,
     ExamSubmissionService,
     AutoGradingService,
-    GradingHelperService, // internal helper, bukan GradingModule
+    GradingHelperService,
     SubmissionsService,
     SubmissionProcessor,
     SubmissionEventsListener,
@@ -5829,17 +5756,13 @@ export class SyncController {
 ### File: `src/modules/sync/dto/add-sync-item.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sync/dto/add-sync-item.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty, IsEnum, IsObject } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsObject, IsString } from 'class-validator';
 import { SyncType } from '../../../common/enums/sync-status.enum';
-
 export class AddSyncItemDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
-  @IsEnum(SyncType) type: SyncType;
-  @IsObject() payload: Record<string, unknown>;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() idempotencyKey!: string;
+  @IsEnum(SyncType) type!: SyncType;
+  @IsObject() payload!: Record<string, unknown>;
 }
 
 ```
@@ -5849,13 +5772,9 @@ export class AddSyncItemDto {
 ### File: `src/modules/sync/dto/retry-sync.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/sync/dto/retry-sync.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class RetrySyncDto {
-  @IsString() @IsNotEmpty() syncItemId: string;
+  @IsString() @IsNotEmpty() syncItemId!: string;
 }
 
 ```
@@ -5865,7 +5784,14 @@ export class RetrySyncDto {
 ### File: `src/modules/sync/processors/sync.processor.ts`
 
 ```typescript
-// ── processors/sync.processor.ts ────────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/processors/sync.processor.ts
+// ══════════════════════════════════════════════════════════════
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { SyncProcessorService } from '../services/sync-processor.service';
+
 @Processor('sync')
 export class SyncProcessor extends WorkerHost {
   private readonly logger = new Logger(SyncProcessor.name);
@@ -5887,7 +5813,10 @@ export class SyncProcessor extends WorkerHost {
 ### File: `src/modules/sync/services/chunked-upload.service.ts`
 
 ```typescript
-// ── services/chunked-upload.service.ts ───────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/services/chunked-upload.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -5919,7 +5848,18 @@ export class ChunkedUploadService {
 ### File: `src/modules/sync/services/sync.service.ts`
 
 ```typescript
-// ── services/sync.service.ts ─────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/services/sync.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { SyncStatus } from '../../../common/enums/sync-status.enum';
+import { AddSyncItemDto } from '../dto/add-sync-item.dto';
+import { RetrySyncDto } from '../dto/retry-sync.dto';
+import { Prisma } from '@prisma/client';
+
 @Injectable()
 export class SyncService {
   constructor(
@@ -5934,7 +5874,7 @@ export class SyncService {
         attemptId: dto.attemptId,
         idempotencyKey: dto.idempotencyKey,
         type: dto.type,
-        payload: dto.payload,
+        payload: dto.payload as Prisma.InputJsonValue,
         status: SyncStatus.PENDING,
       },
       update: {},
@@ -5984,7 +5924,13 @@ export class SyncService {
 ### File: `src/modules/sync/services/sync-processor.service.ts`
 
 ```typescript
-// ── services/sync-processor.service.ts ──────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/services/sync-processor.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { SyncStatus, SyncType } from '../../../common/enums/sync-status.enum';
+
 @Injectable()
 export class SyncProcessorService {
   private readonly logger = new Logger(SyncProcessorService.name);
@@ -6143,15 +6089,11 @@ export class TenantsController {
 ### File: `src/modules/tenants/dto/create-tenant.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/tenants/dto/create-tenant.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CreateTenantDto {
-  @IsString() @IsNotEmpty() name: string;
-  @IsString() @IsNotEmpty() code: string;
-  @IsString() @IsNotEmpty() subdomain: string;
+  @IsString() @IsNotEmpty() name!: string;
+  @IsString() @IsNotEmpty() code!: string;
+  @IsString() @IsNotEmpty() subdomain!: string;
 }
 
 ```
@@ -6161,12 +6103,9 @@ export class CreateTenantDto {
 ### File: `src/modules/tenants/dto/update-tenant.dto.ts`
 
 ```typescript
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/tenants/dto/update-tenant.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
 import { PartialType } from '@nestjs/mapped-types';
 import { IsBoolean, IsOptional } from 'class-validator';
-
+import { CreateTenantDto } from './create-tenant.dto';
 export class UpdateTenantDto extends PartialType(CreateTenantDto) {
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
@@ -6257,7 +6196,9 @@ export class TenantsModule {}
 ### File: `src/modules/users/controllers/users.controller.ts`
 
 ```typescript
-// ── controllers/users.controller.ts ─────────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/users/controllers/users.controller.ts
+// ══════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -6271,9 +6212,14 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../../common/decorators/current-user.decorator';
-import { TenantId } from '../../../common/decorators/current-user.decorator';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { UsersService } from '../services/users.service';
+import { CreateUserDto } from '../dto/create-user.dto';
+import { UpdateUserDto } from '../dto/update-user.dto';
+import { ImportUsersDto } from '../dto/import-users.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -6281,26 +6227,33 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 export class UsersController {
   constructor(private svc: UsersService) {}
 
-  @Get() findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
+  @Get()
+  findAll(@TenantId() tid: string, @Query() q: BaseQueryDto) {
     return this.svc.findAll(tid, q);
   }
-  @Get(':id') findOne(@TenantId() tid: string, @Param('id') id: string) {
+
+  @Get(':id')
+  findOne(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.findOne(tid, id);
   }
-  @Post() create(@TenantId() tid: string, @Body() dto: CreateUserDto) {
+
+  @Post()
+  create(@TenantId() tid: string, @Body() dto: CreateUserDto) {
     return this.svc.create(tid, dto);
   }
-  @Post('import') import(@TenantId() tid: string, @Body() dto: ImportUsersDto) {
+
+  @Post('import')
+  import(@TenantId() tid: string, @Body() dto: ImportUsersDto) {
     return this.svc.bulkImport(tid, dto);
   }
-  @Patch(':id') update(
-    @TenantId() tid: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateUserDto,
-  ) {
+
+  @Patch(':id')
+  update(@TenantId() tid: string, @Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.svc.update(tid, id, dto);
   }
-  @Delete(':id') remove(@TenantId() tid: string, @Param('id') id: string) {
+
+  @Delete(':id')
+  remove(@TenantId() tid: string, @Param('id') id: string) {
     return this.svc.remove(tid, id);
   }
 }
@@ -6312,15 +6265,13 @@ export class UsersController {
 ### File: `src/modules/users/dto/create-user.dto.ts`
 
 ```typescript
-// ── dto/create-user.dto.ts ────────────────────────────────
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { UserRole } from '../../../common/enums/user-role.enum';
-
 export class CreateUserDto {
-  @IsEmail() email: string;
-  @IsString() @IsNotEmpty() username: string;
-  @IsString() @MinLength(8) password: string;
-  @IsEnum(UserRole) role: UserRole;
+  @IsEmail() email!: string;
+  @IsString() @IsNotEmpty() username!: string;
+  @IsString() @MinLength(8) password!: string;
+  @IsEnum(UserRole) role!: UserRole;
   @IsOptional() @IsString() name?: string;
 }
 
@@ -6331,15 +6282,14 @@ export class CreateUserDto {
 ### File: `src/modules/users/dto/import-users.dto.ts`
 
 ```typescript
-// ── dto/import-users.dto.ts ──────────────────────────────
 import { IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-
+import { CreateUserDto } from './create-user.dto';
 export class ImportUsersDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateUserDto)
-  users: CreateUserDto[];
+  users!: CreateUserDto[];
 }
 
 ```
@@ -6349,10 +6299,9 @@ export class ImportUsersDto {
 ### File: `src/modules/users/dto/update-user.dto.ts`
 
 ```typescript
-// ── dto/update-user.dto.ts ────────────────────────────────
 import { PartialType } from '@nestjs/mapped-types';
 import { IsBoolean, IsOptional } from 'class-validator';
-
+import { CreateUserDto } from './create-user.dto';
 export class UpdateUserDto extends PartialType(CreateUserDto) {
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
@@ -6365,11 +6314,14 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
 
 ```typescript
 // ── services/users.service.ts ────────────────────────────
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateUserDto } from '../dto/create-user.dto';
+import { ImportUsersDto } from '../dto/import-users.dto';
+import { UpdateUserDto } from '../dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -6562,8 +6514,8 @@ export const userFactory = (
 ### File: `src/prisma/prisma.module.ts`
 
 ```typescript
-// ── prisma.module.ts ─────────────────────────────────────────────────────────
 import { Global, Module } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
 
 @Global()
 @Module({
@@ -6579,7 +6531,6 @@ export class PrismaModule {}
 ### File: `src/prisma/prisma.service.ts`
 
 ```typescript
-// ── prisma.service.ts ────────────────────────────────────────────────────────
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
@@ -6587,30 +6538,13 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
-  constructor() {
-    super({
-      log: [
-        { level: 'warn', emit: 'event' },
-        { level: 'error', emit: 'event' },
-      ],
-    });
-  }
-
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Prisma connected');
-
-    // RLS safety net — set tenantId context per transaction jika menggunakan RLS
-    // this.$use(async (params, next) => { ... });
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
-  }
-
-  /** Helper: pastikan setiap query menyertakan tenantId */
-  tenantWhere(tenantId: string, extra: Record<string, unknown> = {}) {
-    return { tenantId, ...extra };
   }
 }
 
@@ -6621,15 +6555,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 ### File: `src/prisma/seeds/01-tenants.seed.ts`
 
 ```typescript
-// ── seeds/01-tenants.seed.ts ─────────────────────────────
+// ── src/prisma/seeds/01-tenants.seed.ts ──────────────────
 import { PrismaClient } from '@prisma/client';
+
 export async function seedTenants(prisma: PrismaClient) {
   const tenants = [
     { name: 'SMKN 1 Contoh', code: 'SMKN1', subdomain: 'smkn1' },
     { name: 'SMA Demo', code: 'SMADEMO', subdomain: 'smademo' },
   ];
   for (const t of tenants) {
-    await prisma.tenant.upsert({ where: { code: t.code }, create: t, update: {} });
+    await prisma.tenant.upsert({
+      where: { code: t.code },
+      create: t,
+      update: {},
+    });
   }
   console.log('✅ Tenants seeded');
 }
@@ -6641,20 +6580,24 @@ export async function seedTenants(prisma: PrismaClient) {
 ### File: `src/prisma/seeds/02-users.seed.ts`
 
 ```typescript
-// ── seeds/02-users.seed.ts ────────────────────────────────
+// ── src/prisma/seeds/02-users.seed.ts ────────────────────
+import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+
 export async function seedUsers(prisma: PrismaClient) {
   const tenant = await prisma.tenant.findFirst({ where: { code: 'SMKN1' } });
   if (!tenant) throw new Error('Tenant SMKN1 tidak ditemukan');
 
+  const hash = await bcrypt.hash('password123', 12);
+
   const users = [
-    { email: 'admin@smkn1.test', username: 'admin', role: 'ADMIN' },
-    { email: 'guru@smkn1.test', username: 'guru1', role: 'TEACHER' },
-    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR' },
-    { email: 'siswa@smkn1.test', username: 'siswa1', role: 'STUDENT' },
+    { email: 'admin@smkn1.test',    username: 'admin',     role: 'ADMIN'      },
+    { email: 'guru@smkn1.test',     username: 'guru1',     role: 'TEACHER'    },
+    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR'   },
+    { email: 'pengawas@smkn1.test', username: 'pengawas1', role: 'SUPERVISOR' },
+    { email: 'siswa@smkn1.test',    username: 'siswa1',    role: 'STUDENT'    },
   ];
 
-  const hash = await bcrypt.hash('password123', 12);
   for (const u of users) {
     await prisma.user.upsert({
       where: { tenantId_username: { tenantId: tenant.id, username: u.username } },
@@ -6678,7 +6621,9 @@ export async function seedUsers(prisma: PrismaClient) {
 ### File: `src/prisma/seeds/03-subjects.seed.ts`
 
 ```typescript
-// ── seeds/03-subjects.seed.ts ─────────────────────────────
+// ── src/prisma/seeds/03-subjects.seed.ts ─────────────────
+import { PrismaClient } from '@prisma/client';
+
 export async function seedSubjects(prisma: PrismaClient) {
   const tenant = await prisma.tenant.findFirst({ where: { code: 'SMKN1' } });
   if (!tenant) throw new Error('Tenant tidak ditemukan');
@@ -6708,7 +6653,12 @@ export async function seedSubjects(prisma: PrismaClient) {
 ### File: `src/prisma/seeds/index.ts`
 
 ```typescript
-// ── seeds/index.ts ────────────────────────────────────────
+// ── src/prisma/seeds/index.ts ─────────────────────────────
+import { PrismaClient } from '@prisma/client';
+import { seedTenants } from './01-tenants.seed';
+import { seedUsers } from './02-users.seed';
+import { seedSubjects } from './03-subjects.seed';
+
 async function main() {
   const prisma = new PrismaClient();
   try {
@@ -6720,7 +6670,22 @@ async function main() {
     await prisma.$disconnect();
   }
 }
-main().catch(console.error);
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+```
+
+---
+
+### File: `src/types/uuid.d.ts`
+
+```typescript
+declare module 'uuid' {
+  export function v4(): string;
+}
 
 ```
 
@@ -7198,16 +7163,16 @@ enum SyncType {
 
 ```typescript
 // ── test/e2e/auth.e2e-spec.ts ────────────────────────────────────────────────
-import * as request from 'supertest';
 import { INestApplication } from '@nestjs/common';
+import * as request from 'supertest';
 
 describe('Auth E2E', () => {
-  let app: INestApplication;
+  let app: INestApplication | undefined;
 
   // beforeAll: setup app & db
 
   it('POST /api/auth/login → 200 dengan token valid', async () => {
-    await request(app.getHttpServer())
+    await request(app!.getHttpServer())
       .post('/api/auth/login')
       .send({ username: 'admin', password: 'password123', fingerprint: 'test-fp' })
       .expect(200)
@@ -7218,7 +7183,7 @@ describe('Auth E2E', () => {
   });
 
   it('POST /api/auth/login → 401 dengan password salah', async () => {
-    await request(app.getHttpServer())
+    await request(app!.getHttpServer())
       .post('/api/auth/login')
       .send({ username: 'admin', password: 'wrong', fingerprint: 'fp' })
       .expect(401);
@@ -7388,6 +7353,7 @@ describe('AuthService', () => {
 ```typescript
 // ── test/unit/exam-packages/exam-packages.service.spec.ts ───────────────────
 import { ExamPackagesService } from '../../../src/modules/exam-packages/services/exam-packages.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
 
 describe('ExamPackagesService', () => {
   it('should be defined', () => {
@@ -7404,10 +7370,11 @@ describe('ExamPackagesService', () => {
 
 ```typescript
 // ── test/unit/grading/auto-grading.service.spec.ts ───────────────────────────
-import { AutoGradingService } from '../../../src/modules/submissions/services/auto-grading.service';
 import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
 import { QuestionType } from '../../../src/common/enums/question-type.enum';
 import { encrypt } from '../../../src/common/utils/encryption.util';
+import { AutoGradingService } from '../../../src/modules/submissions/services/auto-grading.service';
 
 describe('AutoGradingService', () => {
   let svc: AutoGradingService;
@@ -7453,6 +7420,8 @@ describe('AutoGradingService', () => {
 ```typescript
 // ── test/unit/questions/questions.service.spec.ts ────────────────────────────
 import { QuestionsService } from '../../../src/modules/questions/services/questions.service';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('QuestionsService', () => {
   it('should be defined', () => {
@@ -7721,6 +7690,8 @@ describe('SubmissionProcessor', () => {
 // ── test/unit/sync/sync.service.spec.ts ──────────────────────────────────────
 import { SyncService } from '../../../src/modules/sync/services/sync.service';
 import { SyncType } from '../../../src/common/enums/sync-status.enum';
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../../../src/prisma/prisma.service';
 
 describe('SyncService', () => {
   let svc: SyncService;
@@ -7821,8 +7792,8 @@ API_PREFIX=api
 APP_URL=http://localhost:3000
 
 # Database (Prisma)
-DATABASE_URL=postgresql://exam_user:password@pgbouncer:5432/exam_db
-DATABASE_DIRECT_URL=postgresql://exam_user:password@postgres:5432/exam_db
+DATABASE_URL=postgresql://exam_user:exam_password@pgbouncer:5432/exam_db
+DATABASE_DIRECT_URL=postgresql://exam_user:exam_password@postgres:5432/exam_db
 
 # Redis
 REDIS_HOST=localhost
@@ -8097,64 +8068,64 @@ module.exports = {
     "db:seed": "ts-node src/prisma/seeds/index.ts"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^10.1.1",
     "@nestjs/common": "^10.0.0",
-    "@nestjs/core": "^10.0.0",
-    "@nestjs/platform-express": "^10.0.0",
     "@nestjs/config": "^3.1.1",
+    "@nestjs/core": "^10.0.0",
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
-    "@nestjs/schedule": "^4.0.0",
-    "@nestjs/bullmq": "^10.1.1",
-    "@nestjs/websockets": "^10.0.0",
+    "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.0.0",
+    "@nestjs/schedule": "^4.0.0",
     "@nestjs/swagger": "^7.1.17",
-    "@nestjs/throttler": "^5.1.1",
     "@nestjs/terminus": "^10.2.3",
+    "@nestjs/throttler": "^5.1.1",
+    "@nestjs/websockets": "^10.0.0",
     "@prisma/client": "^5.7.1",
+    "@sentry/node": "^8.0.0",
+    "bcrypt": "^6.0.0",
     "bullmq": "^5.1.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "compression": "^1.7.4",
+    "date-fns-tz": "^3.1.3",
+    "exceljs": "^4.4.0",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
-    "socket.io": "^4.6.1",
+    "minio": "^7.1.3",
+    "multer": "^1.4.5-lts.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
-    "bcrypt": "^5.1.1",
-    "class-validator": "^0.14.0",
-    "class-transformer": "^0.5.1",
-    "compression": "^1.7.4",
-    "helmet": "^7.1.0",
-    "zod": "^3.22.4",
+    "puppeteer": "^21.7.0",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.1",
+    "sharp": "^0.33.1",
+    "socket.io": "^4.6.1",
+    "string-similarity": "^4.0.4",
+    "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "@sentry/node": "^8.0.0",
-    "multer": "^1.4.5-lts.1",
-    "minio": "^7.1.3",
-    "exceljs": "^4.4.0",
-    "puppeteer": "^21.7.0",
-    "sharp": "^0.33.1",
-    "fluent-ffmpeg": "^2.1.2",
-    "ffmpeg-static": "^5.2.0",
-    "string-similarity": "^4.0.4",
-    "date-fns-tz": "^3.1.3",
-    "uuid": "^9.0.1",
-    "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
-    "prisma": "^5.7.1",
-    "@types/express": "^4.17.17",
-    "@types/jest": "^29.5.2",
-    "@types/node": "^20.3.1",
-    "@types/supertest": "^2.0.12",
-    "@types/bcrypt": "^5.0.2",
-    "@types/multer": "^1.4.11",
+    "@types/bcrypt": "^6.0.0",
     "@types/compression": "^1.7.5",
+    "@types/express": "^4.17.17",
+    "@types/fluent-ffmpeg": "^2.1.24",
+    "@types/jest": "^29.5.2",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.3.1",
     "@types/passport-jwt": "^4.0.0",
     "@types/passport-local": "^1.0.38",
-    "@types/fluent-ffmpeg": "^2.1.24",
     "@types/string-similarity": "^4.0.2",
+    "@types/supertest": "^2.0.12",
+    "@types/uuid": "^11.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.42.0",
@@ -8162,21 +8133,30 @@ module.exports = {
     "eslint-plugin-prettier": "^5.0.0",
     "jest": "^29.5.0",
     "prettier": "^3.0.0",
+    "prisma": "^5.7.1",
+    "rimraf": "^5.0.5",
     "source-map-support": "^0.5.21",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.3",
     "ts-node": "^10.9.1",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.1.3",
-    "rimraf": "^5.0.5"
+    "typescript": "^5.1.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
-    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {

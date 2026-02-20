@@ -1,9 +1,9 @@
-// ── tenant.interceptor.ts ────────────────────────────────
-@Inj()
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  intercept(ctx: EC, next: CallHandler): Observable<unknown> {
-    // tenantId sudah di-set oleh SubdomainMiddleware; interceptor ini
-    // tersedia untuk enrichment response jika diperlukan
+  intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle();
   }
 }

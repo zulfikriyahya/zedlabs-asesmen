@@ -1,7 +1,6 @@
-// ── tenant.guard.ts ──────────────────────────────────────
 import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../decorators/current-user.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { TenantNotFoundException } from '../exceptions/tenant-not-found.exception';
 
 @Injectable()

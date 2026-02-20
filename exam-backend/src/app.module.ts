@@ -10,6 +10,7 @@ import { TenantGuard } from './common/guards/tenant.guard';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -63,6 +64,7 @@ import { AppService } from './app.service';
         },
       }),
     }),
+    PrismaModule,
     AuthModule,
     UsersModule,
     TenantsModule,

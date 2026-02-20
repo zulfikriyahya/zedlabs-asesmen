@@ -1,5 +1,10 @@
-// ── services/item-analysis.service.ts ────────────────────
-@IB()
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/services/item-analysis.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+
+@Injectable()
 export class ItemAnalysisService {
   constructor(private prisma: PrismaService) {}
 
@@ -18,7 +23,7 @@ export class ItemAnalysisService {
         });
         const n = answers.length;
         const correct = answers.filter(
-          (a) => a.score && a.maxScore && a.score >= a.maxScore,
+          (a) => a.score != null && a.maxScore != null && a.score >= a.maxScore,
         ).length;
         return {
           questionId: pq.questionId,

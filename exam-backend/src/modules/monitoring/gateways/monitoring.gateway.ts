@@ -15,7 +15,7 @@ import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({ cors: true, namespace: '/monitoring' })
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
   private readonly logger = new Logger(MonitoringGateway.name);
 
   handleConnection(client: Socket) {

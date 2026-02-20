@@ -1,9 +1,12 @@
-// ── strategies/jwt-refresh.strategy.ts ───────────────────
-import { Strategy as S2 } from 'passport-jwt';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 
 @Injectable()
-export class JwtRefreshStrategy extends PassportStrategy(S2, 'jwt-refresh') {
+export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(cfg: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),

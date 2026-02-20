@@ -150,7 +150,7 @@ export class ExamSubmissionService {
         attemptId,
         status: attempt.status,
         gradingStatus: attempt.gradingStatus,
-        message: this.gradingStatusMessage(attempt.gradingStatus),
+        message: this.gradingStatusMessage(attempt.gradingStatus as GradingStatus),
       };
     }
 

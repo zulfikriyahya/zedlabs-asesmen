@@ -1,4 +1,6 @@
-// ── controllers/questions.controller.ts ─────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/questions/controllers/questions.controller.ts
+// ══════════════════════════════════════════════════════════════
 import {
   Controller,
   Get,
@@ -14,13 +16,17 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import {
-  Roles,
-  TenantId,
-  CurrentUser,
-  CurrentUserPayload,
-} from '../../../common/decorators/current-user.decorator';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantId } from '../../../common/decorators/tenant-id.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { BaseQueryDto } from '../../../common/dto/base-query.dto';
+import { QuestionsService } from '../services/questions.service';
+import { QuestionStatisticsService } from '../services/question-statistics.service';
+import { CreateQuestionDto } from '../dto/create-question.dto';
+import { UpdateQuestionDto } from '../dto/update-question.dto';
+import { ImportQuestionsDto } from '../dto/import-questions.dto';
+import { ApproveQuestionDto } from '../dto/approve-question.dto';
 
 @Controller('questions')
 @UseGuards(JwtAuthGuard, RolesGuard)

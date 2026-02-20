@@ -1,20 +1,18 @@
-// ── services/exam-package-builder.service.ts ─────────────
-import { Injectable as IB } from '@nestjs/common';
-import { shuffleArray } from '../../../common/utils/randomizer.util';
-import { decrypt } from '../../../common/utils/encryption.util';
+// ══════════════════════════════════════════════════════════════
+// src/modules/exam-packages/services/exam-package-builder.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { shuffleArray } from '../../../common/utils/randomizer.util';
+import { PrismaService } from '../../../prisma/prisma.service';
 
-@IB()
+@Injectable()
 export class ExamPackageBuilderService {
   constructor(
     private prisma: PrismaService,
     private cfg: ConfigService,
   ) {}
 
-  /**
-   * Build payload paket ujian untuk dikirim ke siswa (terenkripsi di layer atas).
-   * correctAnswer dienkripsi ulang dengan session key sementara.
-   */
   async buildForDownload(tenantId: string, packageId: string, shuffle: boolean) {
     const pkg = await this.prisma.examPackage.findFirst({
       where: { id: packageId, tenantId, status: 'PUBLISHED' },
@@ -30,12 +28,11 @@ export class ExamPackageBuilderService {
     let questions = pkg.questions.map((pq) => ({
       id: pq.question.id,
       type: pq.question.type,
-      content: pq.question.content,
-      options: pq.question.options,
+      content: pq.question.content as Record<string, unknown>,
+      options: pq.question.options as Record<string, unknown> | undefined,
       points: pq.points ?? pq.question.points,
       order: pq.order,
-      // correctAnswer dikirim terenkripsi — client decrypt dengan session key
-      correctAnswer: pq.question.correctAnswer,
+      correctAnswer: pq.question.correctAnswer as string,
     }));
 
     if (shuffle) questions = shuffleArray(questions);
@@ -45,7 +42,7 @@ export class ExamPackageBuilderService {
       title: pkg.title,
       settings: pkg.settings,
       questions,
-      checksum: '', // diisi oleh caller
+      checksum: '',
     };
   }
 }

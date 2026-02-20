@@ -1,6 +1,3 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/common/decorators/current-user.decorator.ts  (FIXED — remove @Public clash)
-// ════════════════════════════════════════════════════════════════════════════
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export interface CurrentUserPayload {
@@ -14,6 +11,3 @@ export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): CurrentUserPayload =>
     ctx.switchToHttp().getRequest().user,
 );
-
-// NOTE: @Public, @Roles, @TenantId ada di file terpisah masing-masing.
-// File ini HANYA berisi CurrentUser.

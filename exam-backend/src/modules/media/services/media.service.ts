@@ -14,7 +14,7 @@ export class MediaService {
   constructor(private cfg: ConfigService) {
     this.minio = new Minio.Client({
       endPoint: cfg.get('MINIO_ENDPOINT', 'localhost'),
-      port: cfg.get<number>('MINIO_PORT', 9000),
+      port: Number(cfg.get('MINIO_PORT', 9000)), // ← tambah Number()
       useSSL: cfg.get('MINIO_USE_SSL') === 'true',
       accessKey: cfg.get('MINIO_ACCESS_KEY', 'minioadmin'),
       secretKey: cfg.get('MINIO_SECRET_KEY', 'minioadmin'),

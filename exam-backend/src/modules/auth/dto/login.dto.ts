@@ -1,8 +1,6 @@
-// ── dto/login.dto.ts ─────────────────────────────────────
-import { IsString, IsNotEmpty, MinLength } from 'class-validator';
-
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class LoginDto {
-  @IsString() @IsNotEmpty() username: string;
-  @IsString() @IsNotEmpty() @MinLength(6) password: string;
-  @IsString() @IsNotEmpty() fingerprint: string;
+  @IsString() @IsNotEmpty() username!: string;
+  @IsString() @IsNotEmpty() @MinLength(6) password!: string;
+  @IsString() @IsNotEmpty() fingerprint!: string;
 }

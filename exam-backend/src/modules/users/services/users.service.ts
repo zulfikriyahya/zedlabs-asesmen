@@ -1,9 +1,12 @@
 // ── services/users.service.ts ────────────────────────────
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CreateUserDto } from '../dto/create-user.dto';
+import { ImportUsersDto } from '../dto/import-users.dto';
+import { UpdateUserDto } from '../dto/update-user.dto';
 
 @Injectable()
 export class UsersService {

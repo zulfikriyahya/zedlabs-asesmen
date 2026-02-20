@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MonitoringGateway } from '../../monitoring/gateways/monitoring.gateway';
 import { CreateActivityLogDto } from '../dto/create-activity-log.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ActivityLogsService {
@@ -19,7 +20,7 @@ export class ActivityLogsService {
         attemptId: dto.attemptId,
         userId: dto.userId,
         type: dto.type,
-        metadata: dto.metadata,
+        metadata: dto.metadata as Prisma.InputJsonValue | undefined,
       },
     });
 

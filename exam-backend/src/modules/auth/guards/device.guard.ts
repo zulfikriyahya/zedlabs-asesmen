@@ -1,6 +1,6 @@
-// ── guards/device.guard.ts ───────────────────────────────
-import { CanActivate, ExecutionContext as EC3, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { DeviceLockedException } from '../../../common/exceptions/device-locked.exception';
+import { AuthService } from '../services/auth.service';
 
 @Injectable()
 export class DeviceGuard implements CanActivate {
@@ -8,10 +8,10 @@ export class DeviceGuard implements CanActivate {
 
   constructor(private authSvc: AuthService) {}
 
-  async canActivate(ctx: EC3): Promise<boolean> {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
     const user = req.user as { sub: string } | undefined;
-    if (!user) return true; // let JwtAuthGuard handle it
+    if (!user) return true;
 
     const fp = req.headers['x-device-fingerprint'] as string | undefined;
     if (!fp) return true;

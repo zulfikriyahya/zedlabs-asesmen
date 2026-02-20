@@ -4,6 +4,9 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
 import { ExamPackageStatus } from '../../../common/enums/exam-status.enum';
+import { AddQuestionsDto } from '../dto/add-questions.dto';
+import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
+import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
 
 @Injectable()
 export class ExamPackagesService {

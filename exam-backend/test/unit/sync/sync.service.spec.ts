@@ -1,6 +1,8 @@
 // ── test/unit/sync/sync.service.spec.ts ──────────────────────────────────────
 import { SyncService } from '../../../src/modules/sync/services/sync.service';
 import { SyncType } from '../../../src/common/enums/sync-status.enum';
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../../../src/prisma/prisma.service';
 
 describe('SyncService', () => {
   let svc: SyncService;

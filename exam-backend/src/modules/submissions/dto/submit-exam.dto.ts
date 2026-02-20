@@ -1,5 +1,5 @@
-// ── dto/submit-exam.dto.ts ────────────────────────────────
+import { IsNotEmpty, IsString } from 'class-validator';
 export class SubmitExamDto {
-  @IsString() @IsNotEmpty() attemptId: string;
-  @IsString() @IsNotEmpty() idempotencyKey: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
+  @IsString() @IsNotEmpty() idempotencyKey!: string;
 }

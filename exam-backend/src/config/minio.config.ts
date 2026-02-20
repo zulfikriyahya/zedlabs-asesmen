@@ -1,4 +1,4 @@
-// ── minio.config.ts ──────────────────────────────────────
+import { registerAs } from '@nestjs/config';
 export const minioConfig = registerAs('minio', () => ({
   endpoint: process.env.MINIO_ENDPOINT ?? 'localhost',
   port: parseInt(process.env.MINIO_PORT ?? '9000', 10),

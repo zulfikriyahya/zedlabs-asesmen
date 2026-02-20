@@ -1,4 +1,10 @@
-// ── services/sync-processor.service.ts ──────────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/sync/services/sync-processor.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { SyncStatus, SyncType } from '../../../common/enums/sync-status.enum';
+
 @Injectable()
 export class SyncProcessorService {
   private readonly logger = new Logger(SyncProcessorService.name);

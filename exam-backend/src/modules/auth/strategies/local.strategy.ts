@@ -1,9 +1,10 @@
-// ── strategies/local.strategy.ts ────────────────────────
-import { Strategy as LocalS } from 'passport-local';
-import { UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { Strategy } from 'passport-local';
+import { AuthService } from '../services/auth.service';
 
 @Injectable()
-export class LocalStrategy extends PassportStrategy(LocalS) {
+export class LocalStrategy extends PassportStrategy(Strategy) {
   constructor(private authSvc: AuthService) {
     super({ usernameField: 'username' });
   }

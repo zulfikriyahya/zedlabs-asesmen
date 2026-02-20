@@ -1,11 +1,15 @@
 // ── services/questions.service.ts ────────────────────────
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
 import { PaginatedResponseDto } from '../../../common/dto/base-response.dto';
-import { encrypt, decrypt } from '../../../common/utils/encryption.util';
-import { ConfigService } from '@nestjs/config';
-import { shuffleArray } from '../../../common/utils/randomizer.util';
+import { decrypt, encrypt } from '../../../common/utils/encryption.util';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { ApproveQuestionDto } from '../dto/approve-question.dto';
+import { CreateQuestionDto } from '../dto/create-question.dto';
+import { ImportQuestionsDto } from '../dto/import-questions.dto';
+import { UpdateQuestionDto } from '../dto/update-question.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class QuestionsService {
@@ -67,9 +71,15 @@ export class QuestionsService {
       data: {
         tenantId,
         createdById,
-        ...rest,
-        correctAnswer: encAnswer,
-        tags: tagIds?.length ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
+        subjectId: rest.subjectId, // ← eksplisit
+        type: rest.type,
+        content: rest.content as Prisma.InputJsonValue,
+        options:
+          rest.options !== undefined ? (rest.options as Prisma.InputJsonValue) : Prisma.JsonNull,
+        points: rest.points,
+        difficulty: rest.difficulty,
+        correctAnswer: encAnswer as Prisma.InputJsonValue,
+        tags: tagIds?.length ? { create: tagIds.map((tagId: string) => ({ tagId })) } : undefined,
       },
       include: { tags: { include: { tag: true } } },
     });

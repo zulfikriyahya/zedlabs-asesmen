@@ -1,16 +1,34 @@
-// ── idempotency.interceptor.ts ───────────────────────────
-import { InjectRedis } from '@nestjs-modules/ioredis'; // atau inject manual
-import { ConflictException } from '@nestjs/common';
-// NOTE: implementasi lengkap memerlukan Redis injection; ini skeleton pattern-nya.
-@Inj()
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  ConflictException,
+} from '@nestjs/common';
+import { Observable, of } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+// Cache in-memory sederhana untuk dev.
+// Di production: ganti dengan Redis (ioredis).
+const cache = new Map<string, unknown>();
+
+@Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  // Inject Redis via constructor di implementasi nyata
-  intercept(ctx: EC, next: CallHandler): Observable<unknown> {
+  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest();
     const key = req.headers['idempotency-key'] as string | undefined;
     if (!key) return next.handle();
-    // Cek Redis cache untuk key ini; jika ada return cached response
-    // Jika tidak ada, jalankan handler dan cache hasilnya
-    return next.handle();
+
+    if (cache.has(key)) {
+      return of(cache.get(key));
+    }
+
+    return next.handle().pipe(
+      tap((response) => {
+        cache.set(key, response);
+        // TTL 24 jam
+        setTimeout(() => cache.delete(key), 24 * 60 * 60 * 1000);
+      }),
+    );
   }
 }

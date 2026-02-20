@@ -1,4 +1,9 @@
-// ── services/question-statistics.service.ts ──────────────
+// ══════════════════════════════════════════════════════════════
+// src/modules/questions/services/question-statistics.service.ts
+// ══════════════════════════════════════════════════════════════
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
+
 @Injectable()
 export class QuestionStatisticsService {
   constructor(private prisma: PrismaService) {}
@@ -13,7 +18,9 @@ export class QuestionStatisticsService {
     });
 
     const total = answers.length;
-    const correct = answers.filter((a) => a.score && a.maxScore && a.score >= a.maxScore).length;
+    const correct = answers.filter(
+      (a) => a.score != null && a.maxScore != null && a.score >= a.maxScore,
+    ).length;
     const avgScore = total ? answers.reduce((s, a) => s + (a.score ?? 0), 0) / total : 0;
 
     return {

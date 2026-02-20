@@ -1,8 +1,4 @@
-// ════════════════════════════════════════════════════════════════════════════
-// src/modules/grading/dto/complete-grading.dto.ts
-// ════════════════════════════════════════════════════════════════════════════
-import { IsString, IsNotEmpty } from 'class-validator';
-
+import { IsNotEmpty, IsString } from 'class-validator';
 export class CompleteGradingDto {
-  @IsString() @IsNotEmpty() attemptId: string;
+  @IsString() @IsNotEmpty() attemptId!: string;
 }
