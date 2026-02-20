@@ -1,50 +1,58 @@
 # Exam Frontend
 
-Web-based examination system untuk sekolah dan madrasah dengan kemampuan offline penuh, dibangun dengan Next.js 15 (App Router).
+Sistem ujian offline-first multi-tenant untuk sekolah dan madrasah, dibangun dengan Next.js 15 App Router.
 
 ---
 
 ## Tech Stack
 
-| Layer           | Teknologi                            |
-|-----------------|--------------------------------------|
-| Framework       | Next.js 15 (App Router), TypeScript  |
-| Styling         | Tailwind CSS, DaisyUI                |
-| State           | Zustand (persisted)                  |
-| Offline Storage | Dexie (IndexedDB)                    |
-| Offline Sync    | PowerSync                            |
-| HTTP            | ky                                   |
-| Validasi        | Zod                                  |
-| Enkripsi        | Web Crypto API (AES-GCM)             |
-| Kompresi        | CompressionStream (native)           |
-| Chart           | Chart.js                             |
-| Tanggal         | date-fns                             |
-| Security        | next-safe (CSP)                      |
+| Layer | Teknologi |
+|---|---|
+| Framework | Next.js 15 (App Router), TypeScript 5 (strict mode) |
+| Styling | Tailwind CSS 3, DaisyUI 4 |
+| State Management | Zustand 4 (in-memory, tidak dipersist) |
+| Offline Storage | Dexie 3 (IndexedDB) |
+| Offline Sync | PowerSync |
+| HTTP Client | ky 1 |
+| Validasi | Zod 3 |
+| Form | React Hook Form 7 + @hookform/resolvers |
+| Enkripsi | Web Crypto API (AES-256-GCM) |
+| Chart | Chart.js 4 + react-chartjs-2 |
+| Real-time | Socket.IO Client 4 |
+| Tanggal | date-fns 3 |
+| Testing | Vitest 1, Playwright 1 |
 
 ---
 
-## Architecture Overview
+## Arsitektur
 
 ```
 Browser (Offline-capable PWA)
         │
         ├── Next.js App Router
-        │    ├── [tenant].exam.app/               ← subdomain routing
-        │    ├── /(siswa)/ujian/[sessionId]/       ← ruang ujian
-        │    ├── /(siswa)/ujian/[sessionId]/review ← review jawaban
-        │    └── /(guru|operator|pengawas)/        ← dashboard per role
+        │    ├── src/middleware.ts           ← auth + RBAC + subdomain tenant
+        │    ├── src/app/(auth)/             ← login
+        │    ├── src/app/(siswa)/            ← ruang ujian, review, result
+        │    ├── src/app/(guru)/             ← bank soal, paket ujian, penilaian
+        │    ├── src/app/(operator)/         ← sesi, ruang, peserta, laporan
+        │    ├── src/app/(pengawas)/         ← live monitoring
+        │    └── src/app/(superadmin)/       ← manajemen sekolah, audit log
         │
-        ├── Zustand Store
-        │    ├── authStore    (session, token, device)
-        │    ├── examStore    (paket soal, timer, status)
-        │    ├── answerStore  (jawaban, auto-save state)
-        │    └── syncStore    (antrian sync, status koneksi)
+        ├── Zustand Stores (in-memory only)
+        │    ├── authStore     ← user, accessToken
+        │    ├── examStore     ← paket soal aktif, question order, attempt
+        │    ├── answerStore   ← jawaban per questionId, sync status
+        │    ├── timerStore    ← remaining seconds, expired flag
+        │    ├── syncStore     ← pending count, syncing flag
+        │    ├── activityStore ← tab blur / paste count
+        │    └── uiStore       ← toasts, sidebar, theme, online status
         │
         ├── Dexie (IndexedDB)
-        │    ├── examPackages  (soal terenkripsi)
-        │    ├── answers       (jawaban peserta)
-        │    ├── activityLogs  (log aktivitas)
-        │    └── syncQueue     (antrian submission)
+        │    ├── examPackages  ← paket soal terenkripsi (ciphertext)
+        │    ├── answers       ← jawaban lokal sebelum sync
+        │    ├── activityLogs  ← log aktivitas mencurigakan
+        │    ├── syncQueue     ← antrian operasi yang belum dikirim
+        │    └── mediaBlobs    ← rekaman audio/video sebelum upload
         │
         └── PowerSync
              └── Sinkronisasi dua arah dengan backend saat online
@@ -52,124 +60,196 @@ Browser (Offline-capable PWA)
 
 ---
 
-## Offline Flow
+## Alur Offline (Kritis)
 
 ```
-1. DOWNLOAD
-   Login → verifikasi device → download paket soal terenkripsi
-   → simpan ke IndexedDB via Dexie
-
-2. EXAM (online atau offline)
-   Buka paket → dekripsi di memori via Web Crypto API (AES-GCM)
-   → jawab soal → auto-save ke IndexedDB (debounce)
-   → rekam audio/video → simpan blob ke IndexedDB (chunked)
-
-3. SYNC
-   Koneksi tersedia → PowerSync push jawaban ke backend
-   → idempotency key mencegah duplikasi
-   → konfirmasi dari server → tandai sesi selesai di IndexedDB
+Login → DeviceGuard (fingerprint SHA-256)
+→ POST /api/student/download (tokenCode + idempotencyKey)
+→ Server: upsert ExamAttempt + schedule timeout BullMQ
+→ Client: simpan paket terenkripsi ke IndexedDB (Dexie: examPackages)
+→ Dekripsi di memori (lib/crypto/aes-gcm.ts, Web Crypto API)
+→ Key enkripsi HANYA di memori — tidak pernah ke Zustand persist,
+  localStorage, atau IndexedDB
+→ Kerjakan ujian → auto-save debounce → IndexedDB (Dexie: answers)
+→ POST /api/student/answers (upsert via idempotencyKey)
+→ Rekam audio/video → chunked blob ke IndexedDB
+→ Review jawaban → POST /api/student/submit
+→ PowerSync flush sync queue saat online
 ```
 
 ---
 
-## Security Model
+## Struktur Proyek
 
-| Layer          | Mekanisme                                                                                         |
-|----------------|--------------------------------------------------------------------------------------------------|
-| Enkripsi soal  | AES-GCM via Web Crypto API; key hanya di memori selama sesi, tidak pernah dipersist              |
-| CSP            | `next-safe` mengkonfigurasi Content Security Policy ketat; tidak memblokir Web Crypto/PowerSync   |
-| Device locking | Fingerprint diverifikasi backend saat download dan sync; perangkat tidak terdaftar ditolak        |
-| Activity log   | Perpindahan tab, blur window, paste, dan aksi mencurigakan dicatat ke IndexedDB → backend         |
+```
+exam-frontend/
+├── src/
+│   ├── app/
+│   │   ├── api/                    # Next.js route handlers
+│   │   │   ├── auth/               # login, logout, refresh
+│   │   │   ├── download/           # proxy ke backend /student/download
+│   │   │   ├── health/
+│   │   │   ├── media/
+│   │   │   └── sync/
+│   │   ├── (auth)/login/
+│   │   ├── (guru)/                 # dashboard, soal, ujian, grading, hasil
+│   │   ├── (operator)/             # dashboard, ruang, sesi, peserta, laporan
+│   │   ├── (pengawas)/             # dashboard, monitoring/[sessionId]
+│   │   ├── (siswa)/                # dashboard, profile, ujian/[sessionId]
+│   │   └── (superadmin)/           # audit-logs, dashboard, schools, users, settings
+│   ├── components/
+│   │   ├── analytics/              # DashboardStats, ExamStatistics, ItemAnalysisChart, StudentProgress
+│   │   ├── auth/                   # LoginForm, DeviceLockWarning
+│   │   ├── exam/                   # ActivityLogger, AutoSaveIndicator, ExamTimer, QuestionNavigation
+│   │   │   └── question-types/     # Essay, Matching, MultipleChoice, ShortAnswer, TrueFalse
+│   │   ├── grading/                # EssaySimilarityBadge, GradingRubric, ManualGradingCard
+│   │   ├── layout/                 # Header, Footer, Sidebar, MainLayout
+│   │   ├── madrasah/               # ArabicKeyboard, HafalanRecorder, QuranDisplay, TajwidMarker
+│   │   ├── monitoring/             # ActivityLogViewer, LiveMonitor, StudentProgressCard
+│   │   ├── questions/              # MatchingEditor, MediaUpload, OptionsEditor, QuestionEditor, TagSelector
+│   │   ├── sync/                   # ChecksumValidator, DownloadProgress, SyncStatus, UploadQueue
+│   │   └── ui/                     # Alert, Badge, Button, Card, Confirm, Input, Loading,
+│   │                               # Modal, Select, Spinner, Table, Tabs, Toast, Tooltip
+│   ├── hooks/
+│   │   ├── use-auth.ts             # refresh token, redirect per role
+│   │   ├── use-auto-save.ts        # debounce save jawaban ke IndexedDB
+│   │   ├── use-device-warnings.ts  # cek Web Crypto + storage availability
+│   │   ├── use-exam.ts             # selector currentQuestion + progress
+│   │   ├── use-media-recorder.ts   # MediaRecorder API wrapper
+│   │   ├── use-online-status.ts    # navigator.onLine listener
+│   │   ├── use-powersync.ts        # flush sync queue via PowerSync
+│   │   ├── use-sync-status.ts      # status sinkronisasi gabungan
+│   │   ├── use-timer.ts            # tick setiap detik, panggil onExpire
+│   │   └── use-toast.ts            # helper success/error/warning/info
+│   ├── lib/
+│   │   ├── api/                    # client.ts (ky + token refresh), per-domain API files
+│   │   ├── crypto/                 # aes-gcm.ts, checksum.ts, key-manager.ts
+│   │   ├── db/                     # Dexie schema, migrations, queries
+│   │   ├── exam/                   # activity-logger, auto-save, controller,
+│   │   │                           # navigation, package-decoder, randomizer, timer, validator
+│   │   ├── media/                  # chunked-upload, compress, player, recorder, upload
+│   │   ├── middleware/             # auth, role, tenant helpers
+│   │   ├── offline/                # cache, checksum, download, queue, sync
+│   │   └── utils/                  # compression, device, error, format, logger, network, time
+│   ├── middleware.ts               # Next.js middleware: auth check + RBAC + subdomain header
+│   ├── schemas/                    # Zod: answer, auth, exam, question, sync, user
+│   ├── stores/                     # Zustand: activity, answer, auth, exam, sync, timer, ui
+│   ├── styles/                     # animations.css, arabic.css, print.css
+│   ├── tests/
+│   │   ├── integration/            # dexie.spec.ts, sync.spec.ts
+│   │   ├── unit/                   # hooks, lib, stores
+│   │   └── setup.ts
+│   └── types/                      # activity, answer, api, common, exam, media, question, sync, user
+├── tests/e2e/                      # Playwright: auth, exam-flow, grading, media-recording, offline-sync
+├── next.config.ts
+├── tailwind.config.ts
+├── tsconfig.json
+├── vitest.config.ts
+└── playwright.config.ts
+```
 
 ---
 
 ## Halaman & Routes
 
-| Route                                     | Role       | Deskripsi                           |
-|-------------------------------------------|------------|-------------------------------------|
-| `/`                                       | All        | Landing / redirect ke login         |
-| `/login`                                  | All        | Login dengan verifikasi device      |
-| `/(siswa)/ujian/[sessionId]`              | Siswa      | Ruang ujian utama                   |
-| `/(siswa)/ujian/[sessionId]/review`       | Siswa      | Review jawaban sebelum submit       |
-| `/(siswa)/ujian/[sessionId]/result`       | Siswa      | Hasil ujian                         |
-| `/(siswa)/dashboard`                      | Siswa      | Daftar ujian tersedia               |
-| `/(guru)/dashboard`                       | Guru       | Manajemen soal, ujian, penilaian    |
-| `/(guru)/soal`                            | Guru       | Bank soal                           |
-| `/(guru)/ujian`                           | Guru       | Manajemen ujian                     |
-| `/(guru)/grading`                         | Guru       | Manual grading uraian/esai          |
-| `/(operator)/dashboard`                   | Operator   | Manajemen sesi, ruang, peserta      |
-| `/(operator)/sesi`                        | Operator   | Manajemen sesi ujian                |
-| `/(operator)/peserta`                     | Operator   | Import dan manajemen peserta        |
-| `/(pengawas)/monitoring`                  | Pengawas   | Monitoring live ujian               |
-| `/(superadmin)/dashboard`                 | Superadmin | Manajemen sekolah, audit log        |
+| Route | Role | Deskripsi |
+|---|---|---|
+| `/login` | Semua | Login dengan verifikasi device fingerprint |
+| `/(siswa)/dashboard` | STUDENT | Riwayat ujian + akses cepat |
+| `/(siswa)/ujian/download` | STUDENT | Input token ujian |
+| `/(siswa)/ujian/[sessionId]` | STUDENT | Ruang ujian utama (timer, auto-save, lazy question types) |
+| `/(siswa)/ujian/[sessionId]/review` | STUDENT | Review jawaban sebelum submit |
+| `/(siswa)/ujian/[sessionId]/result` | STUDENT | Nilai dan rincian jawaban |
+| `/(siswa)/profile` | STUDENT | Profil pengguna |
+| `/(guru)/dashboard` | TEACHER | Statistik soal, paket, penilaian pending |
+| `/(guru)/soal` | TEACHER | Bank soal (list, create, edit, import, approve) |
+| `/(guru)/ujian` | TEACHER | Paket ujian (list, create, edit, preview, statistik) |
+| `/(guru)/grading` | TEACHER | Manual grading esai |
+| `/(guru)/hasil` | TEACHER | Hasil ujian per sesi |
+| `/(operator)/dashboard` | OPERATOR | Statistik sesi & peserta |
+| `/(operator)/ruang` | OPERATOR | CRUD ruang ujian |
+| `/(operator)/sesi` | OPERATOR | CRUD sesi ujian, aktivasi, monitoring |
+| `/(operator)/peserta` | OPERATOR | Manajemen & import peserta |
+| `/(operator)/laporan` | OPERATOR | Generate laporan PDF/Excel |
+| `/(pengawas)/dashboard` | SUPERVISOR | Shortcut ke live monitor |
+| `/(pengawas)/monitoring/live` | SUPERVISOR | Daftar sesi aktif |
+| `/(pengawas)/monitoring/[sessionId]` | SUPERVISOR | Live monitoring per sesi via Socket.IO |
+| `/(superadmin)/dashboard` | SUPERADMIN | Statistik global |
+| `/(superadmin)/schools` | SUPERADMIN | CRUD tenant/sekolah |
+| `/(superadmin)/users` | SUPERADMIN | Manajemen pengguna lintas tenant |
+| `/(superadmin)/audit-logs` | SUPERADMIN | Log audit append-only |
+| `/(superadmin)/settings` | SUPERADMIN | Info konfigurasi sistem |
 
 ---
 
-## Zustand Store Structure
+## Model Keamanan
 
-```typescript
-// examStore — inti state ujian
-interface ExamStore {
-  package: ExamPackage | null
-  currentQuestion: number
-  timeRemaining: number
-  status: 'idle' | 'downloading' | 'ready' | 'active' | 'paused' | 'submitted'
-  startExam: () => void
-  submitExam: () => Promise<void>
-}
+| Layer | Mekanisme |
+|---|---|
+| Auth | JWT access (15 menit) di memory + refresh token (7 hari) di httpOnly cookie |
+| Token refresh | Auto-refresh via interceptor ky saat 401; tidak memblokir request lain |
+| Device | Fingerprint SHA-256 (userAgent + screen + timezone) dikirim saat login & download |
+| Enkripsi soal | AES-256-GCM via Web Crypto API; `CryptoKey` non-extractable, hanya di memori |
+| Key lifecycle | `keyManager` hapus key saat submit / logout / `beforeunload` |
+| Idempotency | Setiap jawaban dan submission membawa UUID v4 `idempotencyKey` |
+| RBAC | `middleware.ts` decode JWT (tanpa verify) → cek prefix route vs role |
+| Activity log | Tab blur, paste, idle dicatat ke IndexedDB → sync ke server → monitoring real-time |
 
-// answerStore — jawaban dan auto-save
-interface AnswerStore {
-  answers: Record<string, Answer>
-  isDirty: boolean
-  lastSaved: Date | null
-  setAnswer: (questionId: string, value: Answer) => void
-  persistToDexie: () => Promise<void>
-}
+> **Penting:** Key enkripsi tidak pernah masuk ke Zustand persist, localStorage, sessionStorage, maupun IndexedDB. Key hanya hidup di `Map` dalam `key-manager.ts` selama sesi berlangsung.
 
-// syncStore — status koneksi dan antrian
-interface SyncStore {
-  isOnline: boolean
-  pendingCount: number
-  lastSyncAt: Date | null
-  syncNow: () => Promise<void>
-}
+---
+
+## Komponen Tipe Soal
+
+Semua tipe soal di-lazy load (`dynamic(() => import(...))`) untuk mengurangi initial bundle:
+
+| Tipe | Komponen | Deskripsi |
+|---|---|---|
+| `MULTIPLE_CHOICE` | `MultipleChoice` | Radio button dengan highlight pilihan terpilih |
+| `COMPLEX_MULTIPLE_CHOICE` | `MultipleChoiceComplex` | Checkbox (lebih dari satu jawaban benar) |
+| `TRUE_FALSE` | `TrueFalse` | Dua tombol toggle Benar / Salah |
+| `MATCHING` | `Matching` | Tabel radio matrix kiri–kanan |
+| `SHORT_ANSWER` | `ShortAnswer` | Input teks maks. 500 karakter |
+| `ESSAY` | `Essay` | Textarea auto-resize maks. 5000 karakter |
+
+---
+
+## Fitur Madrasah
+
+| Komponen | Fungsi |
+|---|---|
+| `ArabicKeyboard` | Virtual keyboard Arab dengan harakat, tanda baca, dan frasa khusus (basmalah, shalawat) |
+| `HafalanRecorder` | Rekaman hafalan multi-bagian (per surah/ayat) dengan referensi teks Arab |
+| `QuranDisplay` | Tampilan teks Al-Quran per ayat dengan terjemahan dan highlight ayat kunci |
+| `TajwidMarker` | Penanda hukum tajwid interaktif (9 hukum) dengan palet warna standar internasional |
+
+---
+
+## Auto-Save & Sync
+
 ```
-
----
-
-## Features
-
-### Soal & Ujian
-- 6 tipe soal: pilihan ganda, pilihan ganda kompleks, benar/salah, menjodohkan, isian singkat, uraian/esai
-- Multimedia pada soal dan jawaban: gambar, audio, video
-- Perekaman jawaban audio/video (maks. 5 menit / 1 GB per file)
-- Auto-save dengan debounce ke IndexedDB
-- Timer per peserta dengan notifikasi sisa waktu
-
-### Antarmuka & Aksesibilitas
-- Mobile-first, dioptimalkan untuk Android
-- Kontrol ukuran font, dark mode, navigasi keyboard
-- Fitur Arab/Islam: teks Al-Quran, penanda tajwid, keyboard Arab
-- Responsive untuk tablet dan desktop
-
-### PWA & Performance
-- Service Worker dikelola PowerSync; tidak ada konflik dengan Next.js SW
-- Lazy load komponen soal per tipe untuk mengurangi initial bundle
-- Gambar soal di-cache di IndexedDB saat download paket, bukan saat ujian berlangsung
-- Video dan audio jawaban di-chunk sebelum disimpan untuk menghindari memory pressure pada perangkat low-end Android
+Perubahan jawaban
+  → setAnswer(questionId, value)    ← optimistic update UI (Zustand)
+  → debouncedSave(1500ms)           ← mencegah overwrite saat mengetik
+  → upsertAnswer(IndexedDB)         ← persist lokal
+  → enqueueSyncItem(syncQueue)      ← antrian ke server
+  → PowerSync flush (saat online)   ← POST /api/student/answers
+  → markAnswerSynced()              ← update flag di IndexedDB
+```
 
 ---
 
 ## Environment Variables
 
 ```env
+# Required
 NEXT_PUBLIC_APP_URL=https://exam.example.com
-NEXT_PUBLIC_API_URL=https://api.example.com
-NEXT_PUBLIC_POWERSYNC_URL=https://sync.example.com
-NEXT_PUBLIC_MINIO_ENDPOINT=minio.example.com
+NEXT_PUBLIC_API_URL=https://api.example.com/api
 NEXT_PUBLIC_TENANT_DOMAIN=exam.example.com
 
+# Optional
+NEXT_PUBLIC_POWERSYNC_URL=https://sync.example.com
+NEXT_PUBLIC_MINIO_ENDPOINT=minio.example.com
 NEXT_PUBLIC_ENABLE_RECORDING=true
 NEXT_PUBLIC_AUTOSAVE_INTERVAL=30000
 NEXT_PUBLIC_MAX_RECORDING_DURATION=300
@@ -179,31 +259,71 @@ NEXT_PUBLIC_MIN_STORAGE_MB=2048
 
 ---
 
-## Testing
+## Setup & Pengembangan
 
 ```bash
-# Unit test
-npx vitest
+# Install dependencies
+npm install
 
-# Unit test watch mode
-npx vitest --watch
+# Development server
+npm run dev
 
-# E2E test (Playwright)
-npx playwright test
+# Type check
+npm run type-check
 
-# E2E test dengan UI
-npx playwright test --ui
+# Lint
+npm run lint
+
+# Format
+npm run format
 ```
 
 ---
 
-## Deployment Checklist
+## Testing
 
-- [ ] `next-safe` CSP tidak memblokir Web Crypto atau PowerSync
-- [ ] Subdomain wildcard `*.exam.example.com` diarahkan ke server yang sama
+```bash
+# Unit & integration test
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:cov
+
+# E2E (Playwright) — pastikan dev server berjalan
+npm run test:e2e
+
+# E2E dengan UI interaktif
+npm run test:e2e:ui
+```
+
+### Skenario E2E yang Dicakup
+
+- `auth.spec.ts` — Login, logout, redirect per role
+- `exam-flow.spec.ts` — Download → kerjakan → submit → result
+- `grading.spec.ts` — Manual grading esai
+- `media-recording.spec.ts` — Rekam, simpan, upload
+- `offline-sync.spec.ts` — Airplane mode → kerjakan → online → sync
+
+---
+
+## Build & Deployment
+
+```bash
+npm run build
+npm start
+```
+
+### Checklist Deployment
+
+- [ ] `NEXT_PUBLIC_API_URL` mengarah ke backend production (bukan localhost)
+- [ ] Subdomain wildcard `*.exam.example.com` → server yang sama
+- [ ] CSP tidak memblokir Web Crypto API atau domain PowerSync/MinIO
 - [ ] Service Worker PowerSync tidak konflik dengan cache Next.js
-- [ ] Auto-save diuji pada kondisi IndexedDB hampir penuh
-- [ ] Recording diuji pada Android low-end (RAM 2–3 GB)
-- [ ] Offline flow end-to-end: download → airplane mode → ujian → sync
-- [ ] Playwright E2E mencakup skenario offline (mock service worker)
-- [ ] Semua env variable production tidak mengandung nilai development/staging
+- [ ] Uji offline flow end-to-end: download → airplane mode → ujian → sync
+- [ ] Uji rekaman pada Android low-end (RAM 2–3 GB)
+- [ ] Verifikasi `access_token` cookie `httpOnly: false`, `refresh_token` cookie `httpOnly: true`
+- [ ] Verifikasi key enkripsi tidak tersimpan di IndexedDB setelah submit
+

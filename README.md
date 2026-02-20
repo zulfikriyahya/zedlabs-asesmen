@@ -315,3 +315,33 @@ THROTTLE_LIMIT=100
 ### Quality Gate
 - [ ] Playwright E2E lulus di staging (termasuk skenario offline via mock service worker)
 - [ ] Semua env variable production tidak mengandung nilai development/staging
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+
+
+
+
+
+
+
+
+
+saya sudah menyelesaikan BE saya:
+dan sekarang saya sedang membangun FE:
+apa yang perlu kamu pelajari lagi untuk menyempurnakan project fe saya:
+berikan saya full final kode pergrup
+
+----

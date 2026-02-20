@@ -44,6 +44,7 @@ EXCLUDE_BE=(
   "prisma/migrations/*"
   "docs/api/*"
   "scripts/*"
+  "test/*"
 )
 
 PRIORITY_FE=("src" "public" "tests" "ROOT")
