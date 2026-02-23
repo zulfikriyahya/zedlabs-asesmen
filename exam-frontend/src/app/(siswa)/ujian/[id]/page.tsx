@@ -121,15 +121,13 @@ export default function ExamPage() {
     if (!attempt) return;
     getAnswersByAttempt(attempt.id).then((localAnswers) => {
       if (localAnswers.length > 0) {
-        useAnswerStore
-          .getState()
-          .hydrateFromLocal(
-            localAnswers.map((a) => ({
-              questionId: a.questionId,
-              answer: a.answer,
-              mediaUrls: a.mediaUrls,
-            })),
-          );
+        useAnswerStore.getState().hydrateFromLocal(
+          localAnswers.map((a) => ({
+            questionId: a.questionId,
+            answer: a.answer,
+            mediaUrls: a.mediaUrls,
+          })),
+        );
       }
     });
   }, [attempt]);

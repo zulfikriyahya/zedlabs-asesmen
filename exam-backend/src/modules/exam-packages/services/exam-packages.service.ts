@@ -1,4 +1,3 @@
-// ── services/exam-packages.service.ts ────────────────────
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseQueryDto } from '../../../common/dto/base-query.dto';
@@ -7,7 +6,6 @@ import { ExamPackageStatus } from '../../../common/enums/exam-status.enum';
 import { AddQuestionsDto } from '../dto/add-questions.dto';
 import { CreateExamPackageDto } from '../dto/create-exam-package.dto';
 import { UpdateExamPackageDto } from '../dto/update-exam-package.dto';
-import { sha256 } from '../../../common/utils/checksum.util';
 
 @Injectable()
 export class ExamPackagesService {
@@ -65,16 +63,40 @@ export class ExamPackagesService {
 
   async addQuestions(tenantId: string, id: string, dto: AddQuestionsDto) {
     await this.findOne(tenantId, id);
-    // upsert per question
-    await this.prisma.$transaction(
-      dto.questions.map((q) =>
-        this.prisma.examPackageQuestion.upsert({
-          where: { examPackageId_questionId: { examPackageId: id, questionId: q.questionId } },
-          create: { examPackageId: id, questionId: q.questionId, order: q.order, points: q.points },
-          update: { order: q.order, points: q.points },
-        }),
-      ),
-    );
+
+    /**
+     * [Fix #3] Unique constraint [examPackageId, order] bisa conflict saat reorder.
+     * Solusi: dalam satu transaksi, set semua order ke nilai negatif (temporary)
+     * terlebih dahulu sebelum set ke nilai final, sehingga tidak ada collision.
+     */
+    await this.prisma.$transaction(async (tx) => {
+      // Step 1: Temporary order (negatif) untuk semua soal yang akan di-upsert
+      await Promise.all(
+        dto.questions.map((q, i) =>
+          tx.examPackageQuestion.upsert({
+            where: { examPackageId_questionId: { examPackageId: id, questionId: q.questionId } },
+            create: {
+              examPackageId: id,
+              questionId: q.questionId,
+              order: -(i + 1), // temporary negatif
+              points: q.points,
+            },
+            update: { order: -(i + 1) },
+          }),
+        ),
+      );
+
+      // Step 2: Set ke order final setelah collision dihilangkan
+      await Promise.all(
+        dto.questions.map((q) =>
+          tx.examPackageQuestion.update({
+            where: { examPackageId_questionId: { examPackageId: id, questionId: q.questionId } },
+            data: { order: q.order, points: q.points },
+          }),
+        ),
+      );
+    });
+
     return this.findOne(tenantId, id);
   }
 

@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Redis } from 'ioredis';
+
+// TTL chunk di Redis: 3 jam (cukup untuk upload lambat di jaringan sekolah)
+const CHUNK_TTL = 60 * 60 * 3;
 
 export interface ChunkInfo {
   fileId: string;
@@ -9,15 +11,32 @@ export interface ChunkInfo {
   data: Buffer;
 }
 
-export interface AssembleResult {
-  buffer: Buffer;
-  isComplete: boolean;
-}
-
+/**
+ * [Fix #4] Chunked upload sekarang pakai Redis sebagai temp storage.
+ * Aman di environment multi-instance (PM2 cluster) karena semua instance
+ * mengakses Redis yang sama, bukan filesystem lokal masing-masing.
+ *
+ * Jika Redis tidak tersedia (dev tanpa Redis), fallback ke in-memory Map.
+ */
 @Injectable()
 export class ChunkedUploadService {
   private readonly logger = new Logger(ChunkedUploadService.name);
-  private readonly tmpDir = path.join(process.cwd(), 'uploads', 'temp');
+  // Fallback in-memory untuk dev/test
+  private readonly memStore = new Map<string, Buffer>();
+
+  constructor(@Optional() @Inject('REDIS_CLIENT') private readonly redis?: Redis) {}
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private chunkKey(fileId: string, index: number) {
+    return `chunk:${fileId}:${index}`;
+  }
+
+  private metaKey(fileId: string) {
+    return `chunk:${fileId}:meta`;
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
 
   async saveChunk(info: ChunkInfo): Promise<{ saved: number; total: number }> {
     if (info.chunkIndex >= info.totalChunks) {
@@ -26,63 +45,101 @@ export class ChunkedUploadService {
       );
     }
 
-    const dir = path.join(this.tmpDir, info.fileId);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `chunk_${info.chunkIndex}`), info.data);
+    if (this.redis) {
+      await this.redis.setex(this.chunkKey(info.fileId, info.chunkIndex), CHUNK_TTL, info.data);
+      // Increment counter chunk yang tersimpan
+      const countKey = this.metaKey(info.fileId);
+      await this.redis.incr(countKey);
+      await this.redis.expire(countKey, CHUNK_TTL);
 
-    const saved = fs.readdirSync(dir).length;
-    this.logger.log(
-      `Chunk ${info.chunkIndex + 1}/${info.totalChunks} saved — fileId=${info.fileId}`,
-    );
+      const saved = parseInt((await this.redis.get(countKey)) ?? '0', 10);
+      this.logger.log(
+        `[Redis] Chunk ${info.chunkIndex + 1}/${info.totalChunks} saved — fileId=${info.fileId}`,
+      );
+      return { saved, total: info.totalChunks };
+    }
 
+    // Fallback in-memory
+    this.memStore.set(this.chunkKey(info.fileId, info.chunkIndex), info.data);
+    const saved = Array.from(this.memStore.keys()).filter((k) =>
+      k.startsWith(`chunk:${info.fileId}:`),
+    ).length;
     return { saved, total: info.totalChunks };
   }
 
-  isComplete(fileId: string, totalChunks: number): boolean {
-    const dir = path.join(this.tmpDir, fileId);
-    if (!fs.existsSync(dir)) return false;
-    return fs.readdirSync(dir).length >= totalChunks;
+  async isComplete(fileId: string, totalChunks: number): Promise<boolean> {
+    if (this.redis) {
+      const count = parseInt((await this.redis.get(this.metaKey(fileId))) ?? '0', 10);
+      return count >= totalChunks;
+    }
+    const saved = Array.from(this.memStore.keys()).filter(
+      (k) => k.startsWith(`chunk:${fileId}:`) && !k.endsWith(':meta'),
+    ).length;
+    return saved >= totalChunks;
   }
 
   async assemble(fileId: string, totalChunks: number): Promise<Buffer> {
-    const dir = path.join(this.tmpDir, fileId);
-
-    // Validasi semua chunk tersedia
     const missing: number[] = [];
+    const chunks: Buffer[] = [];
+
     for (let i = 0; i < totalChunks; i++) {
-      if (!fs.existsSync(path.join(dir, `chunk_${i}`))) missing.push(i);
+      let buf: Buffer | null = null;
+
+      if (this.redis) {
+        const raw = await this.redis.getBuffer(this.chunkKey(fileId, i));
+        buf = raw ?? null;
+      } else {
+        buf = this.memStore.get(this.chunkKey(fileId, i)) ?? null;
+      }
+
+      if (!buf) {
+        missing.push(i);
+      } else {
+        chunks.push(buf);
+      }
     }
+
     if (missing.length > 0) {
       throw new BadRequestException(`Chunk tidak lengkap, missing: [${missing.join(', ')}]`);
     }
 
-    const chunks = Array.from({ length: totalChunks }, (_, i) =>
-      fs.readFileSync(path.join(dir, `chunk_${i}`)),
-    );
     const assembled = Buffer.concat(chunks);
+    await this.cleanup(fileId, totalChunks);
 
-    // Cleanup temp dir setelah assembly
-    fs.rmSync(dir, { recursive: true, force: true });
     this.logger.log(`Assembly selesai — fileId=${fileId}, size=${assembled.length} bytes`);
-
     return assembled;
   }
 
-  /** Cleanup temp files lebih dari N menit (dipanggil via cron/scheduled task) */
-  cleanupStale(maxAgeMinutes = 120): number {
-    if (!fs.existsSync(this.tmpDir)) return 0;
-    const now = Date.now();
-    let removed = 0;
-    for (const dir of fs.readdirSync(this.tmpDir)) {
-      const fullPath = path.join(this.tmpDir, dir);
-      const stat = fs.statSync(fullPath);
-      const ageMinutes = (now - stat.mtimeMs) / 60_000;
-      if (ageMinutes > maxAgeMinutes) {
-        fs.rmSync(fullPath, { recursive: true, force: true });
-        removed++;
+  /** Cleanup setelah assembly atau saat scheduled cleanup */
+  async cleanup(fileId: string, totalChunks: number): Promise<void> {
+    if (this.redis) {
+      const keys = [
+        this.metaKey(fileId),
+        ...Array.from({ length: totalChunks }, (_, i) => this.chunkKey(fileId, i)),
+      ];
+      if (keys.length > 0) await this.redis.del(...keys);
+    } else {
+      for (let i = 0; i < totalChunks; i++) {
+        this.memStore.delete(this.chunkKey(fileId, i));
       }
+      this.memStore.delete(this.metaKey(fileId));
     }
-    if (removed > 0) this.logger.log(`Cleaned up ${removed} stale temp dirs`);
-    return removed;
+  }
+
+  /**
+   * Cleanup stale uploads — hanya relevan untuk fallback in-memory.
+   * Redis TTL menangani expiry secara otomatis.
+   */
+  /**
+   * Parameter maxAgeMinutes dipertahankan untuk kompatibilitas signature
+   * dengan test yang sudah ada, tapi tidak digunakan karena memStore
+   * tidak menyimpan timestamp. Redis TTL menangani expiry otomatis.
+   */
+  cleanupStale(_maxAgeMinutes = 120): number {
+    if (this.redis) return 0; // Redis TTL handles this
+
+    const before = this.memStore.size;
+    this.memStore.clear();
+    return before;
   }
 }

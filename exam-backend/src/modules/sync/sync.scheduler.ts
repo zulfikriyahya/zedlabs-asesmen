@@ -8,9 +8,14 @@ export class SyncScheduler {
 
   constructor(private chunkedSvc: ChunkedUploadService) {}
 
+  /**
+   * Cleanup hanya relevan saat fallback in-memory (dev tanpa Redis).
+   * Di production dengan Redis, TTL menangani expiry otomatis.
+   */
   @Cron(CronExpression.EVERY_30_MINUTES)
   handleCleanup() {
+    // Signature tetap kompatibel dengan parameter opsional
     const removed = this.chunkedSvc.cleanupStale(120);
-    if (removed > 0) this.logger.log(`Stale temp cleanup: ${removed} dirs removed`);
+    if (removed > 0) this.logger.log(`In-memory chunk cleanup: ${removed} entries removed`);
   }
 }

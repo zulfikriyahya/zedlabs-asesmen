@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger, Scope } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
@@ -18,7 +18,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$connect();
     this.logger.log('Prisma connected');
 
-    // Log slow queries di development
     if (process.env.NODE_ENV === 'development') {
       (this.$on as any)('query', (e: { query: string; duration: number }) => {
         if (e.duration > 500) {
@@ -34,40 +33,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   /**
-   * Buat Prisma client yang ter-scope ke tenant tertentu.
-   * Set PostgreSQL session variable app.tenant_id untuk RLS.
-   */
-  forTenant(tenantId: string, role = 'APP') {
-    return this.$extends({
-      query: {
-        $allModels: {
-          async $allOperations({ args, query }) {
-            // Set RLS context sebelum setiap query
-            await (this as any).$executeRawUnsafe(
-              `SET LOCAL app.tenant_id = '${tenantId.replace(/'/g, '')}';
-               SET LOCAL app.role = '${role.replace(/'/g, '')}';`,
-            );
-            return query(args);
-          },
-        },
-      },
-    });
-  }
-
-  /**
-   * Eksekusi dalam transaksi dengan RLS context.
+   * Eksekusi fn dalam transaksi dengan RLS context.
+   * SET LOCAL hanya valid di dalam transaksi — ini adalah cara yang benar.
+   * `forTenant()` standalone (luar transaksi) dihapus karena tidak aman.
    */
   async withTenantContext<T>(
     tenantId: string,
     role: string,
-    fn: (tx: PrismaClient) => Promise<T>,
+    fn: (tx: Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]) => Promise<T>,
   ): Promise<T> {
+    // Sanitasi untuk mencegah SQL injection via SET LOCAL
+    const safeTenantId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '');
+    const safeRole = role.replace(/[^a-zA-Z0-9_]/g, '');
+
     return this.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(
-        `SET LOCAL app.tenant_id = '${tenantId.replace(/'/g, '')}';
-         SET LOCAL app.role = '${role.replace(/'/g, '')}';`,
+        `SET LOCAL app.tenant_id = '${safeTenantId}'; SET LOCAL app.role = '${safeRole}';`,
       );
-      return fn(tx as unknown as PrismaClient);
+      return fn(tx);
     });
   }
 }

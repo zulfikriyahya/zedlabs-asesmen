@@ -725,13 +725,7 @@ const localCache = new Map<string, unknown>();
 ### File: `src/common/interceptors/logging.interceptor.ts`
 
 ```typescript
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
@@ -805,7 +799,13 @@ export class TenantInterceptor implements NestInterceptor {
 ### File: `src/common/interceptors/timeout.interceptor.ts`
 
 ```typescript
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, RequestTimeoutException } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  RequestTimeoutException,
+} from '@nestjs/common';
 import { Observable, TimeoutError } from 'rxjs';
 import { timeout, catchError } from 'rxjs/operators';
 
@@ -1586,8 +1586,12 @@ export const minioConfig = registerAs('minio', () => ({
 import { registerAs } from '@nestjs/config';
 export const multerConfig = registerAs('multer', () => ({
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE ?? String(1024 ** 3), 10),
-  allowedImageTypes: (process.env.ALLOWED_IMAGE_TYPES ?? 'image/jpeg,image/png,image/webp').split(','),
-  allowedAudioTypes: (process.env.ALLOWED_AUDIO_TYPES ?? 'audio/mpeg,audio/wav,audio/webm').split(','),
+  allowedImageTypes: (process.env.ALLOWED_IMAGE_TYPES ?? 'image/jpeg,image/png,image/webp').split(
+    ',',
+  ),
+  allowedAudioTypes: (process.env.ALLOWED_AUDIO_TYPES ?? 'audio/mpeg,audio/wav,audio/webm').split(
+    ',',
+  ),
   allowedVideoTypes: (process.env.ALLOWED_VIDEO_TYPES ?? 'video/mp4,video/webm').split(','),
 }));
 
@@ -7678,7 +7682,6 @@ import { SyncController } from './controllers/sync.controller';
 import { SyncScheduler } from './sync.scheduler';
 import { PowerSyncController } from './controllers/powersync.controller';
 
-
 @Module({
   imports: [BullModule.registerQueue({ name: 'sync' }), ScheduleModule.forRoot(), MediaModule],
   providers: [
@@ -8555,11 +8558,11 @@ export async function seedUsers(prisma: PrismaClient) {
   const hash = await bcrypt.hash('password123', 12);
 
   const users = [
-    { email: 'admin@smkn1.test',    username: 'admin',     role: 'ADMIN'      },
-    { email: 'guru@smkn1.test',     username: 'guru1',     role: 'TEACHER'    },
-    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR'   },
+    { email: 'admin@smkn1.test', username: 'admin', role: 'ADMIN' },
+    { email: 'guru@smkn1.test', username: 'guru1', role: 'TEACHER' },
+    { email: 'operator@smkn1.test', username: 'operator1', role: 'OPERATOR' },
     { email: 'pengawas@smkn1.test', username: 'pengawas1', role: 'SUPERVISOR' },
-    { email: 'siswa@smkn1.test',    username: 'siswa1',    role: 'STUDENT'    },
+    { email: 'siswa@smkn1.test', username: 'siswa1', role: 'STUDENT' },
   ];
 
   for (const u of users) {

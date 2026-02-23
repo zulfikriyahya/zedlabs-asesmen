@@ -375,3 +375,12 @@ POST /api/powersync/data
   ]
 }
 ```
+
+## Format Respons AI
+
+- Jawaban langsung pada solusi teknis tanpa pembuka panjang.
+- Kode menggunakan nama variabel ringkas namun deskriptif.
+- Jika ada beberapa pendekatan, tampilkan perbedaan dan trade-off secara singkat — bukan semua opsi secara panjang lebar.
+- Tidak perlu menyertakan instruksi instalasi, struktur folder standar, atau penjelasan umum yang sudah diketahui senior developer, kecuali diminta secara spesifik.
+- Gunakan Bahasa Indonesia untuk penjelasan, Bahasa Inggris untuk kode dan nama teknis.
+- Saat mengerjakan fitur baru, selalu rujuk bagian **Alur Aplikasi** dan **Struktur Proyek** di atas untuk memastikan implementasi diletakkan di layer dan file yang tepat.

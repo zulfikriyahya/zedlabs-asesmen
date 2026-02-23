@@ -14,27 +14,27 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
-  ApiParam,
-  ApiConsumes,
   ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser, CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import {
   ThrottleModerate,
   ThrottleRelaxed,
 } from '../../../common/decorators/throttle-tier.decorator';
-import { SyncService } from '../services/sync.service';
-import { ChunkedUploadService } from '../services/chunked-upload.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { MediaUploadService } from '../../media/services/media-upload.service';
 import { AddSyncItemDto } from '../dto/add-sync-item.dto';
 import { RetrySyncDto } from '../dto/retry-sync.dto';
 import { UploadChunkDto } from '../dto/upload-chunk.dto';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { ChunkedUploadService } from '../services/chunked-upload.service';
+import { SyncService } from '../services/sync.service';
 
 const MAX_CHUNK_SIZE = 50 * 1024 * 1024;
 
@@ -54,10 +54,7 @@ export class SyncController {
 
   @Post()
   @ThrottleModerate()
-  @ApiOperation({
-    summary: 'Tambah item ke sync queue',
-    description: 'Endpoint utama untuk offline recovery. Idempoten via idempotencyKey.',
-  })
+  @ApiOperation({ summary: 'Tambah item ke sync queue' })
   @ApiResponse({ status: 200, description: 'Item ditambahkan / sudah ada (idempoten)' })
   add(@Body() dto: AddSyncItemDto) {
     return this.svc.addItem(dto);
@@ -76,8 +73,6 @@ export class SyncController {
   @ThrottleModerate()
   @ApiOperation({ summary: 'Retry item sync yang gagal (status FAILED)' })
   @ApiResponse({ status: 200, description: 'Item dijadwalkan ulang' })
-  @ApiResponse({ status: 400, description: 'Hanya item FAILED yang bisa di-retry' })
-  @ApiResponse({ status: 404, description: 'Sync item tidak ditemukan' })
   retry(@Body() dto: RetrySyncDto) {
     return this.svc.retryFailed(dto);
   }
@@ -86,22 +81,17 @@ export class SyncController {
   @ThrottleModerate()
   @UseInterceptors(FileInterceptor('chunk'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary: 'Upload satu chunk file media',
-    description:
-      'Kirim chunk satu per satu. Setelah semua chunk diterima, panggil /sync/upload/finalize.',
-  })
+  @ApiOperation({ summary: 'Upload satu chunk file media' })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        chunk: { type: 'string', format: 'binary', description: 'Data chunk (maks 50MB)' },
+        chunk: { type: 'string', format: 'binary' },
         meta: { type: 'string', description: 'JSON string dari UploadChunkDto' },
       },
     },
   })
   @ApiResponse({ status: 200, description: '{ fileId, saved, total, isComplete }' })
-  @ApiResponse({ status: 400, description: 'meta JSON tidak valid / attempt tidak ditemukan' })
   async uploadChunk(
     @UploadedFile(
       new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_CHUNK_SIZE })] }),
@@ -132,15 +122,15 @@ export class SyncController {
       totalChunks: dto.totalChunks,
       data: file.buffer,
     });
-    return { fileId: dto.fileId, saved, total, isComplete: saved >= total };
+
+    // [Fix #4] isComplete sekarang async karena cek Redis
+    const isComplete = await this.chunkedSvc.isComplete(dto.fileId, dto.totalChunks);
+    return { fileId: dto.fileId, saved, total, isComplete };
   }
 
   @Post('upload/finalize')
   @ThrottleModerate()
-  @ApiOperation({
-    summary: 'Finalize chunked upload',
-    description: 'Gabungkan semua chunk, upload ke MinIO, update mediaUrls pada ExamAnswer.',
-  })
+  @ApiOperation({ summary: 'Finalize chunked upload — gabungkan chunk dan upload ke MinIO' })
   @ApiResponse({ status: 200, description: '{ objectName, questionId, attemptId }' })
   @ApiResponse({ status: 400, description: 'Upload belum lengkap / attempt tidak ditemukan' })
   async finalizeUpload(@Body() dto: UploadChunkDto, @CurrentUser() u: CurrentUserPayload) {
@@ -150,7 +140,9 @@ export class SyncController {
     });
     if (!attempt) throw new BadRequestException('Attempt tidak ditemukan atau bukan milik Anda');
 
-    if (!this.chunkedSvc.isComplete(dto.fileId, dto.totalChunks)) {
+    // [Fix #4] isComplete sekarang async
+    const complete = await this.chunkedSvc.isComplete(dto.fileId, dto.totalChunks);
+    if (!complete) {
       throw new BadRequestException(
         `Upload belum lengkap. Kirim semua ${dto.totalChunks} chunk terlebih dahulu.`,
       );
@@ -170,7 +162,10 @@ export class SyncController {
     if (answer) {
       await this.prisma.examAnswer.update({
         where: { id: answer.id },
-        data: { mediaUrls: [...new Set([...answer.mediaUrls, objectName])], updatedAt: new Date() },
+        data: {
+          mediaUrls: [...new Set([...answer.mediaUrls, objectName])],
+          updatedAt: new Date(),
+        },
       });
     }
 

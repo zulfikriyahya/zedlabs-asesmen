@@ -1,5 +1,12 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { AttemptStatus } from '../../../common/enums/exam-status.enum';
 import { GradingStatus } from '../../../common/enums/grading-status.enum';
@@ -7,12 +14,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/services/audit-logs.service';
 import { SubmitAnswerDto } from '../dto/submit-answer.dto';
 import { SubmitExamDto } from '../dto/submit-exam.dto';
-import { AutoGradeJobData } from '../processors/submission.processor';
 import type {
   ExamSubmittedEvent,
   GradingCompletedEvent,
 } from '../processors/submission.events.listener';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AutoGradeJobData } from '../processors/submission.processor';
+
 @Injectable()
 export class ExamSubmissionService {
   private readonly logger = new Logger(ExamSubmissionService.name);
@@ -27,14 +34,35 @@ export class ExamSubmissionService {
   async submitAnswer(dto: SubmitAnswerDto) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
-      select: { status: true },
+      select: {
+        status: true,
+        sessionId: true,
+        session: {
+          select: {
+            examPackageId: true,
+            examPackage: {
+              select: { questions: { select: { questionId: true } } },
+            },
+          },
+        },
+      },
     });
+
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
+
     if (attempt.status === AttemptStatus.SUBMITTED) {
       throw new BadRequestException('Ujian sudah disubmit, jawaban tidak bisa diubah');
     }
     if (attempt.status === AttemptStatus.TIMED_OUT) {
       throw new BadRequestException('Ujian sudah timeout');
+    }
+
+    // [Fix #7] Validasi questionId termasuk dalam paket ujian siswa
+    const validQuestionIds = new Set(
+      attempt.session.examPackage.questions.map((q) => q.questionId),
+    );
+    if (!validQuestionIds.has(dto.questionId)) {
+      throw new ForbiddenException('questionId tidak valid untuk ujian ini');
     }
 
     return this.prisma.examAnswer.upsert({
@@ -58,13 +86,7 @@ export class ExamSubmissionService {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: dto.attemptId },
       include: {
-        session: {
-          select: {
-            tenantId: true,
-            title: true,
-            id: true,
-          },
-        },
+        session: { select: { tenantId: true, title: true, id: true } },
       },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan');
@@ -89,7 +111,6 @@ export class ExamSubmissionService {
       after: { submittedAt: new Date().toISOString() },
     });
 
-    // Emit domain event — ditangkap oleh SubmissionEventsListener
     const event: ExamSubmittedEvent = {
       attemptId: dto.attemptId,
       userId: attempt.userId,
@@ -132,7 +153,6 @@ export class ExamSubmissionService {
     this.logger.log(`Timeout dijadwalkan untuk attempt ${attemptId} dalam ${durationMinutes}m`);
   }
 
-  /** Dipanggil oleh GradingHelperService setelah auto-grade selesai */
   emitGradingCompleted(event: GradingCompletedEvent) {
     this.eventEmitter.emit('grading.completed', event);
   }
